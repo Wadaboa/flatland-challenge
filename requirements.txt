@@ -1,3 +1,4 @@
 cairosvg==2.4.2
 pycairo==1.19.1
 flatland-rl==2.1.10
+networkx==2.4
