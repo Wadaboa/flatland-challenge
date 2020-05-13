@@ -4,7 +4,10 @@
 
 from flatland.core.grid.grid4 import Grid4TransitionsEnum
 from flatland.core.grid.grid4_utils import mirror, get_new_position
+from flatland.envs.rail_env import RailEnvActions, RailAgentStatus
+
 import networkx as nx
+import matplotlib.pyplot as plt
 
 
 TRANS = [
@@ -22,8 +25,8 @@ class CellOrientationGraph():
     def __init__(self, grid, agents):
         self.grid = grid
         self.agents = agents
-        self._unpacked_graph = None
         self.graph = None
+        self._unpacked_graph = None
         self._dead_ends = set()
         self._straight_rails = set()
 
@@ -36,13 +39,17 @@ class CellOrientationGraph():
     def generate_graph(self):
         edges = self.generate_edges()
         self._unpacked_graph = nx.DiGraph()
-        self._unpacked_graph.add_weighted_edges_from(edges)
+        self._unpacked_graph.add_edges_from(edges)
         nx.freeze(self._unpacked_graph)
         self.graph = nx.DiGraph(self._unpacked_graph)
         self.pack_graph()
         self.set_nodes_attributes()
 
     def pack_graph(self):
+        '''
+        Generate a compact version of the cell orientation graph,
+        by only keeping junctions, targets and dead ends
+        '''
         to_remove = self._straight_rails.difference(
             set(self._targets.keys())
         )
@@ -69,10 +76,22 @@ class CellOrientationGraph():
                             )
                             edge = (
                                 (old_position_x, old_position_y, original_dir.value),
-                                (i, j, final_dir.value), 1
+                                (i, j, final_dir.value),
+                                {
+                                    'weight': 1,
+                                    'action': self.agent_action(original_dir, final_dir)
+                                }
                             )
                             edges.append(edge)
         return edges
+
+    def agent_action(self, original_dir, final_dir):
+        value = (final_dir.value - original_dir.value) % 4
+        if value in (1, -3):
+            return RailEnvActions.MOVE_RIGHT
+        elif value in (-1, 3):
+            return RailEnvActions.MOVE_LEFT
+        return RailEnvActions.MOVE_FORWARD
 
     def set_nodes_attribute(self, positions, name, value, default=None):
         attributes = {}
@@ -108,10 +127,16 @@ class CellOrientationGraph():
             for _, target, data in self.graph.out_edges(node, data=True)
         ]
         new_edges = [
-            (source[0], target[0], source[1]['weight'] + target[1]['weight'])
+            (
+                source[0], target[0],
+                {
+                    'weight': source[1]['weight'] + target[1]['weight'],
+                    'action': target[1]['action']
+                }
+            )
             for source in sources for target in targets
         ]
-        self.graph.add_weighted_edges_from(new_edges)
+        self.graph.add_edges_from(new_edges)
         self.graph.remove_node(node)
 
     def remove_cell(self, position):
@@ -128,13 +153,11 @@ class CellOrientationGraph():
         return nodes
 
     def next_node(self, cell):
-        print(self._unpacked_graph)
         if cell in self.graph.nodes:
             return cell, 0
         weight = 0
         successors = self._unpacked_graph.successors(cell)
         while True:
-            print(successors)
             try:
                 cell = next(successors)
                 weight += 1
@@ -144,3 +167,81 @@ class CellOrientationGraph():
             except StopIteration:
                 break
         return None
+
+    def get_agent_cell(self, handle):
+        agent = self.agents[handle]
+        if agent.status == RailAgentStatus.READY_TO_DEPART:
+            position = (
+                agent.initial_position[0],
+                agent.initial_position[1],
+                agent.initial_direction
+            )
+        elif agent.status == RailAgentStatus.ACTIVE:
+            position = (
+                agent.position[0],
+                agent.position[1],
+                agent.direction
+            )
+        elif agent.status == RailAgentStatus.DONE:
+            position = (
+                agent.target[0],
+                agent.target[1],
+                agent.direction
+            )
+        return position
+
+    def shortest_paths(self, handle):
+        agent = self.agents[handle]
+        position = self.get_agent_cell(handle)
+        source, weight = self.next_node(position)
+        targets = self.get_nodes(agent.target)
+        paths = []
+        for target in targets:
+            try:
+                lenght, path = nx.bidirectional_dijkstra(
+                    self.graph, source, target
+                )
+                path = [position] + path
+                lenght += weight
+                paths.append((lenght, path))
+            except nx.NetworkXNoPath:
+                continue
+        return sorted(paths, key=lambda x: x[0])
+
+    def edges_from_path(self, path):
+        edges = []
+        if path[0] not in self.graph.nodes:
+            fake_weight = nx.dijkstra_path_length(
+                self._unpacked_graph, path[0], path[1]
+            )
+            edges.append((
+                path[0], path[1],
+                {'weight': fake_weight, 'action': RailEnvActions.MOVE_FORWARD}
+            ))
+        edges_attributes = nx.get_edge_attributes(self.graph)
+        for i in range(1, len(path) - 1):
+            edge = (path[i], path[i + 1])
+            edges.append((
+                edge, edges_attributes[edge]
+            ))
+
+    def draw_graph(self):
+        nx.draw(self.graph, with_labels=True)
+        plt.show()
+
+    def draw_unpacked_graph(self):
+        nx.draw(self._unpacked_graph, with_labels=True)
+        plt.show()
+
+    def draw_path(self, path):
+        if path[0] not in self.graph.nodes:
+            path = path[1:]
+        pos = nx.spring_layout(self.graph)
+        nx.draw(self.graph, pos)
+        path_edges = list(zip(path, path[1:]))
+        nx.draw_networkx_nodes(self.graph, pos, nodelist=path, node_color='r')
+        nx.draw_networkx_edges(
+            self.graph, pos, edgelist=path_edges, edge_color='r', width=5
+        )
+        plt.axis('equal')
+        plt.show()

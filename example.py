@@ -60,9 +60,6 @@ railway_encoding = CellOrientationGraph(grid=env.rail.grid, agents=env.agents)
 print(railway_encoding.graph.edges.data())
 print(railway_encoding.graph.nodes.data())
 
-nx.draw(railway_encoding.graph, with_labels=True)
-plt.show()
-
 
 # Initiate the renderer
 env_renderer = RenderTool(env, gl="PILSVG",
@@ -72,7 +69,7 @@ env_renderer = RenderTool(env, gl="PILSVG",
                           screen_width=1000)
 
 env_renderer.render_env(show=True)
-time.sleep(10)
+time.sleep(1000)
 
 # Import your own Agent or use RLlib to train agents on Flatland
 # As an example we use a random agent instead
