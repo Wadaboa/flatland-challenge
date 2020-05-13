@@ -53,3 +53,76 @@ class DistanceMapPredictor(PredictionBuilder):
                 observation[min_index] = 1
 
         return observation
+
+
+class ShortestPathPredictor(PredictionBuilder):
+
+    def __init__(self, max_depth=20):
+        super().__init__(max_depth)
+        self._shortest_paths = {agent.handle: [] for agent in self.env.agents}
+
+    def get_shortest_path(self, handle, position):
+        if position in self._shortest_paths[handle]:
+            return 
+
+    def get(self, handle=None):
+        agents = self.env.agents
+        if handle:
+            agents = [self.env.agents[handle]]
+
+        prediction_dict = {}
+        for agent in agents:
+
+            if agent.status == RailAgentStatus.READY_TO_DEPART:
+                agent_virtual_position = agent.initial_position
+            elif agent.status == RailAgentStatus.ACTIVE:
+                agent_virtual_position = agent.position
+            elif agent.status == RailAgentStatus.DONE:
+                agent_virtual_position = agent.target
+            else:
+
+                prediction = np.zeros(shape=(self.max_depth + 1, 5))
+                for i in range(self.max_depth):
+                    prediction[i] = [i, None, None, None, None]
+                prediction_dict[agent.handle] = prediction
+                continue
+
+            agent_virtual_direction = agent.direction
+            agent_speed = agent.speed_data["speed"]
+            times_per_cell = int(np.reciprocal(agent_speed))
+            prediction = np.zeros(shape=(self.max_depth + 1, 5))
+            prediction[0] = [0, *agent_virtual_position,
+                             agent_virtual_direction, 0]
+
+            shortest_path = shortest_paths[agent.handle]
+
+            # if there is a shortest path, remove the initial position
+            if shortest_path:
+                shortest_path = shortest_path[1:]
+
+            new_direction = agent_virtual_direction
+            new_position = agent_virtual_position
+            visited = OrderedSet()
+            for index in range(1, self.max_depth + 1):
+                # if we're at the target, stop moving until max_depth is reached
+                if new_position == agent.target or not shortest_path:
+                    prediction[index] = [index, *new_position,
+                                         new_direction, RailEnvActions.STOP_MOVING]
+                    visited.add((*new_position, agent.direction))
+                    continue
+
+                if index % times_per_cell == 0:
+                    new_position = shortest_path[0].position
+                    new_direction = shortest_path[0].direction
+
+                    shortest_path = shortest_path[1:]
+
+                # prediction is ready
+                prediction[index] = [index, *new_position, new_direction, 0]
+                visited.add((*new_position, new_direction))
+
+            # TODO: very bady side effects for visualization only: hand the dev_pred_dict back instead of setting on env!
+            self.env.dev_pred_dict[agent.handle] = visited
+            prediction_dict[agent.handle] = prediction
+
+        return prediction_dict

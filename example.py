@@ -12,9 +12,8 @@ from flatland.envs.rail_generators import sparse_rail_generator, complex_rail_ge
 from flatland.envs.schedule_generators import sparse_schedule_generator
 from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
-from flatland.core.grid.grid4 import Grid4TransitionsEnum
-from flatland.core.grid.grid4_utils import mirror, get_new_position
 import networkx as nx
+from railway_encoding import CellOrientationGraph
 
 width = 16
 height = 16
@@ -57,89 +56,11 @@ env = RailEnv(width=width,
 env.reset()
 
 
-TRANS = [Grid4TransitionsEnum.NORTH, Grid4TransitionsEnum.EAST,
-         Grid4TransitionsEnum.SOUTH, Grid4TransitionsEnum.WEST]
-_BITMAP_TO_TRANS = [(t1, t2) for t1 in TRANS for t2 in TRANS]
+railway_encoding = CellOrientationGraph(grid=env.rail.grid, agents=env.agents)
+print(railway_encoding.graph.edges.data())
+print(railway_encoding.graph.nodes.data())
 
-edges = []
-straight_rails = set()
-for i, row in enumerate(env.rail.grid):
-    for j, _ in enumerate(row):
-        if env.rail.grid[i][j] != 0:
-            trans_int = env.rail.grid[i][j]
-            trans_bitmap = format(trans_int, 'b').rjust(16, '0')
-            if trans_bitmap.count('1') == 2:
-                straight_rails.add((i, j))
-            for k, bit in enumerate(trans_bitmap):
-                if bit == '1':
-                    original_dir, final_dir = _BITMAP_TO_TRANS[k]
-                    old_position_x, old_position_y = get_new_position(
-                        [i, j], mirror(original_dir.value)
-                    )
-                    edge = ((
-                        old_position_x, old_position_y, original_dir.value,
-                    ), (
-                        i, j, final_dir.value,
-                    ), 1)
-                    edges.append(edge)
-
-
-def remove_node(graph, node):
-    sources = [(source, data)
-               for source, _, data in graph.in_edges(node, data=True)]
-    targets = [(target, data)
-               for _, target, data in graph.out_edges(node, data=True)]
-    new_edges = [(source[0], target[0], source[1]['weight'] + target[1]['weight'])
-                 for source in sources for target in targets]
-    graph.add_weighted_edges_from(new_edges)
-    graph.remove_node(node)
-    return graph
-
-
-def remove_cell(graph, position):
-    nodes = get_nodes(graph, position)
-    for node in nodes:
-        graph = remove_node(graph, node)
-    return graph
-
-
-def get_nodes(graph, position):
-    nodes = []
-    for direction in TRANS:
-        node = (position[0], position[1], direction.value)
-        if graph.has_node(node):
-            nodes.append(node)
-    return nodes
-
-
-targets = {agent.target for agent in env.agents}
-straight_rails.difference_update(targets)
-graph = nx.DiGraph()
-graph.add_weighted_edges_from(edges)
-
-for straight_rail in straight_rails:
-    graph = remove_cell(graph, straight_rail)
-'''
-nx.set_node_attributes(graph, '0', 'is_dead_end')
-dead_end_attributes = nx.get_node_attributes(graph, 'is_dead_end')
-for straight_rail in straight_rails:
-    if env.rail.is_dead_end(straight_rail):
-        nodes = get_nodes(graph, straight_rail)
-        for node in nodes:
-            dead_end_attributes[node]['is_dead_end'] = '1'
-nx.set_node_attributes(graph, dead_end_attributes)
-
-nx.set_node_attributes(graph, '0', 'is_target')
-target_attributes = nx.get_node_attributes(graph, 'is_target')
-for target in targets:
-    nodes = get_nodes(graph, target)
-    for node in nodes:
-        target_attributes[node]['is_target'] = '1'
-nx.set_node_attributes(graph, target_attributes)
-'''
-print(graph.edges.data())
-print(graph.nodes.data())
-nx.draw(graph, with_labels=True)
+nx.draw(railway_encoding.graph, with_labels=True)
 plt.show()
 
 
