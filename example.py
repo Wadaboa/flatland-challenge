@@ -14,6 +14,8 @@ from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
 import networkx as nx
 from railway_encoding import CellOrientationGraph
+from observations import CustomObservation
+from predictions import ShortestPathPredictor
 
 width = 16
 height = 16
@@ -42,8 +44,8 @@ rail_generator = random_rail_generator(
 # observation_builder = GlobalObsForRailEnv()
 
 # Custom observation builder with predictor, uncomment line below if you want to try this one
-observation_builder = TreeObsForRailEnv(
-    max_depth=2, predictor=ShortestPathPredictorForRailEnv(max_depth=10)
+observation_builder = CustomObservation(
+    predictor=ShortestPathPredictor(max_depth=20)
 )
 
 # Construct the enviornment with the given observation, generataors, predictors, and stochastic data
@@ -56,11 +58,6 @@ env = RailEnv(width=width,
 env.reset()
 
 
-railway_encoding = CellOrientationGraph(grid=env.rail.grid, agents=env.agents)
-print(railway_encoding.graph.edges.data())
-print(railway_encoding.graph.nodes.data())
-
-
 # Initiate the renderer
 env_renderer = RenderTool(env, gl="PILSVG",
                           agent_render_variant=AgentRenderVariant.ONE_STEP_BEHIND,
@@ -69,7 +66,7 @@ env_renderer = RenderTool(env, gl="PILSVG",
                           screen_width=1000)
 
 env_renderer.render_env(show=True)
-time.sleep(1000)
+time.sleep(10)
 
 # Import your own Agent or use RLlib to train agents on Flatland
 # As an example we use a random agent instead
@@ -247,3 +244,4 @@ for step in range(500):
     if done['__all__']:
         break
     print('Episode: Steps {}\t Score = {}'.format(step, score))
+    time.sleep(5)

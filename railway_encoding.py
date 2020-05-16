@@ -208,6 +208,13 @@ class CellOrientationGraph():
                 continue
         return sorted(paths, key=lambda x: x[0])
 
+    def meaningful_subgraph(self, handle):
+        nodes = {}
+        source, _ = self.next_node(self.get_agent_cell(handle))
+        for path in nx.all_simple_paths(self.graph, source, self.agents[handle].target):
+            nodes.update(path)
+        return nx.subgraph(self.graph, nodes)
+
     def edges_from_path(self, path):
         edges = []
         if path[0] not in self.graph.nodes:
@@ -218,12 +225,21 @@ class CellOrientationGraph():
                 path[0], path[1],
                 {'weight': fake_weight, 'action': RailEnvActions.MOVE_FORWARD}
             ))
-        edges_attributes = nx.get_edge_attributes(self.graph)
         for i in range(1, len(path) - 1):
             edge = (path[i], path[i + 1])
-            edges.append((
-                edge, edges_attributes[edge]
-            ))
+            edge_attributes = self.graph.get_edge_data(*edge)
+            edges.append((*edge, edge_attributes))
+        return edges
+
+    def positions_from_path(self, path):
+        positions = []
+        for i in range(0, len(path) - 1):
+            _, mini_path = nx.bidirectional_dijkstra(
+                self._unpacked_graph, path[i], path[i + 1]
+            )
+            mini_path = [(row, col) for row, col, _ in mini_path]
+            positions.extend(mini_path)
+        return positions
 
     def draw_graph(self):
         nx.draw(self.graph, with_labels=True)
