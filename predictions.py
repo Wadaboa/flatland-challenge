@@ -15,17 +15,19 @@ class ShortestPathPredictor(PredictionBuilder):
 
     def get_shortest_path(self, handle):
         position = self.railway_encoding.get_agent_cell(handle)
-        node = self.railway_encoding.next_node(position)
+        node, _ = self.railway_encoding.next_node(position)
         chosen_path = None
         for i, shortest_path in enumerate(self._shortest_paths[handle]):
             lenght, path = shortest_path
             if node == path[1]:
-                lenght -= 1
-                path[0] = position
+                if path[0] != position:
+                    lenght -= 1
+                    path[0] = position
                 if node == position:
                     path = path[1:]
                 if chosen_path is None:
-                    chosen_path = path
+                    chosen_path = lenght, path
+                self._shortest_paths[handle][i] = lenght, path
             else:
                 del self._shortest_paths[handle][i]
 
@@ -63,7 +65,7 @@ class ShortestPathPredictor(PredictionBuilder):
                 edge[2]['distance'] = edge[2]['weight'] * times_per_cell
 
             # Edit positions to account for agent speed
-            positions = []
+            positions = [pos[0]]
             for position in pos[1:]:
                 positions.extend([position] * times_per_cell)
 
@@ -72,9 +74,9 @@ class ShortestPathPredictor(PredictionBuilder):
             visited = OrderedSet()
             if self.max_depth is not None:
                 prediction = lenght, edges, positions[:self.max_depth]
-                visited.update(path[:self.max_depth])
+                visited.update(positions[:self.max_depth])
             else:
-                visited.update(path)
+                visited.update(positions)
 
             # Update GUI
             self.env.dev_pred_dict[agent.handle] = visited

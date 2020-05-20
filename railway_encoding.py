@@ -71,12 +71,12 @@ class CellOrientationGraph():
                     for k, bit in enumerate(trans_bitmap):
                         if bit == '1':
                             original_dir, final_dir = self._BITMAP_TO_TRANS[k]
-                            old_position_x, old_position_y = get_new_position(
-                                [i, j], mirror(original_dir.value)
+                            new_position_x, new_position_y = get_new_position(
+                                [i, j], final_dir.value
                             )
                             edge = (
-                                (old_position_x, old_position_y, original_dir.value),
-                                (i, j, final_dir.value),
+                                (i, j, original_dir.value),
+                                (new_position_x, new_position_y, final_dir.value),
                                 {
                                     'weight': 1,
                                     'action': self.agent_action(original_dir, final_dir)
@@ -131,7 +131,7 @@ class CellOrientationGraph():
                 source[0], target[0],
                 {
                     'weight': source[1]['weight'] + target[1]['weight'],
-                    'action': target[1]['action']
+                    'action': source[1]['action']
                 }
             )
             for source in sources for target in targets
@@ -201,8 +201,9 @@ class CellOrientationGraph():
                 lenght, path = nx.bidirectional_dijkstra(
                     self.graph, source, target
                 )
-                path = [position] + path
-                lenght += weight
+                if position != source:
+                    path = [position] + path
+                    lenght += weight
                 paths.append((lenght, path))
             except nx.NetworkXNoPath:
                 continue
@@ -217,6 +218,7 @@ class CellOrientationGraph():
 
     def edges_from_path(self, path):
         edges = []
+        starting_index = 0
         if path[0] not in self.graph.nodes:
             fake_weight = nx.dijkstra_path_length(
                 self._unpacked_graph, path[0], path[1]
@@ -225,7 +227,8 @@ class CellOrientationGraph():
                 path[0], path[1],
                 {'weight': fake_weight, 'action': RailEnvActions.MOVE_FORWARD}
             ))
-        for i in range(1, len(path) - 1):
+            starting_index = 1
+        for i in range(starting_index, len(path) - 1):
             edge = (path[i], path[i + 1])
             edge_attributes = self.graph.get_edge_data(*edge)
             edges.append((*edge, edge_attributes))
@@ -233,12 +236,13 @@ class CellOrientationGraph():
 
     def positions_from_path(self, path):
         positions = []
+        positions.append((path[0][0], path[0][1]))
         for i in range(0, len(path) - 1):
             _, mini_path = nx.bidirectional_dijkstra(
                 self._unpacked_graph, path[i], path[i + 1]
             )
             mini_path = [(row, col) for row, col, _ in mini_path]
-            positions.extend(mini_path)
+            positions.extend(mini_path[1:])
         return positions
 
     def draw_graph(self):

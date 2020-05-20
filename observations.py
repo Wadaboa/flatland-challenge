@@ -18,7 +18,7 @@ class CustomObservation(ObservationBuilder):
     def __init__(self, predictor):
         super().__init__()
         self.predictor = predictor
-        self.collisions = []
+        self.collisions = dict()
         self.observations = dict()
 
     def reset(self):
@@ -31,7 +31,7 @@ class CustomObservation(ObservationBuilder):
 
     def get_many(self, handles=None):
         self.predictions = self.predictor.get()
-        self.collisions = self.find_collisions()
+        self.find_collisions()
 
         # add malfunctions info
 
@@ -39,23 +39,46 @@ class CustomObservation(ObservationBuilder):
 
     def get(self, handle=0):
         if handle not in self.observations or not self.observations[handle]:
+            '''
             self.observations[handle] = self.railway_encoding.meaningful_subgraph(
                 handle
             )
+            '''
+            pass
+
+        self.observations[handle] = (
+            self.railway_encoding,
+            self.predictions[handle],
+            self.agent_collisions(handle)
+        )
 
         #self.env.dev_obs_dict[handle] = visited
 
         return self.observations[handle]
 
     def find_collisions(self):
-        positions = [pos for _, _, pos in self.predictions.values()]
+        positions = []
+        for pred in self.predictions.values():
+            if pred is not None:
+                _, _, pos = pred
+                positions.append(pos)
+            else:
+                positions.append([(None, None)] * self.predictor.max_depth)
         positions = utils.fill_none(positions, lenght=self.predictor.max_depth)
-        collisions = []
-        for t, col in enumerate(np.array(positions).T):
+        for t, col in enumerate(np.array(positions, dtype='object,object').T):
             dups = utils.duplicates(col)
             if dups:
-                collisions.append((t, dups))
-        return collisions
+                self.collisions[t] = dups
+
+    def agent_collisions(self, handle):
+        meaningful_collisions = dict()
+        for t, dups in self.collisions.items():
+            for pos, agents in dups:
+                if handle in agents:
+                    meaningful_collisions[pos] = (
+                        t, agents.difference_update({handle})
+                    )
+        return meaningful_collisions
 
     def set_env(self, env):
         super().set_env(env)

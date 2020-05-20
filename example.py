@@ -4,8 +4,6 @@ import time
 import itertools
 
 from flatland.envs.malfunction_generators import malfunction_from_params
-from flatland.envs.observations import GlobalObsForRailEnv, TreeObsForRailEnv
-from flatland.envs.predictions import ShortestPathPredictorForRailEnv
 from flatland.envs.rail_env import RailEnv
 from flatland.envs.rail_env import RailEnvActions
 from flatland.envs.rail_generators import sparse_rail_generator, complex_rail_generator, random_rail_generator
@@ -16,6 +14,7 @@ import networkx as nx
 from railway_encoding import CellOrientationGraph
 from observations import CustomObservation
 from predictions import ShortestPathPredictor
+from agents import SimpleAgent
 
 width = 16
 height = 16
@@ -29,7 +28,7 @@ max_rails_between_cities = 3
 # Max number of parallel tracks within a city, representing a realistic trainstation
 max_rails_in_city = 1
 
-
+'''
 rail_generator = sparse_rail_generator(max_num_cities=cities_in_map,
                                        seed=seed,
                                        grid_mode=grid_distribution_of_cities,
@@ -38,8 +37,8 @@ rail_generator = sparse_rail_generator(max_num_cities=cities_in_map,
                                        )
 '''
 rail_generator = random_rail_generator(
-    cell_type_relative_proportion=[1.0] * 11, seed=1)
-'''
+    cell_type_relative_proportion=[1.0] * 11, seed=11)
+
 # Custom observation builder without predictor
 # observation_builder = GlobalObsForRailEnv()
 
@@ -55,57 +54,24 @@ env = RailEnv(width=width,
               number_of_agents=nr_trains,
               obs_builder_object=observation_builder,
               remove_agents_at_target=True)
-env.reset()
-
+observations, _ = env.reset()
+time.sleep(5)
 
 # Initiate the renderer
 env_renderer = RenderTool(env, gl="PILSVG",
-                          agent_render_variant=AgentRenderVariant.ONE_STEP_BEHIND,
+                          agent_render_variant=AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX,
                           show_debug=True,
                           screen_height=1000,
                           screen_width=1000)
 
 env_renderer.render_env(show=True)
-time.sleep(10)
 
 # Import your own Agent or use RLlib to train agents on Flatland
 # As an example we use a random agent instead
 
 
-class RandomAgent:
-
-    def __init__(self, state_size, action_size):
-        self.state_size = state_size
-        self.action_size = action_size
-
-    def act(self, state):
-        """
-        :param state: input is the observation of the agent
-        :return: returns an action
-        """
-        return np.random.choice([RailEnvActions.MOVE_FORWARD, RailEnvActions.MOVE_RIGHT, RailEnvActions.MOVE_LEFT,
-                                 RailEnvActions.STOP_MOVING])
-
-    def step(self, memories):
-        """
-        Step function to improve agent by adjusting policy given the observations
-
-        :param memories: SARS Tuple to be
-        :return:
-        """
-        return
-
-    def save(self, filename):
-        # Store the current policy
-        return
-
-    def load(self, filename):
-        # Load a policy
-        return
-
-
 # Initialize the agent with the parameters corresponding to the environment and observation_builder
-controller = RandomAgent(218, env.action_space[0])
+controller = SimpleAgent(218, env.action_space[0])
 
 # We start by looking at the information of each agent
 # We can see the task assigned to the agent by looking at
@@ -188,18 +154,19 @@ for agent_idx, agent in enumerate(env.agents):
 # an action at every time step as it will only change the outcome when actions are chosen at cell entry.
 # Therefore the environment provides information about what agents need to provide an action in the next step.
 # You can access this in the following way.
-
+'''
 # Chose an action for each agent
 for a in range(env.get_num_agents()):
     action = controller.act(0)
     action_dict.update({a: action})
+
 # Do the environment step
 observations, rewards, dones, information = env.step(action_dict)
 print("\n The following agents can register an action:")
 print("========================================")
 for info in information['action_required']:
     print("Agent {} needs to submit an action.".format(info))
-
+'''
 # We recommend that you monitor the malfunction data and the action required in order to optimize your training
 # and controlling code.
 
@@ -216,7 +183,6 @@ env_renderer.reset()
 
 score = 0
 # Run episode
-frame_step = 0
 
 for step in range(500):
     # Chose an action for each agent in the environment
@@ -226,13 +192,11 @@ for step in range(500):
 
     # Environment step which returns the observations for all agents, their corresponding
     # reward and whether their are done
-
     next_obs, all_rewards, done, _ = env.step(action_dict)
 
     env_renderer.render_env(
         show=True, show_observations=True, show_predictions=True)
 
-    frame_step += 1
     # Update replay buffer and train agent
     for a in range(env.get_num_agents()):
         controller.step(
@@ -244,4 +208,4 @@ for step in range(500):
     if done['__all__']:
         break
     print('Episode: Steps {}\t Score = {}'.format(step, score))
-    time.sleep(5)
+    time.sleep(1)

@@ -10,11 +10,11 @@ def duplicates(arr):
     for i, elem_one in enumerate(arr):
         dup = set()
         for j, elem_two in enumerate(arr[i + 1:]):
-            if elem_one == elem_two and elem_one != np.nan:
+            if elem_one == elem_two and elem_one != None:
                 dup.add(i)
                 dup.add(i + 1 + j)
         if dup:
-            dups.append([elem_one, dup])
+            dups.append((elem_one, dup))
     return dups
 
 
