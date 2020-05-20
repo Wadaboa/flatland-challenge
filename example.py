@@ -18,7 +18,7 @@ from agents import SimpleAgent
 
 width = 16
 height = 16
-nr_trains = 1
+nr_trains = 10
 cities_in_map = 2
 seed = 14
 # Type of city distribution, if False cities are randomly placed
@@ -28,7 +28,7 @@ max_rails_between_cities = 3
 # Max number of parallel tracks within a city, representing a realistic trainstation
 max_rails_in_city = 1
 
-'''
+
 rail_generator = sparse_rail_generator(max_num_cities=cities_in_map,
                                        seed=seed,
                                        grid_mode=grid_distribution_of_cities,
@@ -38,6 +38,7 @@ rail_generator = sparse_rail_generator(max_num_cities=cities_in_map,
 '''
 rail_generator = random_rail_generator(
     cell_type_relative_proportion=[1.0] * 11, seed=11)
+'''
 
 # Custom observation builder without predictor
 # observation_builder = GlobalObsForRailEnv()
@@ -208,4 +209,4 @@ for step in range(500):
     if done['__all__']:
         break
     print('Episode: Steps {}\t Score = {}'.format(step, score))
-    time.sleep(1)
+    time.sleep(10)

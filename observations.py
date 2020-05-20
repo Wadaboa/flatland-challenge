@@ -52,7 +52,7 @@ class CustomObservation(ObservationBuilder):
             self.agent_collisions(handle)
         )
 
-        #self.env.dev_obs_dict[handle] = visited
+        self.env.dev_obs_dict[handle] = OrderedSet()
 
         return self.observations[handle]
 
@@ -61,14 +61,26 @@ class CustomObservation(ObservationBuilder):
         for pred in self.predictions.values():
             if pred is not None:
                 _, _, pos = pred
-                positions.append(pos)
+                positions.append(list(pos))
             else:
-                positions.append([(None, None)] * self.predictor.max_depth)
+                positions.append([None] * self.predictor.max_depth)
         positions = utils.fill_none(positions, lenght=self.predictor.max_depth)
-        for t, col in enumerate(np.array(positions, dtype='object,object').T):
-            dups = utils.duplicates(col)
+        for t, col in enumerate(map(list, zip(*positions))):
+            dups = utils.find_duplicates(col)
             if dups:
                 self.collisions[t] = dups
+
+        self.find_deadlocks(positions)
+
+    def find_deadlocks(self, positions):
+        pos = list(map(list, zip(*positions)))
+        for t, col in enumerate(pos):
+            if t - 1 >= 0:
+                old_col = pos[t - 1]
+                for i, elem in enumerate(col):
+                    dups = utils.find_duplicate(old_col, elem, i)
+                    if dups:
+                        self.collisions[t] = dups
 
     def agent_collisions(self, handle):
         meaningful_collisions = dict()
@@ -76,7 +88,7 @@ class CustomObservation(ObservationBuilder):
             for pos, agents in dups:
                 if handle in agents:
                     meaningful_collisions[pos] = (
-                        t, agents.difference_update({handle})
+                        t, agents.difference({handle})
                     )
         return meaningful_collisions
 

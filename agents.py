@@ -35,6 +35,9 @@ class SimpleAgent:
     def act(self, state):
         print(state)
         _, predictions, _ = state
+        if predictions is None:
+            return RailEnvActions.DO_NOTHING
+
         _, edges, _ = predictions
         _, _, data = edges[0]
         print(data['action'])

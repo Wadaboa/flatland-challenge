@@ -2,19 +2,22 @@
 import numpy as np
 
 
-def duplicates(arr):
+def find_duplicates(arr):
     '''
     Return a list, containing indexes of duplicate elements
     '''
     dups = []
-    for i, elem_one in enumerate(arr):
-        dup = set()
-        for j, elem_two in enumerate(arr[i + 1:]):
-            if elem_one == elem_two and elem_one != None:
-                dup.add(i)
-                dup.add(i + 1 + j)
-        if dup:
-            dups.append((elem_one, dup))
+    for i, elem in enumerate(arr):
+        if elem is not None:
+            dups.extend(find_duplicate(arr, elem, i, starting=i + 1))
+    return dups
+
+
+def find_duplicate(arr, elem, index, starting=0):
+    dups = []
+    for i, elem_one in enumerate(arr[starting:]):
+        if elem_one is not None and i != index and elem_one == elem:
+            dups.append((elem_one, {index, i}))
     return dups
 
 
@@ -22,7 +25,7 @@ def fill_none(mat, lenght):
     '''
     Fill a matrix to have the same number of elements in each row
     '''
-    for row in mat:
+    for i, row in enumerate(mat):
         if len(row) < lenght:
-            row.extend([None] * (len(row) - lenght))
+            mat[i].extend([None] * (lenght - len(row)))
     return mat
