@@ -19,7 +19,9 @@ class ShortestPathPredictor(PredictionBuilder):
         chosen_path = None
         for i, shortest_path in enumerate(self._shortest_paths[handle]):
             lenght, path = shortest_path
-            if node == path[1]:
+            if lenght == 0:
+                chosen_path = lenght, path
+            elif node == path[1]:
                 if path[0] != position:
                     lenght -= 1
                     path[0] = position
@@ -46,7 +48,7 @@ class ShortestPathPredictor(PredictionBuilder):
 
         prediction_dict = {}
         for agent in agents:
-            if agent.status == RailAgentStatus.DONE_REMOVED:
+            if agent.status == RailAgentStatus.DONE_REMOVED or agent.status == RailAgentStatus.DONE:
                 prediction_dict[agent.handle] = None
                 continue
 

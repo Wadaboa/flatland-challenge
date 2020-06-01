@@ -33,14 +33,15 @@ class SimpleAgent:
         self.action_size = action_size
 
     def act(self, state):
-        print(state)
+        # print(state)
         _, predictions, _ = state
         if predictions is None:
             return RailEnvActions.DO_NOTHING
 
         _, edges, _ = predictions
+        if not edges:
+            return RailEnvActions.DO_NOTHING
         _, _, data = edges[0]
-        print(data['action'])
         return data['action']
 
     def step(self, memories):

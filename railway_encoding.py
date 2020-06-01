@@ -37,6 +37,10 @@ class CellOrientationGraph():
         self.generate_graph()
 
     def generate_graph(self):
+        '''
+        Generate both the unpacked and the packed graph and
+        set default attributes to the nodes in the packed graph
+        '''
         edges = self.generate_edges()
         self._unpacked_graph = nx.DiGraph()
         self._unpacked_graph.add_edges_from(edges)
@@ -57,6 +61,9 @@ class CellOrientationGraph():
             self.remove_cell(cell)
 
     def generate_edges(self):
+        '''
+        Translate the environment grid to the unpacked cell orientation graph
+        '''
         edges = []
         for i, row in enumerate(self.grid):
             for j, _ in enumerate(row):
@@ -86,6 +93,10 @@ class CellOrientationGraph():
         return edges
 
     def agent_action(self, original_dir, final_dir):
+        '''
+        Return the action performed by an agent, by analyzing
+        the starting direction and the final direction of the movement
+        '''
         value = (final_dir.value - original_dir.value) % 4
         if value in (1, -3):
             return RailEnvActions.MOVE_RIGHT
@@ -94,6 +105,12 @@ class CellOrientationGraph():
         return RailEnvActions.MOVE_FORWARD
 
     def set_nodes_attribute(self, positions, name, value, default=None):
+        '''
+        Set the attribute "name" to the nodes given in the set "positions",
+        to be "value" (could be a single value or a dictionary indexed by "positions").
+        If the "value" argument is a dictionary, you can give a default value to be set
+        to the nodes which are not present in the set "positions"
+        '''
         attributes = {}
         if default is not None:
             nx.set_node_attributes(self.graph, default, name)
@@ -107,6 +124,9 @@ class CellOrientationGraph():
         nx.set_node_attributes(self.graph, attributes)
 
     def set_nodes_attributes(self):
+        '''
+        Set default attributes for each and every node in the packed graph
+        '''
         self.set_nodes_attribute(
             self._dead_ends, 'is_dead_end', True, default=False
         )
@@ -114,10 +134,21 @@ class CellOrientationGraph():
             set(self._targets.keys()), 'is_target', True, default=False
         )
         self.set_nodes_attribute(
-            set(self._targets.keys()), 'handles', self._targets
+            set(self._targets.keys()), 'target_handles', self._targets
+        )
+        self.set_nodes_attribute(
+            set(self.graph.nodes), 'is_blocked', False
+        )
+        self.set_nodes_attribute(
+            set(self.graph.nodes), 'priority_handles', []
         )
 
     def remove_node(self, node):
+        '''
+        Remove a node from the in-construction packed graph and
+        add an edge between the neighboring nodes, while
+        also propagating edges data
+        '''
         sources = [
             (source, data)
             for source, _, data in self.graph.in_edges(node, data=True)
@@ -145,6 +176,11 @@ class CellOrientationGraph():
             self.remove_node(node)
 
     def get_nodes(self, position):
+        '''
+        Given a position (row, column), return a list
+        of nodes present in the packed graph of the type
+        [(row, column, NORTH), ..., (row, column, WEST)] 
+        '''
         nodes = []
         for direction in TRANS:
             node = (position[0], position[1], direction.value)
@@ -153,6 +189,11 @@ class CellOrientationGraph():
         return nodes
 
     def next_node(self, cell):
+        '''
+        Return the closest node in the packed graph
+        w.r.t. the given cell in the unpacked graph,
+        in the same direction
+        '''
         if cell in self.graph.nodes:
             return cell, 0
         weight = 0
@@ -168,7 +209,35 @@ class CellOrientationGraph():
                 break
         return None
 
+    def previous_node(self, cell):
+        '''
+        Return the closest node in the packed graph
+        w.r.t. the given cell in the unpacked graph,
+        in the opposite direction
+        '''
+        if cell in self.graph.nodes:
+            return cell, 0
+        weight = 0
+        next_node, _ = self.next_node(cell)
+        predecessors = self._unpacked_graph.predecessors(cell)
+        while True:
+            try:
+                cell = next(predecessors)
+                weight += 1
+                if cell in self.graph.nodes:
+                    edge = (cell, next_node)
+                    if edge in self.graph.edges:
+                        return cell, weight
+                predecessors = self._unpacked_graph.predecessors(cell)
+            except StopIteration:
+                break
+        return None
+
     def get_agent_cell(self, handle):
+        '''
+        Return the unpacked graph node in which the agent 
+        identified by the given handle is
+        '''
         agent = self.agents[handle]
         if agent.status == RailAgentStatus.READY_TO_DEPART:
             position = (
@@ -191,6 +260,12 @@ class CellOrientationGraph():
         return position
 
     def shortest_paths(self, handle):
+        '''
+        Compute the shortest paths from the current position and direction,
+        to the target of the agent identified by the given handle,
+        considering every possibile target arrival direction.
+        The shortest paths are then ordered by increasing lenght
+        '''
         agent = self.agents[handle]
         position = self.get_agent_cell(handle)
         source, weight = self.next_node(position)
@@ -210,6 +285,10 @@ class CellOrientationGraph():
         return sorted(paths, key=lambda x: x[0])
 
     def meaningful_subgraph(self, handle):
+        '''
+        Return the subgraph which could be visited by the agent
+        identified by the given handle
+        '''
         nodes = {}
         source, _ = self.next_node(self.get_agent_cell(handle))
         for path in nx.all_simple_paths(self.graph, source, self.agents[handle].target):
@@ -217,6 +296,10 @@ class CellOrientationGraph():
         return nx.subgraph(self.graph, nodes)
 
     def edges_from_path(self, path):
+        '''
+        Given a path in the packed graph as a sequence of nodes,
+        return the corresponding sequence of edges
+        '''
         edges = []
         starting_index = 0
         if path[0] not in self.graph.nodes:
@@ -235,6 +318,10 @@ class CellOrientationGraph():
         return edges
 
     def positions_from_path(self, path):
+        '''
+        Given a path in the packed graph, return the corresponding
+        path in the unpacked graph, without the direction component
+        '''
         positions = []
         positions.append((path[0][0], path[0][1]))
         for i in range(0, len(path) - 1):
@@ -245,15 +332,63 @@ class CellOrientationGraph():
             positions.extend(mini_path[1:])
         return positions
 
+    def different_direction_nodes(self, node):
+        '''
+        Given a node, described by row, column and direction,
+        return every other node in the packed graph with
+        a different direction component
+        '''
+        nodes = []
+        row, col, direction = node
+        for new_direction in range(len(TRANS)):
+            new_node = (row, col, new_direction)
+            if new_node != node and new_node in self.graph:
+                nodes.append(new_node)
+        return nodes
+
+    def reserve_edge(self, edge, handle):
+        '''
+        '''
+        s_node, e_node, _ = edge
+        self.graph.nodes[s_node]['priority_handles'].append(handle)
+        self.graph.nodes[e_node]['priority_handles'].append(handle)
+        other_nodes = []
+        if len(self.graph.nodes[s_node]['priority_handles']) <= 1:
+            other_nodes.extend(self.different_direction_nodes(s_node))
+        if len(self.graph.nodes[e_node]['priority_handles']) <= 1:
+            other_nodes.extend(self.different_direction_nodes(e_node))
+        for other_node in other_nodes:
+            self.graph.nodes[other_node]['is_blocked'] = True
+
+    def unreserve_edge(self, edge, handle):
+        '''
+        '''
+        s_node, _, _ = edge
+        self.graph.nodes[s_node]['priority_handles'].remove(handle)
+        if not self.graph.nodes[s_node]['priority_handles']:
+            other_nodes = self.different_direction_nodes(s_node)
+            for other_node in other_nodes:
+                self.graph.nodes[other_node]['is_blocked'] = False
+
     def draw_graph(self):
+        '''
+        Show the packed graph, with labels on nodes
+        '''
         nx.draw(self.graph, with_labels=True)
         plt.show()
 
     def draw_unpacked_graph(self):
+        '''
+        Show the unpacked graph, with labels on nodes
+        '''
         nx.draw(self._unpacked_graph, with_labels=True)
         plt.show()
 
     def draw_path(self, path):
+        '''
+        Show a path in the packed graph, where edges belonging
+        to the path are colored in red
+        '''
         if path[0] not in self.graph.nodes:
             path = path[1:]
         pos = nx.spring_layout(self.graph)

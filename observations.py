@@ -25,6 +25,7 @@ class CustomObservation(ObservationBuilder):
         self.railway_encoding = CellOrientationGraph(
             grid=self.env.rail.grid, agents=self.env.agents
         )
+        print(self.railway_encoding.graph.edges.data())
         if self.predictor:
             self.predictor.set_railway_encoding(self.railway_encoding)
             self.predictor.reset()
@@ -57,6 +58,9 @@ class CustomObservation(ObservationBuilder):
         return self.observations[handle]
 
     def find_collisions(self):
+        '''
+        Check for future crashes and deadlocks
+        '''
         positions = []
         for pred in self.predictions.values():
             if pred is not None:
@@ -73,6 +77,9 @@ class CustomObservation(ObservationBuilder):
         self.find_deadlocks(positions)
 
     def find_deadlocks(self, positions):
+        '''
+        Check for future deadlocks
+        '''
         pos = list(map(list, zip(*positions)))
         for t, col in enumerate(pos):
             if t - 1 >= 0:
@@ -83,6 +90,9 @@ class CustomObservation(ObservationBuilder):
                         self.collisions[t] = dups
 
     def agent_collisions(self, handle):
+        '''
+        Re-index collisions based on agent handles
+        '''
         meaningful_collisions = dict()
         for t, dups in self.collisions.items():
             for pos, agents in dups:

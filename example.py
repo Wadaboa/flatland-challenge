@@ -18,7 +18,7 @@ from agents import SimpleAgent
 
 width = 16
 height = 16
-nr_trains = 10
+nr_trains = 3
 cities_in_map = 2
 seed = 14
 # Type of city distribution, if False cities are randomly placed
@@ -37,7 +37,7 @@ rail_generator = sparse_rail_generator(max_num_cities=cities_in_map,
                                        )
 '''
 rail_generator = random_rail_generator(
-    cell_type_relative_proportion=[1.0] * 11, seed=11)
+    cell_type_relative_proportion=[1.0] * 11, seed=31)
 '''
 
 # Custom observation builder without predictor
