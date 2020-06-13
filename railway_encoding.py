@@ -1,6 +1,7 @@
 '''
 '''
 
+import heapq
 
 from flatland.core.grid.grid4 import Grid4TransitionsEnum
 from flatland.core.grid.grid4_utils import mirror, get_new_position
@@ -16,6 +17,9 @@ TRANS = [
     Grid4TransitionsEnum.SOUTH,
     Grid4TransitionsEnum.WEST
 ]
+
+
+# Try to add non-directional graph
 
 
 class CellOrientationGraph():
@@ -258,6 +262,52 @@ class CellOrientationGraph():
                 agent.direction
             )
         return position
+
+    def get_neighboring_agents_same_direction(self, handle, max_agents=10):
+        neighbors = [-1] * max_agents
+        position = self.get_agent_cell(handle)
+        node, distance = self.next_node(position)
+        node_successors = [node]
+        if distance == 0:
+            node_successors.append(
+                self.graph.successors(node)
+            )
+        i = 0
+        for agent in range(len(self.agents)):
+            if agent != handle:
+                other_position = self.get_agent_cell(agent)
+                other_node, other_distance = self.next_node(other_position)
+                if other_node in node_successors:
+                    neighbors[i] = agent
+                    i += 1
+                if i == max_agents:
+                    break
+        return neighbors
+
+    def get_neighboring_agents_opposite_direction(self, handle, max_agents=10):
+        neighbors = []
+        position = self.get_agent_cell(handle)
+        node, distance = self.next_node(position)
+        node_successors = []
+        if distance == 0:
+            for succ in self.graph.successors(node):
+                node_successors.extend(
+                    self.get_nodes((succ[0], succ[1]))
+                )
+                node_successors.remove(succ)
+        else:
+            node_successors = self.get_nodes(position)
+            node_successors.remove(node)
+        i = 0
+        for agent in range(len(self.agents)):
+            other_position = self.get_agent_cell(agent)
+            other_node, _ = self.next_node(other_position)
+            if other_node in node_successors:
+                neighbors[i] = agent
+                i += 1
+            if i == max_agents:
+                break
+        return neighbors
 
     def shortest_paths(self, handle):
         '''

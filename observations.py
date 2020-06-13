@@ -13,6 +13,24 @@ import utils
 from railway_encoding import CellOrientationGraph
 
 
+# Observations
+'''
+- Agent handle
+- Agent status
+- Agent speed
+- Agent moving
+- Shortest path action
+- Shortest path distance
+- Deviation path action
+- Deviation path distance
+- Neighboring agents in the same direction (in the packed graph)
+- Distance from neighboring agents in the same direction (in the packed graph)
+- Neighboring agents in the opposite direction (in the packed graph)
+- Distance from neighboring agents in the opposite direction (in the packed graph)
+- Number of conflicts in the shortest path
+'''
+
+
 class CustomObservation(ObservationBuilder):
 
     def __init__(self, predictor):
@@ -47,10 +65,28 @@ class CustomObservation(ObservationBuilder):
             '''
             pass
 
+        shortest_path_lenght, edges, _ = self.predictions[handle]
+        shortest_path_action = edges[0][-1]['action']
+        neighbors_same_direction = self.railway_encoding.get_neighboring_agents_same_direction(
+            handle
+        )
+        neighbors_opposite_direction = self.railway_encoding.get_neighboring_agents_opposite_direction(
+            handle
+        )
         self.observations[handle] = (
-            self.railway_encoding,
-            self.predictions[handle],
-            self.agent_collisions(handle)
+            handle,
+            self.env.agents[handle].status,
+            self.env.agents[handle].speed_data["speed"],
+            self.env.agents[handle].moving,
+            shortest_path_action,
+            shortest_path_lenght,
+            # deviation path action
+            # deviation path lenght
+            neighbors_same_direction,
+            neighbors_opposite_direction,
+            # distance neighbors same direction
+            # distance neighbors opposite direction
+            # number of conflicts
         )
 
         self.env.dev_obs_dict[handle] = OrderedSet()

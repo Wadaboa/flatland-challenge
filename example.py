@@ -28,6 +28,10 @@ max_rails_between_cities = 3
 # Max number of parallel tracks within a city, representing a realistic trainstation
 max_rails_in_city = 1
 
+max_nr_trains = 400
+max_width = 150
+max_height = 150
+
 
 rail_generator = sparse_rail_generator(max_num_cities=cities_in_map,
                                        seed=seed,
@@ -180,7 +184,6 @@ env_renderer.reset()
 
 # Here you can also further enhance the provided observation by means of normalization
 # See training navigation example in the baseline repository
-
 
 score = 0
 # Run episode

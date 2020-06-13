@@ -92,10 +92,32 @@ class MLP(nn.Module):
         return x
 
 
+class Input(nn.module):
+
+    def __init__(self, shape):
+        super(Input, self).__init__()
+        self.shape = shape
+
+    def forward(self, inp):
+        if inp.size() == self.shape:
+            return inp
+        return None
+
+
 class Flatten(nn.Module):
 
-    def forward(self, input):
-        return input.view(input.size(0), -1)
+    def forward(self, inp):
+        return inp.view(inp.size(0), -1)
+
+
+class Lambda(nn.Module):
+
+    def __init__(self, func):
+        super(Lambda, self).__init__()
+        self.func = func
+
+    def forward(self, x):
+        return self.func(x)
 
 
 class QNet(nn.Module):
@@ -114,43 +136,7 @@ class QNet(nn.Module):
         return x
 
 
-######build the model#########
-neighbors = 4
-action_space = 4
-n_data = 20
-encoder = MLP()
-m1, m1_r = MultiheadAttention(embed_dim=128, num_heads=neighbors)
-m2, m2_r = MultiheadAttention(embed_dim=128, num_heads=neighbors)
-q_net = QNet(action_dim=action_space)
-vec = np.zeros((1, neighbors))
-vec[0][0] = 1
-
-In = []
-for j in range(n_data):
-    In.append(Input(shape=[len_feature]))
-    In.append(Input(shape=(neighbors, n_data)))
-In.append(Input(shape=(1, neighbors)))
-feature = []
-for j in range(n_data):
-    feature.append(encoder(In[j*2]))
-
-feature_ = Concatenate(axis=1)(feature)
-
-relation1 = []
-for j in range(n_data):
-    T = Lambda(lambda x: K.batch_dot(x[0], x[1]))([In[j*2+1], feature_])
-    relation1.append(m1([T, T, T, In[n_data*2]]))
-
-relation1_ = Concatenate(axis=1)(relation1)
-
-relation2 = []
-for j in range(n_data):
-    T = Lambda(lambda x: K.batch_dot(x[0], x[1]))([In[j*2+1], relation1_])
-    relation2.append(m2([T, T, T, In[n_data*2]]))
-
-V = []
-for j in range(n_data):
-    V.append(q_net([feature[j], relation1[j], relation2[j]]))
-
-model = Model(input=In, output=V)
-model.compile(optimizer=Adam(lr=0.0001), loss='mse')
+def batch_dot(a, b):
+    B = a.shape[0]
+    S = a.shape[1]
+    return torch.bmm(a.view(B, 1, S), b.view(B, S, 1)).reshape(-1)
