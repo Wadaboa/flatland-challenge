@@ -242,6 +242,7 @@ class CellOrientationGraph():
         Return the unpacked graph node in which the agent 
         identified by the given handle is
         '''
+        position = None
         agent = self.agents[handle]
         if agent.status == RailAgentStatus.READY_TO_DEPART:
             position = (

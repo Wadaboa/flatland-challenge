@@ -77,6 +77,7 @@ env_renderer.render_env(show=True)
 
 # Initialize the agent with the parameters corresponding to the environment and observation_builder
 controller = SimpleAgent(218, env.action_space[0])
+#controller = RandomAgent(218, env.action_space[0])
 
 # We start by looking at the information of each agent
 # We can see the task assigned to the agent by looking at
@@ -212,4 +213,4 @@ for step in range(500):
     if done['__all__']:
         break
     print('Episode: Steps {}\t Score = {}'.format(step, score))
-    time.sleep(10)
+    time.sleep(1)

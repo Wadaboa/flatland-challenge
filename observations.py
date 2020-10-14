@@ -19,9 +19,9 @@ from railway_encoding import CellOrientationGraph
 - Agent status
 - Agent speed
 - Agent moving
-- Shortest path action
+- Shortest path action (one-hot encoding)
 - Shortest path distance
-- Deviation path action
+- Deviation path action (one-hot encoding)
 - Deviation path distance
 - Neighboring agents in the same direction (in the packed graph)
 - Distance from neighboring agents in the same direction (in the packed graph)
@@ -67,12 +67,14 @@ class CustomObservation(ObservationBuilder):
 
         shortest_path_lenght, edges, _ = self.predictions[handle]
         shortest_path_action = edges[0][-1]['action']
+        '''
         neighbors_same_direction = self.railway_encoding.get_neighboring_agents_same_direction(
             handle
         )
         neighbors_opposite_direction = self.railway_encoding.get_neighboring_agents_opposite_direction(
             handle
         )
+        '''
         self.observations[handle] = (
             handle,
             self.env.agents[handle].status,
@@ -82,8 +84,8 @@ class CustomObservation(ObservationBuilder):
             shortest_path_lenght,
             # deviation path action
             # deviation path lenght
-            neighbors_same_direction,
-            neighbors_opposite_direction,
+            # neighbors_same_direction,
+            # neighbors_opposite_direction,
             # distance neighbors same direction
             # distance neighbors opposite direction
             # number of conflicts
