@@ -130,3 +130,5 @@ dmypy.json
 
 checkpoints/
 runs/
+.vscode/
+tmp/

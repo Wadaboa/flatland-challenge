@@ -30,6 +30,28 @@ from railway_encoding import CellOrientationGraph
 - Number of conflicts in the shortest path
 '''
 
+#TODO
+'''
+    -Graph:
+        - Divide intersection nodes on arrival direction
+        -
+    - Observation:
+        - Structure:
+            - Shortest path cut on the 5th node
+            - Foreach node on Shortest path alternative route lenght max 5
+        - Features node:
+            - Num. agents on the previous path in the same direction
+            - Min distance agent on the previous path in the same direction from agent root
+            - Num. agents on the previous path in the opposite direction
+            - Min distance agent on the previous path in the opposite direction from agent root
+            - Distance from the target
+            - Num. agents using the node to reach their target in the shortest path
+            - Distance from the root agent and a possible conflict with another agent in the previous path
+            - Deadlock probabily in the previous path
+            - Number of agent malfunctioning in the previous path
+            - Turns to wait blocked if there is an agent on path malfunctioning (difference between malfunction time and distance)
+'''
+
 
 class CustomObservation(ObservationBuilder):
 
@@ -44,6 +66,7 @@ class CustomObservation(ObservationBuilder):
             grid=self.env.rail.grid, agents=self.env.agents
         )
         print(self.railway_encoding.graph.edges.data())
+        # self.railway_encoding.draw_graph()
         if self.predictor:
             self.predictor.set_railway_encoding(self.railway_encoding)
             self.predictor.reset()

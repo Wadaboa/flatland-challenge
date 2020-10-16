@@ -20,7 +20,7 @@ from flatland.envs.rail_generators import sparse_rail_generator
 from flatland.envs.schedule_generators import sparse_schedule_generator
 from flatland.envs.observations import TreeObsForRailEnv
 
-from flatland.envs.malfunction_generators import malfunction_from_params
+from flatland.envs.malfunction_generators import ParamMalfunctionGen, MalfunctionParameters
 from flatland.envs.predictions import ShortestPathPredictorForRailEnv
 
 base_dir = Path(__file__).resolve().parent.parent
@@ -45,10 +45,11 @@ def create_rail_env(env_params, tree_observation):
     seed = env_params.seed
 
     # Break agents from time to time
-    malfunction_parameters = {'malfunction_rate': env_params.malfunction_rate,  # Rate of malfunction occurence of single agent
-                              'min_duration': 20,  # Minimal duration of malfunction
-                              'max_duration': 50  # Max duration of malfunction
-                              }
+    malfunction_parameters = MalfunctionParameters(
+        malfunction_rate = env_params.malfunction_rate,  # Rate of malfunction occurence of single agent
+        min_duration = 20,  # Minimal duration of malfunction
+        max_duration = 50  # Max duration of malfunction
+    )
 
     return RailEnv(
         width=x_dim, height=y_dim,
@@ -60,8 +61,7 @@ def create_rail_env(env_params, tree_observation):
         ),
         schedule_generator=sparse_schedule_generator(),
         number_of_agents=n_agents,
-        malfunction_generator_and_process_data=malfunction_from_params(
-            malfunction_parameters),
+        malfunction_generator=ParamMalfunctionGen(malfunction_parameters),
         obs_builder_object=tree_observation,
         random_seed=seed
     )
@@ -113,7 +113,7 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
 
     # Setup renderer
     if train_params.render:
-        env_renderer = RenderTool(train_env, gl="PGL")
+        env_renderer = RenderTool(train_env)
 
     # Calculate the state size given the depth of the tree observation and the number of features
     n_features_per_node = train_env.obs_builder.observation_dim
@@ -427,7 +427,8 @@ def eval_policy(env, policy, train_params, obs_params):
                 if obs[agent]:
                     agent_obs[agent] = normalize_observation(
                         obs[agent], tree_depth=tree_depth, observation_radius=observation_radius)
-
+                if step == 0:
+                    print(agent_obs[agent].shape)
                 action = 0
                 if info['action_required'][agent]:
                     action = policy.act(agent_obs[agent], eps=0.0)
@@ -505,6 +506,17 @@ if __name__ == "__main__":
     training_params = parser.parse_args()
 
     env_params = [
+        {
+            # Test Medium size 5 agent no malfunction same speed
+            "n_agents": 5,
+            "x_dim": 16*3,
+            "y_dim": 9*3,
+            "n_cities": 2,
+            "max_rails_between_cities": 2,
+            "max_rails_in_city": 3,
+            "malfunction_rate": 0,
+            "seed": 14
+        },
         {
             # Test_0
             "n_agents": 5,
