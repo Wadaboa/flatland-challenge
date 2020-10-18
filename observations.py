@@ -30,7 +30,7 @@ from railway_encoding import CellOrientationGraph
 - Number of conflicts in the shortest path
 '''
 
-#TODO
+# TODO
 '''
     -Graph:
         - Divide intersection nodes on arrival direction
@@ -73,7 +73,7 @@ class CustomObservation(ObservationBuilder):
 
     def get_many(self, handles=None):
         # If malfunctioning do not call predictor
-        self.predictions = self.predictor.get()
+        self.predictions = self.predictor.get_many()
         self.find_collisions()
 
         # add malfunctions info
@@ -88,7 +88,7 @@ class CustomObservation(ObservationBuilder):
             )
             '''
             pass
-        
+
         self.observations[handle] = None
         if self.predictions[handle] is not None:
             shortest_path_lenght, edges, _ = self.predictions[handle]

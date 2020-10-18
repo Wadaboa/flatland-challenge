@@ -14,7 +14,7 @@ from flatland.envs.rail_env import RailEnv
 from flatland.envs.rail_env import RailEnvActions
 from flatland.envs.rail_generators import rail_from_manual_specifications_generator, sparse_rail_generator
 #from flatland.envs.sparse_rail_gen import SparseRailGen
-from flatland.envs.schedule_generators import sparse_schedule_generator
+from flatland.envs.schedule_generators import random_schedule_generator
 # We also include a renderer because we want to visualize what is going on in the environment
 from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
@@ -44,9 +44,12 @@ height = 4  # Height of map
 nr_trains = 1  # Number of trains that have an assigned task in the env
 cities_in_map = 1  # Number of cities where agents can start or end
 seed = 14  # Random seed
-grid_distribution_of_cities = False  # Type of city distribution, if False cities are randomly placed
-max_rails_between_cities = 2  # Max number of tracks allowed between cities. This is number of entry point to a city
-max_rail_in_cities = 6  # Max number of parallel tracks within a city, representing a realistic trainstation
+# Type of city distribution, if False cities are randomly placed
+grid_distribution_of_cities = False
+# Max number of tracks allowed between cities. This is number of entry point to a city
+max_rails_between_cities = 2
+# Max number of parallel tracks within a city, representing a realistic trainstation
+max_rail_in_cities = 6
 
 
 specs = [[(0, 0), (7, 0), (0, 0), (0, 0), (0, 0), (0, 0)],
@@ -57,14 +60,14 @@ specs = [[(0, 0), (7, 0), (0, 0), (0, 0), (0, 0), (0, 0)],
 
 rail_generator = rail_from_manual_specifications_generator(specs)
 
-#rail_generator = sparse_rail_generator(max_num_cities=cities_in_map,
+# rail_generator = sparse_rail_generator(max_num_cities=cities_in_map,
 #                                       seed=seed,
 #                                       grid_mode=grid_distribution_of_cities,
 #                                       max_rails_between_cities=max_rails_between_cities,
 #                                       max_rails_in_city=max_rail_in_cities,
 #                                       )
 
-#rail_generator = SparseRailGen(max_num_cities=cities_in_map,
+# rail_generator = SparseRailGen(max_num_cities=cities_in_map,
 #                                       seed=seed,
 #                                       grid_mode=grid_distribution_of_cities,
 #                                       max_rails_between_cities=max_rails_between_cities,
@@ -77,14 +80,11 @@ rail_generator = rail_from_manual_specifications_generator(specs)
 # distribution of speed profiles
 
 # Different agent types (trains) with different speeds.
-speed_ration_map = {1.: 0.25,  # Fast passenger train
-                    1. / 2.: 0.25,  # Fast freight train
-                    1. / 3.: 0.25,  # Slow commuter train
-                    1. / 4.: 0.25}  # Slow freight train
+speed_ration_map = {1. / 2: 0.5, 1. / 3: 0.5}
 
 # We can now initiate the schedule generator with the given speed profiles
 
-schedule_generator = sparse_schedule_generator(speed_ration_map)
+schedule_generator = random_schedule_generator(speed_ration_map)
 
 # We can furthermore pass stochastic data to the RailEnv constructor which will allow for stochastic malfunctions
 # during an episode.
@@ -99,18 +99,19 @@ stochastic_data = MalfunctionParameters(malfunction_rate=1/10000,  # Rate of mal
 # Custom observation builder with predictor, uncomment line below if you want to try this one
 #observation_builder = TreeObsForRailEnv(max_depth=2, predictor=ShortestPathPredictorForRailEnv())
 
-observation_builder=CustomObservation(predictor=ShortestPathPredictor(max_depth=20))
+observation_builder = CustomObservation(
+    predictor=ShortestPathPredictor(max_depth=20))
 # Construct the enviornment with the given observation, generataors, predictors, and stochastic data
 env = RailEnv(width=width,
               height=height,
               rail_generator=rail_generator,
-              #schedule_generator=schedule_generator,
+              schedule_generator=schedule_generator,
               number_of_agents=nr_trains,
               obs_builder_object=observation_builder,
-              #malfunction_generator_and_process_data=malfunction_from_params(stochastic_data),
-              #malfunction_generator=ParamMalfunctionGen(stochastic_data),
+              # malfunction_generator_and_process_data=malfunction_from_params(stochastic_data),
+              # malfunction_generator=ParamMalfunctionGen(stochastic_data),
               remove_agents_at_target=True)
-env.reset()
+observations, _ = env.reset()
 
 # Initiate the renderer
 env_renderer = RenderTool(env,
@@ -123,8 +124,8 @@ env_renderer = RenderTool(env,
 # The first thing we notice is that some agents don't have feasible paths to their target.
 # We first look at the map we have created
 
-#env_renderer.render_env(show=True)
-#time.sleep(2)
+# env_renderer.render_env(show=True)
+# time.sleep(2)
 # Import your own Agent or use RLlib to train agents on Flatland
 # As an example we use a random agent instead
 class RandomAgent:
@@ -138,8 +139,8 @@ class RandomAgent:
         :param state: input is the observation of the agent
         :return: returns an action
         """
-        return np.random.choice([RailEnvActions.MOVE_FORWARD, RailEnvActions.MOVE_RIGHT, RailEnvActions.MOVE_LEFT,
-                                 RailEnvActions.STOP_MOVING])
+        print(state)
+        return state[4]
 
     def step(self, memories):
         """
@@ -190,7 +191,8 @@ print("=====================================================")
 for agent_idx, agent in enumerate(env.agents):
     for agent_2_idx, agent2 in enumerate(env.agents):
         if agent_idx != agent_2_idx and agent.initial_position == agent2.initial_position:
-            print("Agent {} as the same initial position as agent {}".format(agent_idx, agent_2_idx))
+            print("Agent {} as the same initial position as agent {}".format(
+                agent_idx, agent_2_idx))
             agents_with_same_start.add(agent_idx)
 
 # Lets try to enter with all of these agents at the same time
@@ -244,6 +246,7 @@ for agent_idx, agent in enumerate(env.agents):
 # You can access this in the following way.
 
 # Chose an action for each agent
+'''
 for a in range(env.get_num_agents()):
     action = controller.act(0)
     action_dict.update({a: action})
@@ -253,6 +256,7 @@ print("\n The following agents can register an action:")
 print("========================================")
 for info in information['action_required']:
     print("Agent {} needs to submit an action.".format(info))
+'''
 
 # We recommend that you monitor the malfunction data and the action required in order to optimize your training
 # and controlling code.
@@ -285,13 +289,15 @@ for step in range(500):
     next_obs, all_rewards, done, _ = env.step(action_dict)
     print(f'{next_obs}\n')
 
-    env_renderer.render_env(show=True, show_observations=False, show_predictions=False)
+    env_renderer.render_env(
+        show=True, show_observations=False, show_predictions=False)
     time.sleep(5)
-    #env_renderer.gl.save_image('tmp/frames/flatland_frame_{:04d}.png'.format(step))
+    # env_renderer.gl.save_image('tmp/frames/flatland_frame_{:04d}.png'.format(step))
     frame_step += 1
     # Update replay buffer and train agent
     for a in range(env.get_num_agents()):
-        controller.step((observations[a], action_dict[a], all_rewards[a], next_obs[a], done[a]))
+        controller.step(
+            (observations[a], action_dict[a], all_rewards[a], next_obs[a], done[a]))
         score += all_rewards[a]
 
     observations = next_obs.copy()

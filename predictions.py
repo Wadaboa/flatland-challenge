@@ -1,3 +1,4 @@
+from networkx.algorithms.distance_measures import periphery
 import numpy as np
 
 from flatland.core.env_prediction_builder import PredictionBuilder
@@ -11,7 +12,14 @@ class ShortestPathPredictor(PredictionBuilder):
         super().__init__(max_depth)
 
     def reset(self):
-        self._shortest_paths = {agent.handle: [] for agent in self.env.agents}
+        '''
+        Initialize shortest paths for each agent
+        '''
+        self._shortest_paths = dict()
+        for agent in self.env.agents:
+            self._shortest_paths[agent.handle] = self.railway_encoding.shortest_paths(
+                agent.handle
+            )
 
     def get_shortest_path(self, handle):
         '''
@@ -65,51 +73,59 @@ class ShortestPathPredictor(PredictionBuilder):
 
         return chosen_path
 
-    def get(self, handle=None):
-        agents = self.env.agents
-        if handle is not None:
-            agents = [self.env.agents[handle]]
-
+    def get_many(self):
+        '''
+        Build the prediction for every agent
+        '''
         prediction_dict = {}
-        for agent in agents:
-            if agent.status == RailAgentStatus.DONE_REMOVED or agent.status == RailAgentStatus.DONE:
-                prediction_dict[agent.handle] = None
-                continue
-
-            # Consider agent speed
-            position = self.railway_encoding.get_agent_cell(agent.handle)
-            agent_speed = agent.speed_data["speed"]
-            times_per_cell = int(np.reciprocal(agent_speed))
-
-            # Get the shortest path
-            lenght, path = self.get_shortest_path(agent.handle)
-            edges = self.railway_encoding.edges_from_path(path)
-            pos = self.railway_encoding.positions_from_path(path)
-
-            # Edit weights to account for agent speed
-            for edge in edges:
-                edge[2]['distance'] = edge[2]['weight'] * times_per_cell
-
-            # Edit positions to account for agent speed
-            positions = [pos[0]]
-            for position in pos[1:]:
-                positions.extend([position] * times_per_cell)
-
-            # Limit the number of returned positions
-            prediction = lenght, edges, positions
-            visited = OrderedSet()
-            if self.max_depth is not None:
-                prediction = lenght, edges, positions[:self.max_depth]
-                visited.update(positions[:self.max_depth])
-            else:
-                visited.update(positions)
-
-            # Update GUI
-            self.env.dev_pred_dict[agent.handle] = visited
-
-            prediction_dict[agent.handle] = prediction
-
+        for agent in self.env.agents:
+            prediction_dict[agent.handle] = self.get(agent.handle)
         return prediction_dict
+
+    def get(self, handle):
+        '''
+        Build the prediction for the given agent
+        '''
+        agent = self.env.agents[handle]
+        if agent.status == RailAgentStatus.DONE_REMOVED or agent.status == RailAgentStatus.DONE:
+            return None
+
+        # Consider agent speed
+        position = self.railway_encoding.get_agent_cell(handle)
+        agent_speed = agent.speed_data["speed"]
+        times_per_cell = int(np.reciprocal(agent_speed))
+        remaining_steps = int(
+            (1 - agent.speed_data["position_fraction"]) / agent_speed
+        )
+
+        # Get the shortest path
+        lenght, path = self.get_shortest_path(handle)
+        edges = self.railway_encoding.edges_from_path(path)
+        pos = self.railway_encoding.positions_from_path(path)
+
+        # Edit weights to account for agent speed
+        for edge in edges:
+            edge[2]['distance'] = edge[2]['weight'] * times_per_cell
+        edges[0][2]['distance'] -= (times_per_cell - remaining_steps)
+
+        # Edit positions to account for agent speed
+        positions = [pos[0]] * (remaining_steps)
+        for position in pos[1:]:
+            positions.extend([position] * times_per_cell)
+
+        # Limit the number of returned positions
+        prediction = lenght, edges, positions
+        visited = OrderedSet()
+        if self.max_depth is not None:
+            prediction = lenght, edges, positions[:self.max_depth]
+            visited.update(positions[:self.max_depth])
+        else:
+            visited.update(positions)
+
+        # Update GUI
+        self.env.dev_pred_dict[handle] = visited
+
+        return prediction
 
     def set_env(self, env):
         super().set_env(env)
