@@ -72,13 +72,49 @@ class ShortestPathPredictor(PredictionBuilder):
 
         return chosen_path
 
+    def get_deviation_paths(self, handle, path):
+        '''
+        Return one deviation path for at most `max_depth` nodes in the given path
+        and limit the computed path lenghts by `max_depth`
+        '''
+        start = 0
+        depth = min(self.max_depth or len(path), len(path))
+        deviation_paths = dict()
+        source, _ = self.railway_encoding.next_node(path[0])
+        if source != path[0]:
+            start = 1
+            deviation_paths = {path[0]: []}
+        for i in range(start, depth - 1):
+            paths = self.railway_encoding.deviation_paths(
+                self, handle, path[i], path[i + 1]
+            )
+            deviation_path = []
+            length = 0
+            if paths:
+                deviation_path = paths[0][1]
+                length = paths[0][0]
+            edges = self.railway_encoding.edges_from_path(
+                deviation_path[:self.max_depth]
+            )
+            pos = self.railway_encoding.positions_from_path(
+                deviation_path[:self.max_depth]
+            )
+            deviation_paths[path[i]] = (
+                length, deviation_path[:self.max_depth],
+                edges, pos
+            )
+
+        return deviation_paths
+
     def get_many(self):
         '''
         Build the prediction for every agent
         '''
         prediction_dict = {}
         for agent in self.env.agents:
-            prediction_dict[agent.handle] = self.get(agent.handle)
+            prediction_dict[agent.handle] = None
+            if agent.malfunction_data["malfunction"] == 0:
+                prediction_dict[agent.handle] = self.get(agent.handle)
         return prediction_dict
 
     def get(self, handle):
@@ -89,42 +125,23 @@ class ShortestPathPredictor(PredictionBuilder):
         if agent.status == RailAgentStatus.DONE_REMOVED or agent.status == RailAgentStatus.DONE:
             return None
 
-        # Consider agent speed
-        position = self.railway_encoding.get_agent_cell(handle)
-        agent_speed = agent.speed_data["speed"]
-        times_per_cell = int(np.reciprocal(agent_speed))
-        remaining_steps = int(
-            (1 - agent.speed_data["position_fraction"]) / agent_speed
-        )
-
         # Get the shortest path
         lenght, path = self.get_shortest_path(handle)
-        edges = self.railway_encoding.edges_from_path(path)
-        pos = self.railway_encoding.positions_from_path(path)
+        edges = self.railway_encoding.edges_from_path(path[:self.max_depth])
+        pos = self.railway_encoding.positions_from_path(path[:self.max_depth])
+        shortest_path_prediction = (
+            lenght, path[:self.max_depth], edges, pos
+        )
 
-        # Edit weights to account for agent speed
-        for edge in edges:
-            edge[2]['distance'] = edge[2]['weight'] * times_per_cell
-        edges[0][2]['distance'] -= (times_per_cell - remaining_steps)
-
-        # Edit positions to account for agent speed
-        positions = [pos[0]] * (remaining_steps)
-        for position in pos[1:]:
-            positions.extend([position] * times_per_cell)
-
-        # Limit the number of returned positions
-        prediction = lenght, edges, positions
-        visited = OrderedSet()
-        if self.max_depth is not None:
-            prediction = lenght, edges, positions[:self.max_depth]
-            visited.update(positions[:self.max_depth])
-        else:
-            visited.update(positions)
+        # Get the deviation paths
+        deviation_paths_prediction = self.get_deviation_paths(handle, path)
 
         # Update GUI
+        visited = OrderedSet()
+        visited.update(pos)
         self.env.dev_pred_dict[handle] = visited
 
-        return prediction
+        return (shortest_path_prediction, deviation_paths_prediction)
 
     def set_env(self, env):
         super().set_env(env)

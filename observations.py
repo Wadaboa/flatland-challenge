@@ -55,8 +55,11 @@ from railway_encoding import CellOrientationGraph
 
 class CustomObservation(ObservationBuilder):
 
-    def __init__(self, predictor):
+    FEATURES = 10
+
+    def __init__(self, max_depth, predictor):
         super().__init__()
+        self.max_depth = max_depth
         self.predictor = predictor
         self.collisions = dict()
         self.observations = dict()
@@ -65,14 +68,13 @@ class CustomObservation(ObservationBuilder):
         self.railway_encoding = CellOrientationGraph(
             grid=self.env.rail.grid, agents=self.env.agents
         )
-        print(self.railway_encoding.graph.edges.data())
+        # print(self.railway_encoding.graph.edges.data())
         # self.railway_encoding.draw_graph()
         if self.predictor:
             self.predictor.set_railway_encoding(self.railway_encoding)
             self.predictor.reset()
 
     def get_many(self, handles=None):
-        # If malfunctioning do not call predictor
         self.predictions = self.predictor.get_many()
         self.find_collisions()
 
@@ -81,43 +83,31 @@ class CustomObservation(ObservationBuilder):
         return super().get_many(handles)
 
     def get(self, handle=0):
-        if handle not in self.observations or not self.observations[handle]:
-            '''
-            self.observations[handle] = self.railway_encoding.meaningful_subgraph(
-                handle
-            )
-            '''
-            pass
+        '''
+        # Consider agent speed
+        position = self.railway_encoding.get_agent_cell(handle)
+        agent_speed = agent.speed_data["speed"]
+        times_per_cell = int(np.reciprocal(agent_speed))
+        remaining_steps = int(
+            (1 - agent.speed_data["position_fraction"]) / agent_speed
+        )
 
-        self.observations[handle] = None
+        # Edit weights to account for agent speed
+        for edge in edges:
+            edge[2]['distance'] = edge[2]['weight'] * times_per_cell
+        edges[0][2]['distance'] -= (times_per_cell - remaining_steps)
+
+        # Edit positions to account for agent speed
+        positions = [pos[0]] * (remaining_steps)
+        for position in pos[1:]:
+            positions.extend([position] * times_per_cell)
+        '''
+
+        self.observations[handle] = np.ones(
+            (self.max_depth, self.max_depth, self.FEATURES)
+        ) * -np.inf
         if self.predictions[handle] is not None:
-            shortest_path_lenght, edges, _ = self.predictions[handle]
-            shortest_path_action = edges[0][-1]['action']
-            '''
-            neighbors_same_direction = self.railway_encoding.get_neighboring_agents_same_direction(
-                handle
-            )
-            neighbors_opposite_direction = self.railway_encoding.get_neighboring_agents_opposite_direction(
-                handle
-            )
-            '''
-            self.observations[handle] = (
-                handle,
-                self.env.agents[handle].status,
-                self.env.agents[handle].speed_data["speed"],
-                self.env.agents[handle].moving,
-                shortest_path_action,
-                shortest_path_lenght,
-                # deviation path action
-                # deviation path lenght
-                # neighbors_same_direction,
-                # neighbors_opposite_direction,
-                # distance neighbors same direction
-                # distance neighbors opposite direction
-                # number of conflicts
-            )
-
-        self.env.dev_obs_dict[handle] = OrderedSet()
+            shortest_path_prediction, deviation_paths_prediction = self.predictions[handle]
 
         return self.observations[handle]
 

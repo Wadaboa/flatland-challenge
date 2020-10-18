@@ -153,7 +153,9 @@ def main():
             max_rails_in_city=args.max_rails_in_cities,
         )
     predictor = ShortestPathPredictor(max_depth=args.max_depth)
-    observation_builder = CustomObservation(predictor=predictor)
+    observation_builder = CustomObservation(
+        max_depth=args.max_depth, predictor=predictor
+    )
     if args.variable_speed:
         speed_map = {
             1.: 0.25,

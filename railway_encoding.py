@@ -332,6 +332,34 @@ class CellOrientationGraph():
                 paths.append((lenght, path))
             except nx.NetworkXNoPath:
                 continue
+        if not paths:
+            return []
+        return sorted(paths, key=lambda x: x[0])
+
+    def deviation_paths(self, handle, source, node_to_avoid):
+        '''
+        Return alternative paths from `source` to the agent's target,
+        without considering the actual shortest path 
+        '''
+        agent = self.agents[handle]
+        targets = self.get_nodes(agent.target)
+        paths = []
+        for succ in self.graph.successors(source):
+            if succ != node_to_avoid:
+                edge = self.graph.edges[(source, succ)]
+                weight = edge[2]['weight']
+                try:
+                    for target in targets:
+                        lenght, path = nx.bidirectional_dijkstra(
+                            self.graph, succ, target
+                        )
+                        path = [source] + path
+                        lenght += weight
+                        paths.append((lenght, path))
+                except nx.NetworkXNoPath:
+                    continue
+        if not paths:
+            return []
         return sorted(paths, key=lambda x: x[0])
 
     def meaningful_subgraph(self, handle):
