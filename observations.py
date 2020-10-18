@@ -72,6 +72,7 @@ class CustomObservation(ObservationBuilder):
             self.predictor.reset()
 
     def get_many(self, handles=None):
+        # If malfunctioning do not call predictor
         self.predictions = self.predictor.get()
         self.find_collisions()
 
@@ -87,32 +88,34 @@ class CustomObservation(ObservationBuilder):
             )
             '''
             pass
-
-        shortest_path_lenght, edges, _ = self.predictions[handle]
-        shortest_path_action = edges[0][-1]['action']
-        '''
-        neighbors_same_direction = self.railway_encoding.get_neighboring_agents_same_direction(
-            handle
-        )
-        neighbors_opposite_direction = self.railway_encoding.get_neighboring_agents_opposite_direction(
-            handle
-        )
-        '''
-        self.observations[handle] = (
-            handle,
-            self.env.agents[handle].status,
-            self.env.agents[handle].speed_data["speed"],
-            self.env.agents[handle].moving,
-            shortest_path_action,
-            shortest_path_lenght,
-            # deviation path action
-            # deviation path lenght
-            # neighbors_same_direction,
-            # neighbors_opposite_direction,
-            # distance neighbors same direction
-            # distance neighbors opposite direction
-            # number of conflicts
-        )
+        
+        self.observations[handle] = None
+        if self.predictions[handle] is not None:
+            shortest_path_lenght, edges, _ = self.predictions[handle]
+            shortest_path_action = edges[0][-1]['action']
+            '''
+            neighbors_same_direction = self.railway_encoding.get_neighboring_agents_same_direction(
+                handle
+            )
+            neighbors_opposite_direction = self.railway_encoding.get_neighboring_agents_opposite_direction(
+                handle
+            )
+            '''
+            self.observations[handle] = (
+                handle,
+                self.env.agents[handle].status,
+                self.env.agents[handle].speed_data["speed"],
+                self.env.agents[handle].moving,
+                shortest_path_action,
+                shortest_path_lenght,
+                # deviation path action
+                # deviation path lenght
+                # neighbors_same_direction,
+                # neighbors_opposite_direction,
+                # distance neighbors same direction
+                # distance neighbors opposite direction
+                # number of conflicts
+            )
 
         self.env.dev_obs_dict[handle] = OrderedSet()
 

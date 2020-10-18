@@ -9,7 +9,7 @@ Multi Agent Reinforcement Learning on Trains.
 Install [Anaconda](https://www.anaconda.com/distribution/) and create a new conda environment:
 
 ```bash
-conda create python=3.6 --name flatland-rl
+conda env create --name flatland-rl -f environment.yml
 conda activate flatland-rl
 ```
 
@@ -46,4 +46,4 @@ env \
   pyenv install 3.8.1
 ```
 
-This commands will install the latest `TK` version and bind its sources to the Python build. In this example, `Python 3.8.1` was used, along with `flatland-rl 2.1.10` (since the latest `flatland-rl 2.2.2` has a bug with SVG rendering).
+These commands will install the latest `TK` version and bind its sources to the Python build. In this example, `Python 3.8.1` was used, along with `flatland-rl 2.1.10` (since the latest `flatland-rl 2.2.2` has a bug with SVG rendering).

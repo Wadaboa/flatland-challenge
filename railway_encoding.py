@@ -327,9 +327,8 @@ class CellOrientationGraph():
                 lenght, path = nx.bidirectional_dijkstra(
                     self.graph, source, target
                 )
-                if position != source:
-                    path = [position] + path
-                    lenght += weight
+                path = [position] + path
+                lenght += weight
                 paths.append((lenght, path))
             except nx.NetworkXNoPath:
                 continue
@@ -363,9 +362,10 @@ class CellOrientationGraph():
             ))
             starting_index = 1
         for i in range(starting_index, len(path) - 1):
-            edge = (path[i], path[i + 1])
-            edge_attributes = self.graph.get_edge_data(*edge)
-            edges.append((*edge, edge_attributes))
+            if path[i] != path[i + 1]:
+                edge = (path[i], path[i + 1])
+                edge_attributes = self.graph.get_edge_data(*edge)
+                edges.append((*edge, edge_attributes))
         return edges
 
     def positions_from_path(self, path):

@@ -14,25 +14,49 @@ class ShortestPathPredictor(PredictionBuilder):
         self._shortest_paths = {agent.handle: [] for agent in self.env.agents}
 
     def get_shortest_path(self, handle):
+        '''
+        Keep a list of shortest paths for the given agent.
+        At each time step, update the already compute paths and delete the ones
+        which cannot be followed anymore.
+        The returned shortest paths have the agent's position as the first element.
+        '''
         position = self.railway_encoding.get_agent_cell(handle)
         node, _ = self.railway_encoding.next_node(position)
         chosen_path = None
+        paths_to_delete = []
         for i, shortest_path in enumerate(self._shortest_paths[handle]):
             lenght, path = shortest_path
+            # Delete divergent path
+            if node != path[0] and node != path[1]:
+                paths_to_delete = [i] + paths_to_delete
+                continue
+
+            # Update agent position
+            if path[0] != position:
+                lenght -= 1
+            path[0] = position
+
+            # If the agent is on a packed graph node, drop it
+            if path[0] == path[1]:
+                path = path[1:]
+
+            # Agent arrived to target
             if lenght == 0:
                 chosen_path = lenght, path
-            elif node == path[1]:
-                if path[0] != position:
-                    lenght -= 1
-                    path[0] = position
-                if node == position:
-                    path = path[1:]
-                if chosen_path is None:
-                    chosen_path = lenght, path
-                self._shortest_paths[handle][i] = lenght, path
-            else:
-                del self._shortest_paths[handle][i]
+                break
 
+            # Select this path if no other path has been previously selected
+            if chosen_path is None:
+                chosen_path = lenght, path
+
+            # Update shortest path
+            self._shortest_paths[handle][i] = lenght, path
+
+        # Delete divergent paths
+        for i in paths_to_delete:
+            del self._shortest_paths[handle][i]
+
+        # Compute shortest paths, if no path is already available
         if chosen_path is None:
             self._shortest_paths[handle] = self.railway_encoding.shortest_paths(
                 handle
