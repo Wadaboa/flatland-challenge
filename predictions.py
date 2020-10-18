@@ -1,4 +1,3 @@
-from networkx.algorithms.distance_measures import periphery
 import numpy as np
 
 from flatland.core.env_prediction_builder import PredictionBuilder
