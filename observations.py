@@ -65,32 +65,39 @@ class CustomObservation(ObservationBuilder):
         self.max_depth = max_depth
         self.predictor = predictor
         self.observations = dict()
+        self.agent_handles = set()
+        self.other_agents = dict()
         self.speed_data = dict()
 
-        # Initialize speed data
-        for agent in self.env.agents:
-            agent_speed = agent.speed_data["speed"]
-            times_per_cell = int(np.reciprocal(agent_speed))
-            self.speed_data[agent.handle] = SpeedData(
-                times=times_per_cell, remaining=0
-            )
-
-    def reset(self):
+    def _init_env(self):
         self.railway_encoding = CellOrientationGraph(
             grid=self.env.rail.grid, agents=self.env.agents
         )
-        # print(self.railway_encoding.graph.edges.data())
-        # self.railway_encoding.draw_graph()
         if self.predictor:
             self.predictor.set_railway_encoding(self.railway_encoding)
             self.predictor.reset()
 
+    def _init_speed_data(self):
+        for handle, agent in enumerate(self.env.agents):
+            times_per_cell = int(np.reciprocal(agent.speed_data["speed"]))
+            self.speed_data[handle] = SpeedData(
+                times=times_per_cell, remaining=0
+            )
+
+    def _init_agents(self):
+        self.agent_handles = set(self.env.get_agent_handles())
+        self.other_agents = {
+            h: self.agent_handles - {h}
+            for h in self.agent_handles
+        }
+
+    def reset(self):
+        self._init_env()
+        self._init_agents()
+        self._init_speed_data()
+
     def get_many(self, handles=None):
         self.predictions = self.predictor.get_many()
-        # self.find_collisions()
-
-        # add malfunctions info
-
         return super().get_many(handles)
 
     def get(self, handle=0):
@@ -114,19 +121,20 @@ class CustomObservation(ObservationBuilder):
             positions.extend([position] * times_per_cell)
         '''
 
-        remaining_steps = int(
-            (1 - self.env.agents[handle].speed_data["position_fraction"])
-            / self.env.agents[handle].speed_data["speed"]
-        )
-        self.speed_data[handle] = SpeedData(
-            times=self.speed_data[handle].times,
-            remaining=remaining_steps
-        )
-
         self.observations[handle] = np.ones(
             (self.max_depth, self.max_depth, self.FEATURES)
         ) * -np.inf
         if self.predictions[handle] is not None:
+
+            remaining_steps = int(
+                (1 - self.env.agents[handle].speed_data["position_fraction"])
+                / self.env.agents[handle].speed_data["speed"]
+            )
+            self.speed_data[handle] = SpeedData(
+                times=self.speed_data[handle].times,
+                remaining=remaining_steps
+            )
+
             shortest_path_prediction, deviation_paths_prediction = self.predictions[handle]
             cum_weights = self.compute_cumulative_weights(
                 shortest_path_prediction.edges, initial_distance=0
@@ -142,7 +150,7 @@ class CustomObservation(ObservationBuilder):
                 cum_weights
             )
             other_shortest_paths = []
-            for agent in set(self.env.get_agent_handles()) - {handle}:
+            for agent in self.other_agents[handle]:
                 s, _ = self.predictions[agent]
                 other_shortest_paths.append(s.path)
             c_nodes = self.common_nodes(
@@ -168,8 +176,7 @@ class CustomObservation(ObservationBuilder):
         '''
         num_agents = np.zeros((len(path),))
         distances = np.ones((len(path),)) * np.inf
-        agents = set(self.env.get_agent_handles()) - {handle}
-        for agent in agents:
+        for agent in self.other_agents[handle]:
             position = self.railway_encoding.get_agent_cell(agent)
             node, remaining_distance = self.railway_encoding.next_node(
                 position
@@ -198,14 +205,13 @@ class CustomObservation(ObservationBuilder):
         Given an agent's path and corresponding paths for every other agent,
         compute the number of intersections for each node
         '''
-        nd_other_paths = np.array(other_paths, np.dtype('int, int'))
-        nd_path = np.array(path, np.dtype('int, int'))
+        nd_other_paths = np.array(other_paths, np.dtype('int, int, int'))
+        nd_path = np.array(path, np.dtype('int, int, int'))
         return np.array([np.count_nonzero(nd_other_paths == p) for p in nd_path])
 
     def malfunctioning_agents(self, handle, path):
         num_agents = np.zeros((len(path),))
-        agents = set(self.env.get_agent_handles()) - {handle}
-        for agent in agents:
+        for agent in self.other_agents[handle]:
             if self.env.agents[agent].malfunction_data['malfunction'] > 0:
                 position = self.railway_encoding.get_agent_cell(agent)
                 node, _ = self.railway_encoding.next_node(position)
