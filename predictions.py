@@ -1,8 +1,22 @@
+from collections import namedtuple
+
 import numpy as np
 
 from flatland.core.env_prediction_builder import PredictionBuilder
 from flatland.envs.rail_env import RailAgentStatus
 from flatland.utils.ordered_set import OrderedSet
+
+
+Prediction = namedtuple('Prediction', ['lenght', 'path', 'edges', 'positions'])
+
+
+def _empty_prediction():
+    '''
+    Return an empty Prediction namedtuple
+    '''
+    return Prediction(
+        lenght=np.inf, path=[], edges=[], positions=[]
+    )
 
 
 class ShortestPathPredictor(PredictionBuilder):
@@ -68,6 +82,9 @@ class ShortestPathPredictor(PredictionBuilder):
             self._shortest_paths[handle] = self.railway_encoding.shortest_paths(
                 handle
             )
+            if not self._shortest_paths[handle]:
+                return np.inf, []
+
             chosen_path = self._shortest_paths[handle][0]
 
         return chosen_path
@@ -86,23 +103,27 @@ class ShortestPathPredictor(PredictionBuilder):
             deviation_paths = {path[0]: []}
         for i in range(start, depth - 1):
             paths = self.railway_encoding.deviation_paths(
-                self, handle, path[i], path[i + 1]
+                handle, path[i], path[i + 1]
             )
             deviation_path = []
-            length = 0
+            lenght = 0
             if paths:
                 deviation_path = paths[0][1]
-                length = paths[0][0]
-            edges = self.railway_encoding.edges_from_path(
-                deviation_path[:self.max_depth]
-            )
-            pos = self.railway_encoding.positions_from_path(
-                deviation_path[:self.max_depth]
-            )
-            deviation_paths[path[i]] = (
-                length, deviation_path[:self.max_depth],
-                edges, pos
-            )
+                lenght = paths[0][0]
+                edges = self.railway_encoding.edges_from_path(
+                    deviation_path[:self.max_depth]
+                )
+                pos = self.railway_encoding.positions_from_path(
+                    deviation_path[:self.max_depth]
+                )
+                deviation_paths[path[i]] = Prediction(
+                    lenght=lenght,
+                    path=deviation_path[:self.max_depth],
+                    edges=edges,
+                    positions=pos
+                )
+            else:
+                deviation_paths[path[i]] = _empty_prediction()
 
         return deviation_paths
 
@@ -125,20 +146,26 @@ class ShortestPathPredictor(PredictionBuilder):
         if agent.status == RailAgentStatus.DONE_REMOVED or agent.status == RailAgentStatus.DONE:
             return None
 
-        # Get the shortest path
+        # Build predictions
         lenght, path = self.get_shortest_path(handle)
-        edges = self.railway_encoding.edges_from_path(path[:self.max_depth])
-        pos = self.railway_encoding.positions_from_path(path[:self.max_depth])
-        shortest_path_prediction = (
-            lenght, path[:self.max_depth], edges, pos
-        )
-
-        # Get the deviation paths
-        deviation_paths_prediction = self.get_deviation_paths(handle, path)
+        if lenght < np.inf:
+            edges = self.railway_encoding.edges_from_path(
+                path[:self.max_depth]
+            )
+            pos = self.railway_encoding.positions_from_path(
+                path[:self.max_depth]
+            )
+            shortest_path_prediction = Prediction(
+                lenght=lenght, path=path[:self.max_depth], edges=edges, positions=pos
+            )
+            deviation_paths_prediction = self.get_deviation_paths(handle, path)
+        else:
+            shortest_path_prediction = _empty_prediction()
+            deviation_paths_prediction = dict()
 
         # Update GUI
         visited = OrderedSet()
-        visited.update(pos)
+        visited.update(shortest_path_prediction.positions)
         self.env.dev_pred_dict[handle] = visited
 
         return (shortest_path_prediction, deviation_paths_prediction)

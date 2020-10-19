@@ -74,7 +74,7 @@ def parse_args():
         help="save intermediate renderer frames"
     )
     parser.add_argument(
-        "--max_depth", action='store', default=20,
+        "--max_depth", action='store', default=5,
         help="predictor maximum depth", type=int
     )
     parser.add_argument(
@@ -123,7 +123,7 @@ def print_agents_info(env):
         _status_table,
         [
             "Handle", "Status", "Speed", "Position fraction",
-            "Source", "Target", "Malfunction"
+            "Position", "Target", "Malfunction"
         ],
         colalign=["center"] * 7
     ))
@@ -276,7 +276,7 @@ def main():
         # Print statistics
         print(f"Score: {score}")
         print_agents_info(env)
-        print(next_obs)
+        # print(next_obs)
         print()
 
 
