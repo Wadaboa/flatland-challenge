@@ -115,6 +115,11 @@ def print_agents_info(env):
                 agent.position[0],
                 agent.position[1],
                 agent.direction
+                # Status 3 -> DONE_REMOVED -> position is None
+            ) if agent.status != 3 else (
+                'Agent removed',
+                'No position',
+                'No direction'
             ),
             agent.target,
             agent.malfunction_data['malfunction']

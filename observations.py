@@ -98,67 +98,90 @@ class CustomObservation(ObservationBuilder):
         self._init_agents()
         self._init_speed_data()
 
+    def set_env(self, env):
+        super().set_env(env)
+        if self.predictor:
+            self.predictor.set_env(self.env)
+
     def get_many(self, handles=None):
         self.predictions = self.predictor.get_many()
+        self._shortest_paths = np.full(
+            (len(self.agent_handles), self.max_depth), -1, np.dtype('int, int, int'))
+        self._shortest_pos = np.full(
+            (len(self.agent_handles), self.max_depth), -1, np.dtype('int, int'))
+        self._cumulative_weights = np.zeros(
+            (len(self.agent_handles), self.max_depth))
+        for handle, val in self.predictions.items():
+            # Check if agent is not at Target
+            if self.predictions[handle] is not None:
+                # ERRORE!!! Position fraction viene incrementato anche se l'agente è fermo causa deadlock
+                #   Vedi https://gitlab.aicrowd.com/flatland/flatland/blob/master/flatland/envs/rail_env.py
+                #   Linea 697 trovare un altro modo per tenere remaining_steps
+                # A causa di questo non funziona cumulative_weigths
+                # print()
+                # print(handle)
+                # print(self.env.agents[handle].speed_data["position_fraction"])
+                # print(self.env.agents[handle].speed_data["speed"])
+                # print()
+                remaining_steps = int(
+                    (1 - self.env.agents[handle].speed_data["position_fraction"]
+                     ) / self.env.agents[handle].speed_data["speed"]
+                )
+                self.speed_data[handle] = SpeedData(
+                    times=self.speed_data[handle].times,
+                    remaining=remaining_steps
+                )
+                # Check if exist a path
+                if val[0].lenght < np.inf:
+                    self._update_data(handle, val[0], remaining_steps)
         return super().get_many(handles)
 
+    def _update_data(self, handle, prediction, remaining_steps):
+        shortest_path = np.array(prediction.path, np.dtype('int, int, int'))
+        shortest_pos = np.array([node[:-1]
+                                 for node in prediction.path], np.dtype('int, int'))
+        cum_weights = np.array(self.compute_cumulative_weights(
+            handle, prediction.edges, remaining_steps))
+        self._shortest_paths[handle, :shortest_path.shape[0]] = shortest_path
+        self._shortest_pos[handle, :shortest_pos.shape[0]] = shortest_pos
+        self._cumulative_weights[handle, :cum_weights.shape[0]] = cum_weights
+
     def get(self, handle=0):
-        '''
-        # Consider agent speed
-        position = self.railway_encoding.get_agent_cell(handle)
-        agent_speed = agent.speed_data["speed"]
-        times_per_cell = int(np.reciprocal(agent_speed))
-        remaining_steps = int(
-            (1 - agent.speed_data["position_fraction"]) / agent_speed
-        )
-
-        # Edit weights to account for agent speed
-        for edge in edges:
-            edge[2]['distance'] = edge[2]['weight'] * times_per_cell
-        edges[0][2]['distance'] -= (times_per_cell - remaining_steps)
-
-        # Edit positions to account for agent speed
-        positions = [pos[0]] * (remaining_steps)
-        for position in pos[1:]:
-            positions.extend([position] * times_per_cell)
-        '''
-
         self.observations[handle] = np.ones(
             (self.max_depth, self.max_depth, self.FEATURES)
         ) * -np.inf
         if self.predictions[handle] is not None:
 
-            remaining_steps = int(
-                (1 - self.env.agents[handle].speed_data["position_fraction"])
-                / self.env.agents[handle].speed_data["speed"]
-            )
-            self.speed_data[handle] = SpeedData(
-                times=self.speed_data[handle].times,
-                remaining=remaining_steps
-            )
-
             shortest_path_prediction, deviation_paths_prediction = self.predictions[handle]
-            cum_weights = self.compute_cumulative_weights(
-                shortest_path_prediction.edges, remaining_steps
-            )
+
             num_agents, distances = self.agents_in_path(
                 handle,
                 shortest_path_prediction.path,
-                cum_weights
+                self._cumulative_weights[handle]
             )
             target_distances = self.distance_from_target(
                 handle,
                 shortest_path_prediction.lenght,
                 shortest_path_prediction.path,
-                cum_weights
+                self._cumulative_weights[handle]
             )
-            other_shortest_paths = []
-            for agent in self.other_agents[handle]:
-                s, _ = self.predictions[agent]
-                other_shortest_paths.append(s.path)
             c_nodes = self.common_nodes(
-                shortest_path_prediction.path, other_shortest_paths
+                handle, shortest_path_prediction.path, self._shortest_pos
             )
+            deadlocks = self.find_deadlocks(
+                handle, shortest_path_prediction.path, self._shortest_paths, self._cumulative_weights[handle], self._cumulative_weights)
+            '''
+            Degub Zone
+            if handle == 2:
+                # Not Working -> See Comment Line 117
+                #print(f'\nAgents in Path:\n Num agents\n {num_agents}\n Distances\n {distances}\n')
+                # Not Working -> See Comment Line 117
+                #print(f'\nTarget Distances:\n Distances\n {target_distances}\n')
+                # Working
+                #print(f'\nCommon Nodes:\n Nodes\n {c_nodes}\n')
+                # Not Working -> See Comment Line 117
+                #print(f'\nDeadlock:\n Deadlock\n {deadlocks}\n')
+            '''
 
         return self.observations[handle]
 
@@ -180,42 +203,46 @@ class CustomObservation(ObservationBuilder):
         to the closest agent in the subpath (in both directions),
         still up to each node in the path
         '''
-        num_agents = np.zeros((len(path), 4))
-        distances = np.ones((len(path), 4)) * np.inf
+        num_agents = np.zeros((self.max_depth, 4))
+        distances = np.ones((self.max_depth, 4)) * np.inf
         for agent in self.other_agents[handle]:
             directions = [0]
             position = self.railway_encoding.get_agent_cell(agent)
-            node, remaining_distance = self.railway_encoding.next_node(
-                position
-            )
-            nodes = self.railway_encoding.get_nodes((node[0], node[1]))
-            for other_node in nodes:
-                index = utils.get_index(path, other_node)
+            # Check if agent is not DONE_REMOVED -> position is None
+            if position:
+                node, remaining_distance = self.railway_encoding.next_node(
+                    position
+                )
+                nodes = self.railway_encoding.get_nodes((node[0], node[1]))
+                for other_node in nodes:
+                    index = utils.get_index(path, other_node)
+                    if index:
+                        if other_node != node:
+                            directions = [1]
+                        malfunction = self.env.agents[agent].malfunction_data['malfunction']
+                        if malfunction > 0:
+                            directions.append(directions[0] + 2)
+                        break
                 if index:
-                    if other_node != node:
-                        directions = [1]
-                    malfunction = self.env.agents[agent].malfunction_data['malfunction']
-                    if malfunction > 0:
-                        directions.append(directions[0] + 2)
-                    break
-            if index:
-                for direction in directions:
-                    num_agents[index:][direction] += 1
-                    value = (cum_weights[index] +
-                             self.speed_data[agent].remaining)
-                    if direction % 2 == 0:
-                        value -= (
-                            remaining_distance * self.speed_data[handle].times
-                        )
-                    else:
-                        value += (
-                            remaining_distance * self.speed_data[handle].times
-                        )
-                    if direction >= 2:
-                        value = np.clip(malfunction - value, 0, None)
-                    if ((direction < 2 and distances[index][direction] > value) or
-                            (direction >= 2 and distances[index][direction] < value)):
-                        distances[index:][direction] = value
+                    for direction in directions:
+                        num_agents[index:len(path), direction] += 1
+                        value = (cum_weights[index] +
+                                 self.speed_data[agent].remaining)
+                        if direction % 2 == 0:
+                            value -= (
+                                remaining_distance *
+                                self.speed_data[handle].times
+                            )
+                        else:
+                            value += (
+                                remaining_distance *
+                                self.speed_data[handle].times
+                            )
+                        if direction >= 2:
+                            value = np.clip(malfunction - value, 0, None)
+                        if ((direction < 2 and distances[index, direction] > value) or
+                                (direction >= 2 and distances[index, direction] < value)):
+                            distances[index:len(path), direction] = value
         return num_agents, distances
 
     def distance_from_target(self, handle, lenght, path, cum_weights):
@@ -223,7 +250,8 @@ class CustomObservation(ObservationBuilder):
         Given the full lenght of a path from a root node to an agent's target,
         compute the distance from each node of the path to the target
         '''
-        distances = (
+        distances = np.zeros((self.max_depth,))
+        distances[:len(path)] = (
             np.ones((len(path),))
             * lenght
             * self.speed_data[handle].times
@@ -234,61 +262,38 @@ class CustomObservation(ObservationBuilder):
         )
         return distances
 
-    def common_nodes(self, path, other_paths):
+    def common_nodes(self, handle, path, other_positions):
         '''
         Given an agent's path and corresponding paths for every other agent,
         compute the number of intersections for each node
         '''
-        nd_other_paths = np.array(other_paths, np.dtype('int, int, int'))
-        nd_path = np.array(path, np.dtype('int, int, int'))
-        return np.array([np.count_nonzero(nd_other_paths == p) for p in nd_path])
+        nd_path = np.array([node[:-1] for node in path], np.dtype('int, int'))
+        c_nodes = np.zeros((self.max_depth,))
+        computed = np.count_nonzero(
+            np.isin(np.delete(other_positions, handle, axis=0), nd_path), axis=0)
+        c_nodes[:computed.shape[0]] = computed
+        return c_nodes
 
-    def find_collisions(self):
+    def find_deadlocks(self, handle, path, other_paths, cum_weights_path, cum_weights_other_path):
         '''
-        Check for future crashes and deadlocks
         '''
-        positions = []
-        for pred in self.predictions.values():
-            if pred is not None:
-                _, _, pos = pred
-                positions.append(list(pos))
-            else:
-                positions.append([None] * self.predictor.max_depth)
-        positions = utils.fill_none(positions, lenght=self.predictor.max_depth)
-        for t, col in enumerate(map(list, zip(*positions))):
-            dups = utils.find_duplicates(col)
-            if dups:
-                self.collisions[t] = dups
-
-        self.find_deadlocks(positions)
-
-    def find_deadlocks(self, positions):
-        '''
-        Check for future deadlocks
-        '''
-        pos = list(map(list, zip(*positions)))
-        for t, col in enumerate(pos):
-            if t - 1 >= 0:
-                old_col = pos[t - 1]
-                for i, elem in enumerate(col):
-                    dups = utils.find_duplicate(old_col, elem, i)
-                    if dups:
-                        self.collisions[t] = dups
-
-    def agent_collisions(self, handle):
-        '''
-        Re-index collisions based on agent handles
-        '''
-        meaningful_collisions = dict()
-        for t, dups in self.collisions.items():
-            for pos, agents in dups:
-                if handle in agents:
-                    meaningful_collisions[pos] = (
-                        t, agents.difference({handle})
-                    )
-        return meaningful_collisions
-
-    def set_env(self, env):
-        super().set_env(env)
-        if self.predictor:
-            self.predictor.set_env(self.env)
+        padding = np.array((-1, -1, -1), np.dtype('int, int, int'))
+        cum_weights_other_path = np.delete(
+            cum_weights_other_path, handle, axis=0)
+        other_paths = np.delete(other_paths, handle, axis=0)
+        deadlocks = np.zeros((len(path),))
+        init_weight = cum_weights_path[0]
+        for index, weight in enumerate(cum_weights_path[1:]):
+            traversed_indexes = np.logical_and(
+                cum_weights_other_path >= init_weight,
+                cum_weights_other_path <= weight
+            )
+            traversed_nodes = np.where(
+                traversed_indexes, other_paths, padding)
+            for row in traversed_nodes:
+                useful_nodes = row[row != padding]
+                if useful_nodes.size > 0 and index < len(path)-1:
+                    last_node = useful_nodes[-1]
+                    if last_node[0] == path[index+1][0] and last_node[1] == path[index+1][1] and last_node[2] != path[index+1][2]:
+                        deadlocks[:index+1] += 1
+        return deadlocks

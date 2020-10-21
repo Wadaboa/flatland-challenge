@@ -21,8 +21,11 @@ def _empty_prediction():
 
 class ShortestPathPredictor(PredictionBuilder):
 
+    POS_DEPTH_FACTOR = 3
+
     def __init__(self, max_depth=None):
         super().__init__(max_depth)
+        self.max_pos_depth = max_depth * self.POS_DEPTH_FACTOR
 
     def reset(self):
         '''
@@ -114,7 +117,7 @@ class ShortestPathPredictor(PredictionBuilder):
                     deviation_path[:self.max_depth]
                 )
                 pos = self.railway_encoding.positions_from_path(
-                    deviation_path[:self.max_depth]
+                    deviation_path[:self.max_depth], max_lenght=self.max_pos_depth
                 )
                 deviation_paths[path[i]] = Prediction(
                     lenght=lenght,
@@ -144,7 +147,7 @@ class ShortestPathPredictor(PredictionBuilder):
         '''
         agent = self.env.agents[handle]
         if agent.status == RailAgentStatus.DONE_REMOVED or agent.status == RailAgentStatus.DONE:
-            return None
+            return
 
         # Build predictions
         lenght, path = self.get_shortest_path(handle)
@@ -153,7 +156,7 @@ class ShortestPathPredictor(PredictionBuilder):
                 path[:self.max_depth]
             )
             pos = self.railway_encoding.positions_from_path(
-                path[:self.max_depth]
+                path[:self.max_depth], max_lenght=self.max_pos_depth
             )
             shortest_path_prediction = Prediction(
                 lenght=lenght, path=path[:self.max_depth], edges=edges, positions=pos

@@ -179,16 +179,17 @@ class CellOrientationGraph():
         for node in nodes:
             self.remove_node(node)
 
-    def get_nodes(self, position):
+    def get_nodes(self, position, packed_graph=True):
         '''
         Given a position (row, column), return a list
-        of nodes present in the packed graph of the type
+        of nodes present in the packed or unpacked graph of the type
         [(row, column, NORTH), ..., (row, column, WEST)]
         '''
         nodes = []
         for direction in TRANS:
             node = (position[0], position[1], direction.value)
-            if self.graph.has_node(node):
+            if ((packed_graph and self.graph.has_node(node)) or
+                    (not packed_graph and self._unpacked_graph.has_node(node))):
                 nodes.append(node)
         return nodes
 
@@ -363,11 +364,6 @@ class CellOrientationGraph():
             return []
         return sorted(paths, key=lambda x: x[0])
 
-    # TODO
-    def has_deadlocks(self, positions):
-
-        pass
-
     def meaningful_subgraph(self, handle):
         '''
         Return the subgraph which could be visited by the agent
@@ -402,19 +398,19 @@ class CellOrientationGraph():
                 edges.append((*edge, edge_attributes))
         return edges
 
-    def positions_from_path(self, path):
+    def positions_from_path(self, path, max_lenght=None):
         '''
         Given a path in the packed graph, return the corresponding
         path in the unpacked graph, without the direction component
         '''
-        positions = []
-        positions.append((path[0][0], path[0][1]))
+        positions = [path[0]]
         for i in range(0, len(path) - 1):
             _, mini_path = nx.bidirectional_dijkstra(
                 self._unpacked_graph, path[i], path[i + 1]
             )
-            mini_path = [(row, col) for row, col, _ in mini_path]
             positions.extend(mini_path[1:])
+            if max_lenght is not None and len(positions) >= max_lenght:
+                return positions[:max_lenght]
         return positions
 
     def different_direction_nodes(self, node):
