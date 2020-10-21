@@ -43,14 +43,16 @@ from railway_encoding import CellOrientationGraph
         - Features node:
             - [Y] Num. agents on the previous path in the same direction
             - [Y] Min distance agent on the previous path in the same direction from agent root
-            - Num. agents on the previous path in the opposite direction
-            - Min distance agent on the previous path in the opposite direction from agent root
+            - [Y] Num. agents on the previous path in the opposite direction
+            - [Y] Min distance agent on the previous path in the opposite direction from agent root
             - [Y] Distance from the target
             - [Y] Num. agents using the node to reach their target in the shortest path
             - Distance from the root agent and a possible conflict with another agent in the previous path
             - Deadlock probabily in the previous path
-            - [Y] Number of agent malfunctioning in the previous path
-            - Turns to wait blocked if there is an agent on path malfunctioning (difference between malfunction time and distance)
+            - [Y] Number of agent malfunctioning in the previous path in the same direction
+            - [Y] Number of agent malfunctioning in the previous path in the opposite direction
+            - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the same direction (difference between malfunction time and distance)
+            - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the opposite direction (difference between malfunction time and distance)
 '''
 
 SpeedData = namedtuple('SpeedData', ['times', 'remaining'])
@@ -137,14 +139,15 @@ class CustomObservation(ObservationBuilder):
 
             shortest_path_prediction, deviation_paths_prediction = self.predictions[handle]
             cum_weights = self.compute_cumulative_weights(
-                shortest_path_prediction.edges, initial_distance=0
+                shortest_path_prediction.edges, remaining_steps
             )
-            num_agents, distances = self.agents_same_direction(
+            num_agents, distances = self.agents_in_path(
                 handle,
                 shortest_path_prediction.path,
                 cum_weights
             )
             target_distances = self.distance_from_target(
+                handle,
                 shortest_path_prediction.lenght,
                 shortest_path_prediction.path,
                 cum_weights
@@ -159,45 +162,76 @@ class CustomObservation(ObservationBuilder):
 
         return self.observations[handle]
 
-    def compute_cumulative_weights(self, edges, initial_distance=0):
+    def compute_cumulative_weights(self, handle, edges, initial_distance):
         '''
         Given a list of edges, compute the cumulative sum of weights
         '''
-        weights = [initial_distance] + [e[2]['weight'] for e in edges]
+        weights = [initial_distance] + [
+            e[2]['weight'] * self.speed_data[handle].times for e in edges
+        ]
         return np.cumsum(weights)
 
-    def agents_same_direction(self, handle, path, cum_weights):
+    def agents_in_path(self, handle, path, cum_weights):
         '''
         Return two arrays, with the same lenght as the given path, s.t.
         the first array contains the number of agents identified in the subpath
-        from the root up to each node in the path; while the second array
-        contains the distance from the root to the closest agent in the subpath,
-        still up to each node in the path 
+        from the root up to each node in the path (in both directions);
+        while the second array contains the distance from the root
+        to the closest agent in the subpath (in both directions),
+        still up to each node in the path
         '''
-        num_agents = np.zeros((len(path),))
-        distances = np.ones((len(path),)) * np.inf
+        num_agents = np.zeros((len(path), 4))
+        distances = np.ones((len(path), 4)) * np.inf
         for agent in self.other_agents[handle]:
+            directions = [0]
             position = self.railway_encoding.get_agent_cell(agent)
             node, remaining_distance = self.railway_encoding.next_node(
                 position
             )
-            try:
-                index = path.index(node)
-                num_agents[index:] += 1
-                value = abs(cum_weights[index] - remaining_distance)
-                if distances[index] > value:
-                    distances[index:] = value
-            except ValueError:
-                continue
+            nodes = self.railway_encoding.get_nodes((node[0], node[1]))
+            for other_node in nodes:
+                index = utils.get_index(path, other_node)
+                if index:
+                    if other_node != node:
+                        directions = [1]
+                    malfunction = self.env.agents[agent].malfunction_data['malfunction']
+                    if malfunction > 0:
+                        directions.append(directions[0] + 2)
+                    break
+            if index:
+                for direction in directions:
+                    num_agents[index:][direction] += 1
+                    value = (cum_weights[index] +
+                             self.speed_data[agent].remaining)
+                    if direction % 2 == 0:
+                        value -= (
+                            remaining_distance * self.speed_data[handle].times
+                        )
+                    else:
+                        value += (
+                            remaining_distance * self.speed_data[handle].times
+                        )
+                    if direction >= 2:
+                        value = np.clip(malfunction - value, 0, None)
+                    if ((direction < 2 and distances[index][direction] > value) or
+                            (direction >= 2 and distances[index][direction] < value)):
+                        distances[index:][direction] = value
         return num_agents, distances
 
-    def distance_from_target(self, lenght, path, cum_weights):
+    def distance_from_target(self, handle, lenght, path, cum_weights):
         '''
         Given the full lenght of a path from a root node to an agent's target,
         compute the distance from each node of the path to the target
         '''
-        distances = np.ones((len(path),)) * lenght
-        distances = distances - cum_weights
+        distances = (
+            np.ones((len(path),))
+            * lenght
+            * self.speed_data[handle].times
+        )
+        distances = (
+            (distances - cum_weights)
+            + 2 * self.speed_data[handle].remaining
+        )
         return distances
 
     def common_nodes(self, path, other_paths):
@@ -208,19 +242,6 @@ class CustomObservation(ObservationBuilder):
         nd_other_paths = np.array(other_paths, np.dtype('int, int, int'))
         nd_path = np.array(path, np.dtype('int, int, int'))
         return np.array([np.count_nonzero(nd_other_paths == p) for p in nd_path])
-
-    def malfunctioning_agents(self, handle, path):
-        num_agents = np.zeros((len(path),))
-        for agent in self.other_agents[handle]:
-            if self.env.agents[agent].malfunction_data['malfunction'] > 0:
-                position = self.railway_encoding.get_agent_cell(agent)
-                node, _ = self.railway_encoding.next_node(position)
-                try:
-                    index = path.index(node)
-                    num_agents[index:] += 1
-                except ValueError:
-                    continue
-        return num_agents
 
     def find_collisions(self):
         '''

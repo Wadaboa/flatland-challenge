@@ -183,7 +183,7 @@ class CellOrientationGraph():
         '''
         Given a position (row, column), return a list
         of nodes present in the packed graph of the type
-        [(row, column, NORTH), ..., (row, column, WEST)] 
+        [(row, column, NORTH), ..., (row, column, WEST)]
         '''
         nodes = []
         for direction in TRANS:
@@ -239,7 +239,7 @@ class CellOrientationGraph():
 
     def get_agent_cell(self, handle):
         '''
-        Return the unpacked graph node in which the agent 
+        Return the unpacked graph node in which the agent
         identified by the given handle is
         '''
         position = None
@@ -340,7 +340,7 @@ class CellOrientationGraph():
     def deviation_paths(self, handle, source, node_to_avoid):
         '''
         Return alternative paths from `source` to the agent's target,
-        without considering the actual shortest path 
+        without considering the actual shortest path
         '''
         agent = self.agents[handle]
         targets = self.get_nodes(agent.target)
@@ -362,6 +362,11 @@ class CellOrientationGraph():
         if not paths:
             return []
         return sorted(paths, key=lambda x: x[0])
+
+    # TODO
+    def has_deadlocks(self, positions):
+
+        pass
 
     def meaningful_subgraph(self, handle):
         '''

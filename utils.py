@@ -32,6 +32,10 @@ def fill_none(mat, lenght):
     return mat
 
 
+def get_index(arr, elem):
+    return arr.index(elem) if elem in arr else None
+
+
 class Timer(object):
     """
     Utility to measure times.
