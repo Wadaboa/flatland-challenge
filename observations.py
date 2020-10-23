@@ -47,8 +47,8 @@ from railway_encoding import CellOrientationGraph
             - [Y] Min distance agent on the previous path in the opposite direction from agent root
             - [Y] Distance from the target
             - [Y] Num. agents using the node to reach their target in the shortest path
-            - Distance from the root agent and a possible conflict with another agent in the previous path
-            - Deadlock probabily in the previous path
+            - [Y] Num. agents in deadlock in the previous path if the other agents follow their shortest path
+            - Distance from the nearest deadlock in the path computed as above
             - [Y] Number of agent malfunctioning in the previous path in the same direction
             - [Y] Number of agent malfunctioning in the previous path in the opposite direction
             - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the same direction (difference between malfunction time and distance)
@@ -114,19 +114,12 @@ class CustomObservation(ObservationBuilder):
         for handle, val in self.predictions.items():
             # Check if agent is not at Target
             if self.predictions[handle] is not None:
-                # ERRORE!!! Position fraction viene incrementato anche se l'agente è fermo causa deadlock
-                #   Vedi https://gitlab.aicrowd.com/flatland/flatland/blob/master/flatland/envs/rail_env.py
-                #   Linea 697 trovare un altro modo per tenere remaining_steps
-                # A causa di questo non funziona cumulative_weigths
-                # print()
-                # print(handle)
-                # print(self.env.agents[handle].speed_data["position_fraction"])
-                # print(self.env.agents[handle].speed_data["speed"])
-                # print()
-                remaining_steps = int(
-                    (1 - self.env.agents[handle].speed_data["position_fraction"]
-                     ) / self.env.agents[handle].speed_data["speed"]
-                )
+                remaining_steps = 0
+                if self.env.agents[handle].speed_data["speed"] < 1.0:
+                    remaining_steps = int(
+                        (1 - np.clip(self.env.agents[handle].speed_data["position_fraction"], 0.0, 1.0)
+                         ) / self.env.agents[handle].speed_data["speed"]
+                    )
                 self.speed_data[handle] = SpeedData(
                     times=self.speed_data[handle].times,
                     remaining=remaining_steps
@@ -154,7 +147,7 @@ class CustomObservation(ObservationBuilder):
 
             shortest_path_prediction, deviation_paths_prediction = self.predictions[handle]
 
-            num_agents, distances = self.agents_in_path(
+            num_agents, agent_distances = self.agents_in_path(
                 handle,
                 shortest_path_prediction.path,
                 self._cumulative_weights[handle]
@@ -168,20 +161,19 @@ class CustomObservation(ObservationBuilder):
             c_nodes = self.common_nodes(
                 handle, shortest_path_prediction.path, self._shortest_pos
             )
-            deadlocks = self.find_deadlocks(
+            deadlocks, deadlock_distances = self.find_deadlocks(
                 handle, shortest_path_prediction.path, self._shortest_paths, self._cumulative_weights[handle], self._cumulative_weights)
-            '''
-            Degub Zone
+            # Debug Zone
             if handle == 2:
                 # Not Working -> See Comment Line 117
-                #print(f'\nAgents in Path:\n Num agents\n {num_agents}\n Distances\n {distances}\n')
+                # print(f'\nAgents in Path:\n Num agents\n {num_agents}\n Distances\n {agent_distances}\n')
                 # Not Working -> See Comment Line 117
-                #print(f'\nTarget Distances:\n Distances\n {target_distances}\n')
+                # print(f'\nTarget Distances:\n Distances\n {target_distances}\n')
                 # Working
-                #print(f'\nCommon Nodes:\n Nodes\n {c_nodes}\n')
+                # print(f'\nCommon Nodes:\n Nodes\n {c_nodes}\n')
                 # Not Working -> See Comment Line 117
-                #print(f'\nDeadlock:\n Deadlock\n {deadlocks}\n')
-            '''
+                print(
+                    f'\nDeadlock:\n Deadlock\n {deadlocks}\n Distances \n {deadlock_distances}\n')
 
         return self.observations[handle]
 
@@ -274,14 +266,71 @@ class CustomObservation(ObservationBuilder):
         c_nodes[:computed.shape[0]] = computed
         return c_nodes
 
+    def _common_edges(self, c_nodes, cum_weight, path):
+        c_edges = []
+        weights = []
+        indexes = []
+        for index in range(len(path)-1):
+            if c_nodes[index] >= 1 and c_nodes[index+1] >= 1:
+                c_edges.append((path[index], path[index+1]))
+                weights.append((cum_weight[index], cum_weight[index+1]))
+                indexes.append((index, index+1))
+        return (c_edges, weights, indexes)
+
+    def ffind_deadlocks(self, handle, c_nodes, cum_weight, path, other_paths, other_weights):
+        deadlocks = np.zeros((self.max_depth,))
+        distances = np.ones((self.max_depth,)) * np.inf
+        if np.count_nonzero(c_nodes) > 0:
+            edges, weights, indexes = self._common_edges(
+                c_nodes, cum_weight, path)
+            for edge, weight, index in zip(edges, weights, indexes):
+                source, dest = edge
+                space = self.railway_encoding.graph.get_edge_data(
+                    source, dest)["weight"]
+                my_speed = self.speed_data[handle].times
+                w_sour, w_dest = weight
+                ind_sour, ind_dest = index
+                s_oth_dir = self.railway_encoding.get_nodes(
+                    source[0], source[1])
+                s_oth_dir.remove(source)
+                d_oth_dir = self.railway_encoding.get_nodes(dest[0], dest[1])
+                d_oth_dir.remove(dest)
+                np_d_oth_dir = np.array(d_oth_dir, np.dtype('int,int,int'))
+                np_s_oth_dir = np.array(s_oth_dir, np.dtype('int,int,int'))
+                oth_edges = np.transpose([np.tile(np_d_oth_dir, len(
+                    np_s_oth_dir)), np.repeat(np_s_oth_dir, len(np_d_oth_dir))])
+                print(f'{source} - {dest} \n {oth_edges}')
+                for i, row in enumerate(other_paths):
+                    if i == handle:
+                        continue
+                    for oth_edge in oth_edges:
+                        found_indexes = [x for x in range(
+                            len(row)) if row[x:x+len(oth_edge)] == oth_edge]
+                    if found_indexes:
+                        if ((w_sour <= other_weights[i, found_indexes[0]] and
+                             w_dest >= other_weights[i, found_indexes[1]]) or
+                            (w_sour >= other_weights[i, found_indexes[0]]
+                             and w_dest <= other_weights[i, found_indexes[1]])):
+                            oth_speed = self.speed_data[i].times
+                            deadlocks[ind_dest:len(path)] += 1
+                            distance = int(w_sour + (
+                                space - ((w_sour - other_weights[i, found_indexes[0]])/oth_speed)) * (oth_speed + my_speed))
+                            if distances[ind_dest] > distance:
+                                distances[ind_dest:len(path)] = distance
+        return deadlocks, distances
+
     def find_deadlocks(self, handle, path, other_paths, cum_weights_path, cum_weights_other_path):
         '''
+        Returns an array containing the number of deadlocks in the given path by looking
+        at all possible future intersections with other agents' shortest paths
         '''
         padding = np.array((-1, -1, -1), np.dtype('int, int, int'))
         cum_weights_other_path = np.delete(
             cum_weights_other_path, handle, axis=0)
+        already_found = []
         other_paths = np.delete(other_paths, handle, axis=0)
-        deadlocks = np.zeros((len(path),))
+        deadlocks = np.zeros((self.max_depth,))
+        distances = np.ones((self.max_depth,)) * np.inf
         init_weight = cum_weights_path[0]
         for index, weight in enumerate(cum_weights_path[1:]):
             traversed_indexes = np.logical_and(
@@ -290,10 +339,28 @@ class CustomObservation(ObservationBuilder):
             )
             traversed_nodes = np.where(
                 traversed_indexes, other_paths, padding)
-            for row in traversed_nodes:
+            if handle == 2:
+                print(traversed_nodes)
+            for i, row in enumerate(traversed_nodes):
                 useful_nodes = row[row != padding]
                 if useful_nodes.size > 0 and index < len(path)-1:
                     last_node = useful_nodes[-1]
-                    if last_node[0] == path[index+1][0] and last_node[1] == path[index+1][1] and last_node[2] != path[index+1][2]:
-                        deadlocks[:index+1] += 1
-        return deadlocks
+                    ln_index = np.argwhere(row == last_node)[0, 0]
+                    good_index = None
+                    if (i, ln_index) not in already_found:
+                        if last_node[0] == path[index][0] and last_node[1] == path[index][1] and last_node[2] != path[index][2]:
+                            good_index = index
+                        elif last_node[0] == path[index+1][0] and last_node[1] == path[index+1][1] and last_node[2] != path[index+1][2]:
+                            good_index = index + 1
+                        if good_index:
+                            already_found.append((i, ln_index))
+                            deadlocks[good_index:len(path)] += 1
+                            print(
+                                f'{i} - {ln_index} - {cum_weights_other_path[i, ln_index]}')
+                            value = (
+                                2 * weight -
+                                cum_weights_other_path[i, ln_index]
+                            )
+                            if distances[good_index] > value:
+                                distances[good_index:len(path)] = value
+        return deadlocks, distances
