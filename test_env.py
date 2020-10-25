@@ -11,6 +11,7 @@ from flatland.envs.rail_env import RailEnv
 from flatland.envs.rail_generators import rail_from_file, sparse_rail_generator
 from flatland.envs.schedule_generators import sparse_schedule_generator
 from flatland.utils.rendertools import RenderTool, AgentRenderVariant
+from flatland.envs.rail_env import RailAgentStatus
 
 from observations import CustomObservation
 from predictions import ShortestPathPredictor
@@ -112,14 +113,16 @@ def print_agents_info(env):
             agent.speed_data["speed"],
             agent.speed_data['position_fraction'],
             (
+                agent.initial_position[0],
+                agent.initial_position[1],
+                agent.direction
+            ) if agent.status == RailAgentStatus.READY_TO_DEPART else
+            (
                 agent.position[0],
                 agent.position[1],
                 agent.direction
-                # Status 3 -> DONE_REMOVED -> position is None
-            ) if agent.status != 3 else (
-                'Agent removed',
-                'No position',
-                'No direction'
+            ) if agent.status != RailAgentStatus.DONE_REMOVED else (
+                'DONE'
             ),
             agent.target,
             agent.malfunction_data['malfunction']
@@ -168,16 +171,14 @@ def main():
             1. / 3.: 0.25,
             1. / 4.: 0.25
         }
-    else:
-        speed_map = {1.: 1}
-    schedule_generator = sparse_schedule_generator(speed_map)
+        schedule_generator = sparse_schedule_generator(speed_map)
 
     # Construct the environment
     env = RailEnv(
         width=args.width,
         height=args.height,
         rail_generator=rail_generator,
-        schedule_generator=schedule_generator,
+        schedule_generator=schedule_generator if args.variable_speed else None,
         number_of_agents=args.num_trains,
         obs_builder_object=observation_builder,
         malfunction_generator=malfunctions,

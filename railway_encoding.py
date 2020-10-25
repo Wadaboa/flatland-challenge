@@ -1,7 +1,9 @@
 '''
 '''
 
-import heapq
+import itertools
+
+import numpy as np
 
 from flatland.core.grid.grid4 import Grid4TransitionsEnum
 from flatland.core.grid.grid4_utils import mirror, get_new_position
@@ -39,6 +41,12 @@ class CellOrientationGraph():
             self._targets.setdefault(agent.target, []).append(agent.handle)
 
         self.generate_graph()
+
+    def is_straight_rail(self, cell):
+        '''
+        Check if the given cell is a straight rail
+        '''
+        return cell in self._straight_rails
 
     def generate_graph(self):
         '''
@@ -229,11 +237,12 @@ class CellOrientationGraph():
             try:
                 cell = next(predecessors)
                 weight += 1
-                if cell in self.graph.nodes:
-                    edge = (cell, next_node)
-                    if edge in self.graph.edges:
-                        return cell, weight
-                predecessors = self._unpacked_graph.predecessors(cell)
+                edge = (cell, next_node)
+                if edge in self.graph.edges:
+                    return cell, weight
+                predecessors = itertools.chain(
+                    predecessors, self._unpacked_graph.predecessors(cell)
+                )
             except StopIteration:
                 break
         return None
@@ -374,6 +383,18 @@ class CellOrientationGraph():
         for path in nx.all_simple_paths(self.graph, source, self.agents[handle].target):
             nodes.update(path)
         return nx.subgraph(self.graph, nodes)
+
+    def get_distance(self, source, dest):
+        '''
+        Return the minimum distance between the source
+        and destination nodes
+        '''
+        if (source not in self._unpacked_graph.nodes or
+                dest not in self._unpacked_graph.nodes):
+            return np.inf
+        return nx.dijkstra_path_length(
+            self._unpacked_graph, source, dest
+        )
 
     def edges_from_path(self, path):
         '''
