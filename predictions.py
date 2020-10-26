@@ -25,7 +25,7 @@ class ShortestPathPredictor(PredictionBuilder):
 
     def __init__(self, max_depth=None):
         super().__init__(max_depth)
-        self.max_pos_depth = max_depth * self.POS_DEPTH_FACTOR
+        self.max_pos_depth = None  # max_depth * self.POS_DEPTH_FACTOR
 
     def reset(self):
         '''
@@ -99,11 +99,11 @@ class ShortestPathPredictor(PredictionBuilder):
         '''
         start = 0
         depth = min(self.max_depth or len(path), len(path))
-        deviation_paths = dict()
+        deviation_paths = []
         source, _ = self.railway_encoding.next_node(path[0])
         if source != path[0]:
             start = 1
-            deviation_paths = {path[0]: []}
+            deviation_paths.append(_empty_prediction())
         for i in range(start, depth - 1):
             paths = self.railway_encoding.deviation_paths(
                 handle, path[i], path[i + 1]
@@ -119,14 +119,16 @@ class ShortestPathPredictor(PredictionBuilder):
                 pos = self.railway_encoding.positions_from_path(
                     deviation_path[:self.max_depth], max_lenght=self.max_pos_depth
                 )
-                deviation_paths[path[i]] = Prediction(
-                    lenght=lenght,
-                    path=deviation_path[:self.max_depth],
-                    edges=edges,
-                    positions=pos
+                deviation_paths.append(
+                    Prediction(
+                        lenght=lenght,
+                        path=deviation_path[:self.max_depth],
+                        edges=edges,
+                        positions=pos
+                    )
                 )
             else:
-                deviation_paths[path[i]] = _empty_prediction()
+                deviation_paths.append(_empty_prediction())
 
         return deviation_paths
 

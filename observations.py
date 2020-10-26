@@ -14,28 +14,9 @@ import utils
 from railway_encoding import CellOrientationGraph
 
 
-# Observations
-'''
-- Agent handle
-- Agent status
-- Agent speed
-- Agent moving
-- Shortest path action (one-hot encoding)
-- Shortest path distance
-- Deviation path action (one-hot encoding)
-- Deviation path distance
-- Neighboring agents in the same direction (in the packed graph)
-- Distance from neighboring agents in the same direction (in the packed graph)
-- Neighboring agents in the opposite direction (in the packed graph)
-- Distance from neighboring agents in the opposite direction (in the packed graph)
-- Number of conflicts in the shortest path
-'''
-
-# TODO
 '''
     -Graph:
         - Divide intersection nodes on arrival direction
-        -
     - Observation:
         - Structure:
             - Shortest path cut on the 5th node
@@ -48,11 +29,14 @@ from railway_encoding import CellOrientationGraph
             - [Y] Distance from the target
             - [Y] Num. agents using the node to reach their target in the shortest path
             - [Y] Num. agents in deadlock in the previous path if the other agents follow their shortest path
-            - Distance from the nearest deadlock in the path computed as above
+            - [Y] Distance from the nearest deadlock in the path computed as above
             - [Y] Number of agent malfunctioning in the previous path in the same direction
             - [Y] Number of agent malfunctioning in the previous path in the opposite direction
             - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the same direction (difference between malfunction time and distance)
             - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the opposite direction (difference between malfunction time and distance)
+        - Todo:
+            - Add the path from the previous node to the next node as the shortest path if not shortest path exists 
+              (useful to detect deadlocks when an agent cannot arrive at destination)
 '''
 
 SpeedData = namedtuple('SpeedData', ['times', 'remaining'])
@@ -60,7 +44,7 @@ SpeedData = namedtuple('SpeedData', ['times', 'remaining'])
 
 class CustomObservation(ObservationBuilder):
 
-    FEATURES = 10
+    FEATURES = 12
 
     def __init__(self, max_depth, predictor):
         super().__init__()
@@ -108,11 +92,15 @@ class CustomObservation(ObservationBuilder):
     def get_many(self, handles=None):
         self.predictions = self.predictor.get_many()
         self._shortest_paths = np.full(
-            (len(self.agent_handles), self.max_depth), -1, np.dtype('int, int, int'))
-        self._shortest_pos = np.full(
-            (len(self.agent_handles), self.max_depth), -1, np.dtype('int, int'))
-        self._cumulative_weights = np.full(
-            (len(self.agent_handles), self.max_depth), np.inf)
+            (len(self.agent_handles), self.max_depth),
+            -1, np.dtype('int, int, int')
+        )
+        self._shortest_positions = np.full(
+            (len(self.agent_handles), self.max_depth), -1, np.dtype('int, int')
+        )
+        self._shortest_cum_weights = np.full(
+            (len(self.agent_handles), self.max_depth), np.inf
+        )
         for handle, val in self.predictions.items():
             # Check if agent is not at Target
             if self.predictions[handle] is not None:
@@ -139,53 +127,72 @@ class CustomObservation(ObservationBuilder):
 
     def _update_data(self, handle, prediction, remaining_steps):
         shortest_path = np.array(prediction.path, np.dtype('int, int, int'))
-        shortest_pos = np.array([node[:-1]
-                                 for node in prediction.path], np.dtype('int, int'))
-        cum_weights = np.array(self.compute_cumulative_weights(
-            handle, prediction.edges, remaining_steps))
+        shortest_positions = np.array(
+            [node[:-1] for node in prediction.path], np.dtype('int, int')
+        )
+        shortest_cum_weights = np.array(
+            self.compute_cumulative_weights(
+                handle, prediction.edges, remaining_steps
+            )
+        )
         self._shortest_paths[handle, :shortest_path.shape[0]] = shortest_path
-        self._shortest_pos[handle, :shortest_pos.shape[0]] = shortest_pos
-        self._cumulative_weights[handle, :cum_weights.shape[0]] = cum_weights
+        self._shortest_positions[handle, :shortest_positions.shape[0]] = (
+            shortest_positions
+        )
+        self._shortest_cum_weights[handle, :shortest_cum_weights.shape[0]] = (
+            shortest_cum_weights
+        )
 
     def get(self, handle=0):
-        self.observations[handle] = np.ones(
-            (self.max_depth, self.max_depth, self.FEATURES)
-        ) * -np.inf
+        self.observations[handle] = np.full(
+            (self.max_depth, self.max_depth, self.FEATURES), -np.inf
+        )
         if self.predictions[handle] is not None:
-
             shortest_path_prediction, deviation_paths_prediction = self.predictions[handle]
-
-            num_agents, agent_distances = self.agents_in_path(
-                handle,
-                shortest_path_prediction.path,
-                self._cumulative_weights[handle]
+            shortest_feats = self._fill_path_values(
+                handle, shortest_path_prediction
             )
-            target_distances = self.distance_from_target(
-                handle,
-                shortest_path_prediction.lenght,
-                shortest_path_prediction.path,
-                self._cumulative_weights[handle]
-            )
-            c_nodes = self.common_nodes(
-                handle, shortest_path_prediction.path, self._shortest_pos
-            )
-
-            deadlocks, deadlock_distances = self.find_deadlocks(
-                handle, c_nodes, self._cumulative_weights[handle],
-                shortest_path_prediction.path,  self._shortest_paths, self._cumulative_weights
-            )
-            # Debug Zone
-            # Not Working -> See Comment Line 117
-            # print(f'\nAgents in Path:\n Num agents\n {num_agents}\n Distances\n {agent_distances}\n')
-            # Not Working -> See Comment Line 117
-            # print(f'\nTarget Distances:\n Distances\n {target_distances}\n')
-            # Working
-            # print(f'\nCommon Nodes:\n Nodes\n {c_nodes}\n')
-            # Not Working -> See Comment Line 117
-            print(
-                f'\nDeadlock {handle}:\n Deadlock\n {deadlocks}\n Distances \n {deadlock_distances}\n')
+            self.observations[handle][0, :, :] = shortest_feats
+            for i, deviation_prediction in enumerate(deviation_paths_prediction):
+                dev_feats = self._fill_path_values(
+                    handle, deviation_prediction,
+                    remaining_steps=self._shortest_cum_weights[handle, i]
+                )
+                self.observations[handle][i + 1, :, :] = dev_feats
 
         return self.observations[handle]
+
+    def _fill_path_values(self, handle, prediction, remaining_steps=0):
+        '''
+        '''
+        # Compute cumulative weights for the given path
+        path_weights = np.zeros((self.max_depth,))
+        weights = np.array(
+            self.compute_cumulative_weights(
+                handle, prediction.edges, remaining_steps
+            )
+        )
+        path_weights[:weights.shape[0]] = weights
+
+        # Compute features
+        num_agents, agent_distances = self.agents_in_path(
+            handle, prediction.path, path_weights
+        )
+        target_distances = self.distance_from_target(
+            handle, prediction.lenght, prediction.path, path_weights
+        )
+        c_nodes = self.common_nodes(handle, prediction.path)
+        deadlocks, deadlock_distances = self.find_deadlocks(
+            handle, prediction.path, path_weights, c_nodes
+        )
+
+        # Build the feature matrix
+        feature_matrix = np.vstack([
+            num_agents, agent_distances, target_distances,
+            c_nodes, deadlocks, deadlock_distances
+        ]).T
+
+        return feature_matrix
 
     def compute_cumulative_weights(self, handle, edges, initial_distance):
         '''
@@ -207,45 +214,58 @@ class CustomObservation(ObservationBuilder):
         '''
         num_agents = np.zeros((self.max_depth, 4))
         distances = np.ones((self.max_depth, 4)) * np.inf
+
+        # For each agent different than myself
         for agent in self.other_agents[handle]:
             directions = [0]
             position = self.railway_encoding.get_agent_cell(agent)
             # Check if agent is not DONE_REMOVED -> position is None
-            if position:
+            if position is not None:
                 node, remaining_distance = self.railway_encoding.next_node(
                     position
                 )
                 nodes = self.railway_encoding.get_nodes((node[0], node[1]))
+                next_nodes = list(self.railway_encoding.graph.successors(node))
                 for other_node in nodes:
                     index = utils.get_index(path, other_node)
                     if index:
-                        if other_node != node:
+                        if (other_node != node and
+                            (len(next_nodes) > 1 or len(path) <= index + 1 or
+                             (len(next_nodes) > 0 and next_nodes[0] != path[index + 1]))):
                             directions = [1]
+
                         malfunction = self.env.agents[agent].malfunction_data['malfunction']
                         if malfunction > 0:
                             directions.append(directions[0] + 2)
                         break
                 if index:
+                    # For each computed direction (same and opposite)
                     for direction in directions:
                         num_agents[index:len(path), direction] += 1
-                        value = (cum_weights[index] +
-                                 self.speed_data[agent].remaining)
+                        value = (
+                            cum_weights[index] +
+                            self.speed_data[agent].remaining
+                        )
+                        # Same direction
                         if direction % 2 == 0:
                             value -= (
                                 remaining_distance *
                                 self.speed_data[handle].times
                             )
+                        # Other direction
                         else:
                             value += (
                                 remaining_distance *
                                 self.speed_data[handle].times
                             )
+                        # If malfunctioning
                         if direction >= 2:
                             value = np.clip(malfunction - value, 0, None)
+                        # Update distances
                         if ((direction < 2 and distances[index, direction] > value) or
                                 (direction >= 2 and distances[index, direction] < value)):
                             distances[index:len(path), direction] = value
-        return num_agents, distances
+        return np.transpose(num_agents), np.transpose(distances)
 
     def distance_from_target(self, handle, lenght, path, cum_weights):
         '''
@@ -253,6 +273,8 @@ class CustomObservation(ObservationBuilder):
         compute the distance from each node of the path to the target
         '''
         distances = np.zeros((self.max_depth,))
+        if lenght == np.inf:
+            return np.full((self.max_depth,), np.inf)
         distances[:len(path)] = (
             np.ones((len(path),))
             * lenght
@@ -264,14 +286,14 @@ class CustomObservation(ObservationBuilder):
         )
         return distances
 
-    def common_nodes(self, handle, path, other_positions):
+    def common_nodes(self, handle, path):
         '''
         Given an agent's path and corresponding paths for every other agent,
         compute the number of intersections for each node
         '''
         nd_path = np.array([node[:-1] for node in path], np.dtype('int, int'))
         c_nodes = np.zeros((self.max_depth,))
-        other_positions = np.delete(other_positions, handle, axis=0)
+        other_positions = np.delete(self._shortest_positions, handle, axis=0)
         computed = np.zeros((len(path),))
         for row in other_positions:
             computed += np.count_nonzero(
@@ -281,7 +303,7 @@ class CustomObservation(ObservationBuilder):
         c_nodes[:computed.shape[0]] = computed
         return c_nodes
 
-    def _common_edges(self, handle, c_nodes, cum_weights, path):
+    def _common_edges(self, handle, path, cum_weights, c_nodes):
         '''
         '''
         c_edges, weights, indexes = [], [], []
@@ -298,6 +320,15 @@ class CustomObservation(ObservationBuilder):
             weights.append((-prev_weight, cum_weights[1]))
             indexes.append((-1, 1))
 
+        # Add my next edge if another agent is already inside it
+        if c_nodes[0] >= 1 and c_nodes[1] == 0:
+            for agent in self.other_agents[handle]:
+                last_node = self.last_nodes[agent]
+                if last_node is not None and last_node[0] == path[1][0] and last_node[1] == path[1][1]:
+                    c_edges.append((path[0], path[1]))
+                    weights.append((cum_weights[0], cum_weights[1]))
+                    indexes.append((0, 1))
+
         # Store all the other common edges
         for index in range(start_index, len(path) - 1):
             if c_nodes[index] >= 1 and c_nodes[index + 1] >= 1:
@@ -307,7 +338,7 @@ class CustomObservation(ObservationBuilder):
 
         return c_edges, weights, indexes
 
-    def find_deadlocks(self, handle, c_nodes, cum_weights, path, other_paths, other_weights):
+    def find_deadlocks(self, handle, path, cum_weights, c_nodes):
         '''
         Returns an array containing the number of deadlocks in the given path by looking
         at all possible future intersections with other agents' shortest paths
@@ -317,14 +348,14 @@ class CustomObservation(ObservationBuilder):
         if np.count_nonzero(c_nodes) > 0:
             prev_paths = []
             prev_weights = []
-            for i, p in enumerate(other_paths):
+            for i, p in enumerate(self._shortest_paths):
                 prev_node = self.last_nodes[i]
                 prev_weight = self.railway_encoding.get_distance(
                     prev_node, tuple(p[0])
                 )
                 if prev_weight == np.inf:
                     prev_paths.append(p[0])
-                    prev_weights.append(other_weights[i, 0])
+                    prev_weights.append(self._shortest_cum_weights[i, 0])
                 else:
                     prev_paths.append(prev_node)
                     prev_weights.append(
@@ -332,16 +363,16 @@ class CustomObservation(ObservationBuilder):
                     )
             other_paths = np.hstack([
                 np.array(prev_paths, np.dtype('int, int, int')
-                         ).reshape(other_paths.shape[0], 1),
-                other_paths[:, 1:]
+                         ).reshape(self._shortest_paths.shape[0], 1),
+                self._shortest_paths[:, 1:]
             ])
             other_weights = np.hstack([
-                (np.array(prev_weights) + other_weights[:, 0]).reshape(
-                    other_weights.shape[0], 1),
-                other_weights[:, 1:]
+                (np.array(prev_weights) + self._shortest_cum_weights[:, 0]).reshape(
+                    self._shortest_cum_weights.shape[0], 1),
+                self._shortest_cum_weights[:, 1:]
             ])
             edges, weights, indexes = self._common_edges(
-                handle, c_nodes, cum_weights, path
+                handle, path, cum_weights, c_nodes
             )
             already_found = []
             for edge, weight, index in zip(edges, weights, indexes):
