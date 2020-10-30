@@ -117,6 +117,9 @@ class DuelingQNetwork(nn.Module):
         self.fc3_adv = nn.Linear(hidsize2, action_size)
 
     def forward(self, x):
+        print(x)
+        x = torch.flatten(x)
+        print(x.size())
         val = F.relu(self.fc1_val(x))
         val = F.relu(self.fc2_val(val))
         val = self.fc3_val(val)

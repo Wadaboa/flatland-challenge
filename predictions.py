@@ -86,13 +86,13 @@ class ShortestPathPredictor(PredictionBuilder):
                 handle
             )
             if not self._shortest_paths[handle]:
-                return np.inf, []
+                return np.inf, [position, node]
 
             chosen_path = self._shortest_paths[handle][0]
 
         return chosen_path
 
-    def get_deviation_paths(self, handle, path):
+    def get_deviation_paths(self, handle, lenght, path):
         '''
         Return one deviation path for at most `max_depth` nodes in the given path
         and limit the computed path lenghts by `max_depth`
@@ -100,35 +100,42 @@ class ShortestPathPredictor(PredictionBuilder):
         start = 0
         depth = min(self.max_depth or len(path), len(path))
         deviation_paths = []
-        source, _ = self.railway_encoding.next_node(path[0])
-        if source != path[0]:
-            start = 1
-            deviation_paths.append(_empty_prediction())
-        for i in range(start, depth - 1):
-            paths = self.railway_encoding.deviation_paths(
-                handle, path[i], path[i + 1]
-            )
-            deviation_path = []
-            lenght = 0
-            if paths:
-                deviation_path = paths[0][1]
-                lenght = paths[0][0]
-                edges = self.railway_encoding.edges_from_path(
-                    deviation_path[:self.max_depth]
-                )
-                pos = self.railway_encoding.positions_from_path(
-                    deviation_path[:self.max_depth], max_lenght=self.max_pos_depth
-                )
-                deviation_paths.append(
-                    Prediction(
-                        lenght=lenght,
-                        path=deviation_path[:self.max_depth],
-                        edges=edges,
-                        positions=pos
-                    )
-                )
-            else:
+        padding = self.max_depth - 1
+        if lenght < np.inf:
+            padding -= len(path)
+            source, _ = self.railway_encoding.next_node(path[0])
+            if source != path[0]:
+                start = 1
                 deviation_paths.append(_empty_prediction())
+            for i in range(start, depth - 1):
+                paths = self.railway_encoding.deviation_paths(
+                    handle, path[i], path[i + 1]
+                )
+                deviation_path = []
+                lenght = 0
+                if paths:
+                    deviation_path = paths[0][1]
+                    lenght = paths[0][0]
+                    edges = self.railway_encoding.edges_from_path(
+                        deviation_path[:self.max_depth]
+                    )
+                    pos = self.railway_encoding.positions_from_path(
+                        deviation_path[:self.max_depth], max_lenght=self.max_pos_depth
+                    )
+                    deviation_paths.append(
+                        Prediction(
+                            lenght=lenght,
+                            path=deviation_path[:self.max_depth],
+                            edges=edges,
+                            positions=pos
+                        )
+                    )
+                else:
+                    deviation_paths.append(_empty_prediction())
+
+        deviation_paths.extend(
+            [_empty_prediction()] * (padding)
+        )
 
         return deviation_paths
 
@@ -153,20 +160,17 @@ class ShortestPathPredictor(PredictionBuilder):
 
         # Build predictions
         lenght, path = self.get_shortest_path(handle)
-        if lenght < np.inf:
-            edges = self.railway_encoding.edges_from_path(
-                path[:self.max_depth]
-            )
-            pos = self.railway_encoding.positions_from_path(
-                path[:self.max_depth], max_lenght=self.max_pos_depth
-            )
-            shortest_path_prediction = Prediction(
-                lenght=lenght, path=path[:self.max_depth], edges=edges, positions=pos
-            )
-            deviation_paths_prediction = self.get_deviation_paths(handle, path)
-        else:
-            shortest_path_prediction = _empty_prediction()
-            deviation_paths_prediction = dict()
+        edges = self.railway_encoding.edges_from_path(
+            path[:self.max_depth]
+        )
+        pos = self.railway_encoding.positions_from_path(
+            path[:self.max_depth], max_lenght=self.max_pos_depth
+        )
+        shortest_path_prediction = Prediction(
+            lenght=lenght, path=path[:self.max_depth], edges=edges, positions=pos
+        )
+        deviation_paths_prediction = self.get_deviation_paths(
+            handle, lenght, path)
 
         # Update GUI
         visited = OrderedSet()

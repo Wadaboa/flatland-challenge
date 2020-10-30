@@ -35,8 +35,8 @@ from railway_encoding import CellOrientationGraph
             - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the same direction (difference between malfunction time and distance)
             - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the opposite direction (difference between malfunction time and distance)
         - Todo:
-            - Add the path from the previous node to the next node as the shortest path if not shortest path exists 
-              (useful to detect deadlocks when an agent cannot arrive at destination)
+            - Debug Deadlock and deadlock distances (Hurray...)
+            - Degub Deviation paths generation not generating some paths
 '''
 
 SpeedData = namedtuple('SpeedData', ['times', 'remaining'])
@@ -120,9 +120,7 @@ class CustomObservation(ObservationBuilder):
                     times=self.speed_data[handle].times,
                     remaining=remaining_steps
                 )
-                # Check if exist a path
-                if val[0].lenght < np.inf:
-                    self._update_data(handle, val[0], remaining_steps)
+                self._update_data(handle, val[0], remaining_steps)
         return super().get_many(handles)
 
     def _update_data(self, handle, prediction, remaining_steps):
@@ -159,7 +157,10 @@ class CustomObservation(ObservationBuilder):
                     remaining_steps=self._shortest_cum_weights[handle, i]
                 )
                 self.observations[handle][i + 1, :, :] = dev_feats
-
+            # print()
+            #print(f'Handle: {handle} -> SP: {shortest_path_prediction.path}')
+            # print(self.observations[handle])
+            # print()
         return self.observations[handle]
 
     def _fill_path_values(self, handle, prediction, remaining_steps=0):
@@ -179,7 +180,7 @@ class CustomObservation(ObservationBuilder):
             handle, prediction.path, path_weights
         )
         target_distances = self.distance_from_target(
-            handle, prediction.lenght, prediction.path, path_weights
+            handle, prediction.lenght + remaining_steps, prediction.path, path_weights
         )
         c_nodes = self.common_nodes(handle, prediction.path)
         deadlocks, deadlock_distances = self.find_deadlocks(
@@ -291,16 +292,20 @@ class CustomObservation(ObservationBuilder):
         Given an agent's path and corresponding paths for every other agent,
         compute the number of intersections for each node
         '''
-        nd_path = np.array([node[:-1] for node in path], np.dtype('int, int'))
         c_nodes = np.zeros((self.max_depth,))
-        other_positions = np.delete(self._shortest_positions, handle, axis=0)
-        computed = np.zeros((len(path),))
-        for row in other_positions:
-            computed += np.count_nonzero(
-                np.isin(nd_path, row).reshape(1, len(nd_path)),
-                axis=0
+        if len(path) > 0:
+            nd_path = np.array(
+                [node[:-1] for node in path], np.dtype('int, int')
             )
-        c_nodes[:computed.shape[0]] = computed
+            computed = np.zeros((len(path),))
+            for row in self.other_agents[handle]:
+                computed += np.count_nonzero(
+                    np.isin(
+                        nd_path, self._shortest_positions[row, :]
+                    ).reshape(1, len(nd_path)),
+                    axis=0
+                )
+            c_nodes[:computed.shape[0]] = computed
         return c_nodes
 
     def _common_edges(self, handle, path, cum_weights, c_nodes):

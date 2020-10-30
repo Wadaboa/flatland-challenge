@@ -22,6 +22,8 @@ from flatland.envs.observations import TreeObsForRailEnv
 
 from flatland.envs.malfunction_generators import ParamMalfunctionGen, MalfunctionParameters
 from flatland.envs.predictions import ShortestPathPredictorForRailEnv
+from predictions import ShortestPathPredictor
+from observations import CustomObservation
 
 base_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(base_dir))
@@ -46,9 +48,10 @@ def create_rail_env(env_params, tree_observation):
 
     # Break agents from time to time
     malfunction_parameters = MalfunctionParameters(
-        malfunction_rate = env_params.malfunction_rate,  # Rate of malfunction occurence of single agent
-        min_duration = 20,  # Minimal duration of malfunction
-        max_duration = 50  # Max duration of malfunction
+        # Rate of malfunction occurence of single agent
+        malfunction_rate=env_params.malfunction_rate,
+        min_duration=20,  # Minimal duration of malfunction
+        max_duration=50  # Max duration of malfunction
     )
 
     return RailEnv(
@@ -101,14 +104,18 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
     np.random.seed(seed)
 
     # Observation builder
-    predictor = ShortestPathPredictorForRailEnv(observation_max_path_depth)
-    tree_observation = TreeObsForRailEnv(
-        max_depth=observation_tree_depth, predictor=predictor)
-
+    #predictor = ShortestPathPredictorForRailEnv(observation_max_path_depth)
+    # tree_observation = TreeObsForRailEnv(
+    #    max_depth=observation_tree_depth, predictor=predictor)
+    predictor = ShortestPathPredictor(
+        max_depth=observation_tree_depth)
+    observation_builder = CustomObservation(
+        max_depth=observation_tree_depth, predictor=predictor
+    )
     # Setup the environments
-    train_env = create_rail_env(train_env_params, tree_observation)
+    train_env = create_rail_env(train_env_params, observation_builder)
     train_env.reset(regenerate_schedule=True, regenerate_rail=True)
-    eval_env = create_rail_env(eval_env_params, tree_observation)
+    eval_env = create_rail_env(eval_env_params, observation_builder)
     eval_env.reset(regenerate_schedule=True, regenerate_rail=True)
 
     # Setup renderer
@@ -116,10 +123,10 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
         env_renderer = RenderTool(train_env)
 
     # Calculate the state size given the depth of the tree observation and the number of features
-    n_features_per_node = train_env.obs_builder.observation_dim
-    n_nodes = sum([np.power(4, i) for i in range(observation_tree_depth + 1)])
-    state_size = n_features_per_node * n_nodes
-
+    #n_features_per_node = train_env.obs_builder.observation_dim
+    #n_nodes = sum([np.power(4, i) for i in range(observation_tree_depth + 1)])
+    #state_size = n_features_per_node * n_nodes
+    state_size = (observation_tree_depth ** 2) * observation_builder.FEATURES
     # The action space of flatland is 5 discrete actions
     action_size = 5
 
@@ -204,9 +211,10 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
 
         # Build initial agent-specific observations
         for agent in train_env.get_agent_handles():
-            if obs[agent]:
-                agent_obs[agent] = normalize_observation(
-                    obs[agent], observation_tree_depth, observation_radius=observation_radius)
+            if obs[agent] is not None:
+                # agent_obs[agent] = normalize_observation(
+                #    obs[agent], observation_tree_depth, observation_radius=observation_radius)
+                agent_obs[agent] = obs[agent]
                 agent_prev_obs[agent] = agent_obs[agent].copy()
 
         # Run episode
@@ -254,10 +262,11 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
                     agent_prev_action[agent] = action_dict[agent]
 
                 # Preprocess the new observations
-                if next_obs[agent]:
+                if next_obs[agent] is not None:
                     preproc_timer.start()
-                    agent_obs[agent] = normalize_observation(
-                        next_obs[agent], observation_tree_depth, observation_radius=observation_radius)
+                    # agent_obs[agent] = normalize_observation(
+                    #    next_obs[agent], observation_tree_depth, observation_radius=observation_radius)
+                    agent_obs = next_obs[agent]
                     preproc_timer.end()
 
                 score += all_rewards[agent]
@@ -424,9 +433,10 @@ def eval_policy(env, policy, train_params, obs_params):
 
         for step in range(max_steps - 1):
             for agent in env.get_agent_handles():
-                if obs[agent]:
-                    agent_obs[agent] = normalize_observation(
-                        obs[agent], tree_depth=tree_depth, observation_radius=observation_radius)
+                if obs[agent] is not None:
+                    #agent_obs[agent] = normalize_observation(
+                    #    obs[agent], tree_depth=tree_depth, observation_radius=observation_radius)
+                    agent_obs[agent]=obs[agent]
                 if step == 0:
                     print(agent_obs[agent].shape)
                 action = 0
@@ -553,7 +563,7 @@ if __name__ == "__main__":
     ]
 
     obs_params = {
-        "observation_tree_depth": 2,
+        "observation_tree_depth": 5,
         "observation_radius": 10,
         "observation_max_path_depth": 30
     }
