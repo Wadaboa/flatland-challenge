@@ -132,3 +132,4 @@ checkpoints/
 runs/
 .vscode/
 tmp/
+wandb/

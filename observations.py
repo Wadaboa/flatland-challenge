@@ -9,6 +9,7 @@ from flatland.core.env import Environment
 from flatland.core.env_observation_builder import ObservationBuilder
 from flatland.core.grid.grid_utils import coordinate_to_position
 from flatland.utils.ordered_set import OrderedSet
+from flatland.envs.rail_env import RailAgentStatus
 
 import utils
 from railway_encoding import CellOrientationGraph
@@ -36,7 +37,11 @@ from railway_encoding import CellOrientationGraph
             - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the opposite direction (difference between malfunction time and distance)
         - Todo:
             - Debug Deadlock and deadlock distances (Hurray...)
-            - Degub Deviation paths generation not generating some paths
+            - Debug Deviation paths generation not generating some paths
+            - Check distance from target (deviation paths not having the correct initial distance)
+            - Check normalization correctness 
+            - Differentiate `inf` from maximum value in normalization
+            - Handle observation not present at all (all -1 or all 0 ???)
 '''
 
 SpeedData = namedtuple('SpeedData', ['times', 'remaining'])
@@ -157,10 +162,17 @@ class CustomObservation(ObservationBuilder):
                     remaining_steps=self._shortest_cum_weights[handle, i]
                 )
                 self.observations[handle][i + 1, :, :] = dev_feats
-            # print()
-            #print(f'Handle: {handle} -> SP: {shortest_path_prediction.path}')
-            # print(self.observations[handle])
-            # print()
+
+        print()
+        print(f'PREHandle: {handle}')
+        print(self.observations[handle])
+        print()
+        self.observations[handle] = self.normalize(self.observations[handle])
+        print()
+        print(f'POSTHandle: {handle}')
+        print(self.observations[handle])
+        print()
+
         return self.observations[handle]
 
     def _fill_path_values(self, handle, prediction, remaining_steps=0):
@@ -180,7 +192,7 @@ class CustomObservation(ObservationBuilder):
             handle, prediction.path, path_weights
         )
         target_distances = self.distance_from_target(
-            handle, prediction.lenght + remaining_steps, prediction.path, path_weights
+            handle, prediction.lenght, prediction.path, path_weights, remaining_steps
         )
         c_nodes = self.common_nodes(handle, prediction.path)
         deadlocks, deadlock_distances = self.find_deadlocks(
@@ -268,7 +280,7 @@ class CustomObservation(ObservationBuilder):
                             distances[index:len(path), direction] = value
         return np.transpose(num_agents), np.transpose(distances)
 
-    def distance_from_target(self, handle, lenght, path, cum_weights):
+    def distance_from_target(self, handle, lenght, path, cum_weights, remaining_steps=0):
         '''
         Given the full lenght of a path from a root node to an agent's target,
         compute the distance from each node of the path to the target
@@ -278,11 +290,11 @@ class CustomObservation(ObservationBuilder):
             return np.full((self.max_depth,), np.inf)
         distances[:len(path)] = (
             np.ones((len(path),))
-            * lenght
+            * (lenght + remaining_steps)
             * self.speed_data[handle].times
         )
         distances = (
-            (distances - cum_weights)
+            (distances - cum_weights - remaining_steps)
             + 2 * self.speed_data[handle].remaining
         )
         return distances
@@ -433,3 +445,64 @@ class CustomObservation(ObservationBuilder):
                             if distances[ind_dest] > distance:
                                 distances[ind_dest:len(path)] = distance
         return deadlocks, distances
+
+    def normalize(self, observation):
+        normalized_observation = np.full(
+            (self.max_depth, self.max_depth, self.FEATURES), -1, np.dtype('float32')
+        )
+        num_agents = observation[:, :, 0:4]
+        agent_distances = observation[:, :, 4:8]
+        target_distances = observation[:, :, 8]
+        c_nodes = observation[:, :, 9]
+        deadlocks = observation[:, :, 10]
+        deadlock_distances = observation[:, :, 11]
+
+        # Normalize number of agents in path
+        done_agents = sum([
+            1 for i in self.agent_handles
+            if self.env.agents[i].status in (RailAgentStatus.DONE, RailAgentStatus.DONE_REMOVED)
+        ])
+        remaining_agents = len(self.agent_handles) - done_agents
+        num_agents /= remaining_agents
+
+        # Normalize common nodes
+        c_nodes /= self.max_depth
+
+        # Normalize deadlocks
+        deadlocks /= remaining_agents
+
+        # Normalize distances
+        finite_target_distances = target_distances[
+            np.isfinite(target_distances)
+        ]
+        try:
+            max_distance = finite_target_distances.max()
+            min_distance = finite_target_distances.min()
+            if max_distance != min_distance:
+                agent_distances = (
+                    (agent_distances - min_distance) /
+                    (max_distance - min_distance)
+                )
+                target_distances = (
+                    (target_distances - min_distance) /
+                    (max_distance - min_distance)
+                )
+                deadlock_distances = (
+                    (deadlock_distances - min_distance) /
+                    (max_distance - min_distance)
+                )
+        except:
+            pass
+        agent_distances[agent_distances == np.inf] = 1
+        target_distances[target_distances == np.inf] = 1
+        deadlock_distances[deadlock_distances == np.inf] = 1
+
+        # Build the normalized observation
+        normalized_observation[:, :, 0:4] = num_agents
+        normalized_observation[:, :, 4:8] = agent_distances
+        normalized_observation[:, :, 8] = target_distances
+        normalized_observation[:, :, 9] = c_nodes
+        normalized_observation[:, :, 10] = deadlocks
+        normalized_observation[:, :, 11] = deadlock_distances
+        normalized_observation[normalized_observation == -np.inf] = -1
+        return normalized_observation

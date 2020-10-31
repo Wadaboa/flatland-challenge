@@ -32,7 +32,7 @@ sys.path.append(str(base_dir))
 try:
     import wandb
 
-    wandb.init(sync_tensorboard=True)
+    # wandb.init(sync_tensorboard=True)
 except ImportError:
     print("Install wandb to log to Weights & Biases")
 
@@ -266,7 +266,7 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
                     preproc_timer.start()
                     # agent_obs[agent] = normalize_observation(
                     #    next_obs[agent], observation_tree_depth, observation_radius=observation_radius)
-                    agent_obs = next_obs[agent]
+                    agent_obs[agent] = next_obs[agent]
                     preproc_timer.end()
 
                 score += all_rewards[agent]
@@ -434,9 +434,9 @@ def eval_policy(env, policy, train_params, obs_params):
         for step in range(max_steps - 1):
             for agent in env.get_agent_handles():
                 if obs[agent] is not None:
-                    #agent_obs[agent] = normalize_observation(
+                    # agent_obs[agent] = normalize_observation(
                     #    obs[agent], tree_depth=tree_depth, observation_radius=observation_radius)
-                    agent_obs[agent]=obs[agent]
+                    agent_obs[agent] = obs[agent]
                 if step == 0:
                     print(agent_obs[agent].shape)
                 action = 0

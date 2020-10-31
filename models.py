@@ -117,9 +117,7 @@ class DuelingQNetwork(nn.Module):
         self.fc3_adv = nn.Linear(hidsize2, action_size)
 
     def forward(self, x):
-        print(x)
-        x = torch.flatten(x)
-        print(x.size())
+        x = torch.flatten(x, start_dim=1)
         val = F.relu(self.fc1_val(x))
         val = F.relu(self.fc2_val(val))
         val = self.fc3_val(val)
@@ -219,17 +217,27 @@ class DDDQNPolicy(Policy):
         states, actions, rewards, next_states, dones = experiences
 
         # Get expected Q values from local model
-        q_expected = self.qnetwork_local(states).gather(1, actions)
+        q_expected = self.qnetwork_local(
+            states
+        ).gather(1, actions.unsqueeze(-1))
 
         if self.double_dqn:
             # Double DQN
-            q_best_action = self.qnetwork_local(next_states).max(1)[1]
+
+            # Take the maximum probabilities of actions for each sample in the mini-batch
+            # and return a matrix of shape (1, batch-size), where
+            # each element represents the best action itself
+            q_best_action = self.qnetwork_local(next_states).detach().max(1)[1]
+
+            # Get expected Q values from target model
             q_targets_next = self.qnetwork_target(
-                next_states).gather(1, q_best_action.unsqueeze(-1))
+                next_states
+            ).detach().gather(1, q_best_action.unsqueeze(-1))
         else:
             # DQN
             q_targets_next = self.qnetwork_target(
-                next_states).detach().max(1)[0].unsqueeze(-1)
+                next_states
+            ).detach().max(1)[0].unsqueeze(-1)
 
         # Compute Q targets for current states
         q_targets = rewards + (self.gamma * q_targets_next * (1 - dones))
@@ -301,8 +309,9 @@ class ReplayBuffer:
 
     def add(self, state, action, reward, next_state, done):
         """Add a new experience to memory."""
-        e = Experience(np.expand_dims(state, 0), action, reward,
-                       np.expand_dims(next_state, 0), done)
+        # e = Experience(np.expand_dims(state, 0), action, reward,
+        #               np.expand_dims(next_state, 0), done)
+        e = Experience(state, action, reward, next_state, done)
         self.memory.append(e)
 
     def sample(self):
@@ -327,6 +336,10 @@ class ReplayBuffer:
         return len(self.memory)
 
     def __v_stack_impr(self, states):
-        sub_dim = len(states[0][0]) if isinstance(states[0], Iterable) else 1
-        np_states = np.reshape(np.array(states), (len(states), sub_dim))
+        #sub_dim = len(states[0][0]) if isinstance(states[0], Iterable) else 1
+        #np_states = np.reshape(np.array(states), (len(states), sub_dim))
+        np_states = np.array(states)
+        print(f"BUFFER SIZE: {np_states.shape}")
+        # print("BUFFER:")
+        # print(np_states)
         return np_states
