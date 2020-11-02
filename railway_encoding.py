@@ -359,17 +359,17 @@ class CellOrientationGraph():
             if succ != node_to_avoid:
                 edge = self.graph.edges[(source, succ)]
                 weight = edge['weight']
-                try:
-                    for target in targets:
+                for target in targets:
+                    try:
                         lenght, path = nx.bidirectional_dijkstra(
                             self.graph, succ, target
                         )
                         path = [source] + path
                         lenght += weight
                         paths.append((lenght, path))
-                except nx.NetworkXNoPath:
-                    continue
-        if not paths:
+                    except nx.NetworkXNoPath:
+                        continue
+        if len(paths) == 0:
             return []
         return sorted(paths, key=lambda x: x[0])
 

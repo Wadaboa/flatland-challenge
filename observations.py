@@ -36,10 +36,10 @@ from railway_encoding import CellOrientationGraph
             - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the same direction (difference between malfunction time and distance)
             - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the opposite direction (difference between malfunction time and distance)
         - Todo:
-            - Debug Deadlock and deadlock distances (Hurray...)
-            - Debug Deviation paths generation not generating some paths
-            - Check distance from target (deviation paths not having the correct initial distance)
-            - Check normalization correctness 
+            - Test new Deadlock and deadlock distances
+            - Packed paths and weights with numpy and only positions, remove direction
+            - Add partial shortest path feature results to deviations path
+            - Check normalization correctness
             - Differentiate `inf` from maximum value in normalization
             - Handle observation not present at all (all -1 or all 0 ???)
 '''
@@ -82,7 +82,11 @@ class CustomObservation(ObservationBuilder):
             h: self.agent_handles - {h}
             for h in self.agent_handles
         }
-        self.last_nodes = [None] * len(self.agent_handles)
+        self.last_nodes = [
+            self.railway_encoding.previous_node(
+                self.railway_encoding.get_agent_cell(handle)
+            ) for handle in self.agent_handles
+        ]
 
     def reset(self):
         self._init_env()
@@ -113,7 +117,12 @@ class CustomObservation(ObservationBuilder):
                 # Update last visited node for each agent
                 agent_position = self.railway_encoding.get_agent_cell(handle)
                 if agent_position in self.railway_encoding.graph.nodes:
-                    self.last_nodes[handle] = agent_position
+                    self.last_nodes[handle] = (agent_position, 0)
+                else:
+                    self.last_nodes[handle] = (
+                        self.last_nodes[handle][0],
+                        self.last_nodes[handle][1]+1
+                    )
 
                 remaining_steps = 0
                 if self.env.agents[handle].speed_data["speed"] < 1.0:
@@ -126,6 +135,13 @@ class CustomObservation(ObservationBuilder):
                     remaining=remaining_steps
                 )
                 self._update_data(handle, val[0], remaining_steps)
+
+                print(f'Handle: {handle} Deviation Paths:')
+                for dev in val[1]:
+                    print(dev.path)
+
+        print(f'SHORTEST PATHS: \n {self._shortest_paths} \n')
+        print(f'CUMULATIVE WEIGHTS: \n {self._shortest_cum_weights}\n')
         return super().get_many(handles)
 
     def _update_data(self, handle, prediction, remaining_steps):
@@ -159,25 +175,31 @@ class CustomObservation(ObservationBuilder):
             for i, deviation_prediction in enumerate(deviation_paths_prediction):
                 dev_feats = self._fill_path_values(
                     handle, deviation_prediction,
-                    remaining_steps=self._shortest_cum_weights[handle, i]
+                    remaining_steps=self._shortest_cum_weights[handle, i],
+                    shortest=False
                 )
                 self.observations[handle][i + 1, :, :] = dev_feats
 
+        '''
         print()
         print(f'PREHandle: {handle}')
         print(self.observations[handle])
         print()
+        '''
         self.observations[handle] = self.normalize(self.observations[handle])
+        '''
         print()
         print(f'POSTHandle: {handle}')
         print(self.observations[handle])
         print()
-
+        '''
         return self.observations[handle]
 
-    def _fill_path_values(self, handle, prediction, remaining_steps=0):
+    def _fill_path_values(self, handle, prediction, remaining_steps=0, shortest=True):
         '''
         '''
+        packed_paths, packed_weights = self._get_shortest_packed_paths()
+        path = prediction.path
         # Compute cumulative weights for the given path
         path_weights = np.zeros((self.max_depth,))
         weights = np.array(
@@ -189,16 +211,23 @@ class CustomObservation(ObservationBuilder):
 
         # Compute features
         num_agents, agent_distances = self.agents_in_path(
-            handle, prediction.path, path_weights
+            handle, path, path_weights
         )
         target_distances = self.distance_from_target(
-            handle, prediction.lenght, prediction.path, path_weights, remaining_steps
+            handle, prediction.lenght, path, path_weights, remaining_steps
         )
-        c_nodes = self.common_nodes(handle, prediction.path)
-        deadlocks, deadlock_distances = self.find_deadlocks(
-            handle, prediction.path, path_weights, c_nodes
-        )
+        c_nodes = self.common_nodes(handle, path)
+        if shortest:
+            path = packed_paths[handle].tolist()[:len(path)]
+            path_weights = packed_weights[handle].tolist()
 
+        print(f'Handle {handle} -> Path {path}')
+        deadlocks, deadlock_distances = self.find_deadlocks(
+            handle, path, path_weights, packed_paths, packed_weights
+        )
+        print(deadlocks)
+        print(deadlock_distances)
+        print()
         # Build the feature matrix
         feature_matrix = np.vstack([
             num_agents, agent_distances, target_distances,
@@ -320,131 +349,77 @@ class CustomObservation(ObservationBuilder):
             c_nodes[:computed.shape[0]] = computed
         return c_nodes
 
-    def _common_edges(self, handle, path, cum_weights, c_nodes):
-        '''
-        '''
-        c_edges, weights, indexes = [], [], []
+    def _get_shortest_packed_paths(self):
+        # Compute Number of turn inside of current edge for each agent to find possible in-edge deadlock
+        prev_weights = []
+        prev_nodes = [node[0] for node in self.last_nodes]
+        for i, p in enumerate(self._shortest_paths):
+            if tuple(p[0]) != prev_nodes[i]:
+                prev_weights.append(
+                    - ((self.last_nodes[i][1] * self.speed_data[i].times) +
+                       self.speed_data[i].times -
+                       self.speed_data[i].remaining)
+                )
+            else:
+                prev_weights.append(self._shortest_cum_weights[i, 0])
 
-        # Store common edges from the previous node to the next one
-        start_index = 0
-        if self.railway_encoding.is_straight_rail((path[0][0], path[0][1])) and c_nodes[1] >= 1:
-            start_index = 1
-            prev_node, prev_weight = self.railway_encoding.previous_node(
-                path[0]
-            )
-            prev_weight *= self.speed_data[handle].times
-            c_edges.append((prev_node, path[1]))
-            weights.append((-prev_weight, cum_weights[1]))
-            indexes.append((-1, 1))
+        packed_paths = np.hstack([
+            np.array(prev_nodes, np.dtype('int, int, int')
+                     ).reshape(self._shortest_paths.shape[0], 1),
+            self._shortest_paths[:, 1:]
+        ])
+        packed_weights = np.hstack([
+            (np.array(prev_weights) + self._shortest_cum_weights[:, 0]).reshape(
+                self._shortest_cum_weights.shape[0], 1),
+            self._shortest_cum_weights[:, 1:]
+        ])
+        return packed_paths, packed_weights
 
-        # Add my next edge if another agent is already inside it
-        if c_nodes[0] >= 1 and c_nodes[1] == 0:
-            for agent in self.other_agents[handle]:
-                last_node = self.last_nodes[agent]
-                if last_node is not None and last_node[0] == path[1][0] and last_node[1] == path[1][1]:
-                    c_edges.append((path[0], path[1]))
-                    weights.append((cum_weights[0], cum_weights[1]))
-                    indexes.append((0, 1))
-
-        # Store all the other common edges
-        for index in range(start_index, len(path) - 1):
-            if c_nodes[index] >= 1 and c_nodes[index + 1] >= 1:
-                c_edges.append((path[index], path[index + 1]))
-                weights.append((cum_weights[index], cum_weights[index + 1]))
-                indexes.append((index, index + 1))
-
-        return c_edges, weights, indexes
-
-    def find_deadlocks(self, handle, path, cum_weights, c_nodes):
-        '''
-        Returns an array containing the number of deadlocks in the given path by looking
-        at all possible future intersections with other agents' shortest paths
-        '''
+    def find_deadlocks(self, handle, path, cum_weights, packed_paths, packed_weights):
         deadlocks = np.zeros((self.max_depth,))
-        distances = np.ones((self.max_depth,)) * np.inf
-        if np.count_nonzero(c_nodes) > 0:
-            prev_paths = []
-            prev_weights = []
-            for i, p in enumerate(self._shortest_paths):
-                prev_node = self.last_nodes[i]
-                prev_weight = self.railway_encoding.get_distance(
-                    prev_node, tuple(p[0])
-                )
-                if prev_weight == np.inf:
-                    prev_paths.append(p[0])
-                    prev_weights.append(self._shortest_cum_weights[i, 0])
-                else:
-                    prev_paths.append(prev_node)
-                    prev_weights.append(
-                        -prev_weight * self.speed_data[i].times
-                    )
-            other_paths = np.hstack([
-                np.array(prev_paths, np.dtype('int, int, int')
-                         ).reshape(self._shortest_paths.shape[0], 1),
-                self._shortest_paths[:, 1:]
-            ])
-            other_weights = np.hstack([
-                (np.array(prev_weights) + self._shortest_cum_weights[:, 0]).reshape(
-                    self._shortest_cum_weights.shape[0], 1),
-                self._shortest_cum_weights[:, 1:]
-            ])
-            edges, weights, indexes = self._common_edges(
-                handle, path, cum_weights, c_nodes
-            )
-            already_found = []
-            for edge, weight, index in zip(edges, weights, indexes):
-                source, dest = edge
-                space = self.railway_encoding.graph.get_edge_data(
-                    source, dest
-                )["weight"]
-                my_speed = self.speed_data[handle].times
-                w_sour, w_dest = weight
-                ind_sour, ind_dest = index
-                s_oth_dir = self.railway_encoding.get_nodes(
-                    (source[0], source[1])
-                )
-                s_oth_dir.remove(source)
-                d_oth_dir = self.railway_encoding.get_nodes((dest[0], dest[1]))
-                d_oth_dir.remove(dest)
-                np_d_oth_dir = np.array(d_oth_dir, np.dtype('int,int,int'))
-                np_s_oth_dir = np.array(s_oth_dir, np.dtype('int,int,int'))
-                oth_edges = np.transpose([np.tile(np_d_oth_dir, len(
-                    np_s_oth_dir)), np.repeat(np_s_oth_dir, len(np_d_oth_dir))])
-                for i, row in enumerate(other_paths):
-                    if i == handle:
-                        continue
-                    found_index = None
-                    for oth_edge in oth_edges:
-                        try:
-                            found_index = row.tostring().index(oth_edge.tostring()) // row.itemsize
-                            break
-                        except ValueError:
-                            continue
-                    if found_index is not None:
-                        if not (w_sour > other_weights[i, found_index + 1] or w_dest < other_weights[i, found_index]) and i not in already_found:
-                            already_found.append(i)
-                            oth_speed = self.speed_data[i].times
-                            deadlocks[ind_dest:len(path)] += 1
-                            if w_sour < 0 and other_weights[i, found_index] < 0:
-                                space -= w_sour / my_speed
-                                space -= (
-                                    other_weights[i, found_index] / oth_speed
-                                )
-                            elif w_sour > other_weights[i, found_index]:
-                                space -= (
-                                    w_sour - other_weights[i, found_index]
-                                ) / oth_speed
-                            elif other_weights[i, found_index] > w_sour:
-                                space += (
-                                    other_weights[i, found_index] - w_sour
-                                ) / my_speed
-                            distance = int(
-                                np.clip(w_sour, 0, None) +
-                                space / (1/oth_speed + 1/my_speed)
-                            )
-                            if distances[ind_dest] > distance:
-                                distances[ind_dest:len(path)] = distance
-        return deadlocks, distances
+        crash_turns = np.ones((self.max_depth,)) * np.inf
+        paths = packed_paths.tolist()
+        for agent in self.other_agents[handle]:
+            deadlock_found = False
+            agent_path = packed_paths[agent]
+            for i in range(len(agent_path) - 1):
+                for j in range(len(path) - 1):
+                    source = path[j]
+                    dest = path[j+1]
+                    if source[0] == agent_path[i+1][0] and source[1] == agent_path[i+1][1] and dest[0] == agent_path[i][0] and dest[1] == agent_path[i][1] and not cum_weights[j] > packed_weights[agent, i+1] and not cum_weights[j+1] < packed_weights[agent, i]:
+                        deadlock_found = True
+                        space = self.railway_encoding.graph.get_edge_data(
+                            source, dest
+                        )["weight"]
+                        print(
+                            f'Handle {handle} -> Deadlock Edge: {source}-{dest} Space: {space} \n My Turns {cum_weights[j],cum_weights[j+1]} \n Oth Turns {packed_weights[agent, i],packed_weights[agent, i+1]}')
+                        deadlocks[j:len(path)] += 1
+                        if cum_weights[j] < 0 and packed_weights[agent, i] < 0:
+                            space += (cum_weights[j] /
+                                      self.speed_data[handle].times)
+                            space += (packed_weights[agent, i] /
+                                      self.speed_data[agent].times)
+                        elif cum_weights[j] > packed_weights[agent, i]:
+                            space -= abs(
+                                cum_weights[j] -
+                                abs(packed_weights[agent, i])
+                            ) / self.speed_data[agent].times
+                        elif packed_weights[agent, i] > cum_weights[j]:
+                            space += abs(
+                                packed_weights[agent, i] -
+                                abs(cum_weights[j])
+                            ) / self.speed_data[agent].times
+                        crash_turn = np.ceil(
+                            np.clip(cum_weights[j], 0, None) +
+                            space / (1/self.speed_data[agent].times + 1 /
+                                     self.speed_data[handle].times)
+                        )
+                        if crash_turns[j] > crash_turn:
+                            crash_turns[j:len(path)] = crash_turn
+                        break
+                if deadlock_found:
+                    break
+        return deadlocks, crash_turns
 
     def normalize(self, observation):
         normalized_observation = np.full(
