@@ -6,12 +6,12 @@ from datetime import datetime
 import numpy as np
 from tabulate import tabulate
 
-from flatland.envs.malfunction_generators import MalfunctionParameters, ParamMalfunctionGen
 from flatland.envs.rail_env import RailEnv
 from flatland.envs.rail_generators import rail_from_file, sparse_rail_generator
+from flatland.envs.malfunction_generators import MalfunctionParameters, ParamMalfunctionGen
 from flatland.envs.schedule_generators import sparse_schedule_generator
-from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 from flatland.envs.rail_env import RailAgentStatus
+from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
 from observations import CustomObservation
 from predictions import ShortestPathPredictor
@@ -142,14 +142,8 @@ def main():
     Test environment with custom observation and prediction
     '''
     args = parse_args()
-    malfunctions = None
-    if args.malfunction:
-        malfunctions = ParamMalfunctionGen(MalfunctionParameters(
-            malfunction_rate=args.malfunction_rate,
-            min_duration=args.malfunction_min_duration,
-            max_duration=args.malfunction_max_duration
-        ))
 
+    # Check if an environment file is provided
     if args.test_env:
         rail_generator = rail_from_file(args.test_env)
     else:
@@ -160,10 +154,23 @@ def main():
             max_rails_between_cities=args.max_rails_between_cities,
             max_rails_in_city=args.max_rails_in_cities,
         )
+
+    # Initialize predictor and observer
     predictor = ShortestPathPredictor(max_depth=args.max_depth)
     observation_builder = CustomObservation(
         max_depth=args.max_depth, predictor=predictor
     )
+
+    # Initialize malfunctions
+    malfunctions = None
+    if args.malfunction:
+        malfunctions = ParamMalfunctionGen(MalfunctionParameters(
+            malfunction_rate=args.malfunction_rate,
+            min_duration=args.malfunction_min_duration,
+            max_duration=args.malfunction_max_duration
+        ))
+
+    # Initialize agents speeds
     if args.variable_speed:
         speed_map = {
             1.: 0.25,
@@ -173,7 +180,7 @@ def main():
         }
         schedule_generator = sparse_schedule_generator(speed_map)
 
-    # Construct the environment
+    # Build the environment
     env = RailEnv(
         width=args.width,
         height=args.height,
@@ -197,8 +204,8 @@ def main():
         )
         env_renderer.render_env(show=True)
 
-    # Initialize the agent
-    controller = RandomPolicy()
+    # Initialize the agents policy
+    policy = RandomPolicy()
 
     # Print agents tasks
     _tasks_table = []
@@ -230,9 +237,9 @@ def main():
 
     # Create frames directory
     now = datetime.now()
-    training_id = now.strftime('%Y%m%d-%H%M%S')
+    test_id = now.strftime('%Y%m%d-%H%M%S')
     if args.save_frames:
-        frames_dir = f"tmp/frames/{training_id}"
+        frames_dir = f"tmp/frames/{test_id}"
         os.makedirs(frames_dir, exist_ok=True)
 
     # Initialize the action dictionary
@@ -246,7 +253,7 @@ def main():
 
         # Choose an action for each agent in the environment
         for a in range(env.get_num_agents()):
-            action = controller.act(observations[a])
+            action = policy.act(observations[a])
             action_dict.update({a: action})
 
         # Perform the computed action
@@ -265,7 +272,7 @@ def main():
 
         # Update replay buffer and train agent
         for handle in range(env.get_num_agents()):
-            controller.step((
+            policy.step((
                 observations[handle],
                 action_dict[handle],
                 all_rewards[handle],
@@ -282,7 +289,6 @@ def main():
         # Print statistics
         print(f"Score: {score}")
         print_agents_info(env)
-        # print(next_obs)
         print()
 
 

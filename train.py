@@ -1,35 +1,63 @@
-from models import DDDQNPolicy
-from utils import Timer
-from datetime import datetime
 import os
 import random
-import sys
-from argparse import ArgumentParser, Namespace
-from pathlib import Path
-from pprint import pprint
+from argparse import ArgumentParser
+from datetime import datetime
 
-import psutil
-from flatland.utils.rendertools import RenderTool
-from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import torch
+from torch.utils.tensorboard import SummaryWriter
 
 from flatland.envs.rail_env import RailEnv, RailEnvActions
-from flatland.envs.rail_generators import sparse_rail_generator
-from flatland.envs.schedule_generators import sparse_schedule_generator
-
+from flatland.envs.rail_generators import rail_from_file, sparse_rail_generator
 from flatland.envs.malfunction_generators import ParamMalfunctionGen, MalfunctionParameters
+from flatland.envs.schedule_generators import sparse_schedule_generator
+from flatland.utils.rendertools import RenderTool, AgentRenderVariant
+
 from predictions import ShortestPathPredictor
 from observations import CustomObservation
-
-base_dir = Path(__file__).resolve().parent.parent
-sys.path.append(str(base_dir))
+from models import DDDQNPolicy
+from utils import Timer
 
 
 RANDOM_SEED = 42
 
 
-def create_rail_env(args, env=""):
+def set_num_threads(num_threads):
+    '''
+    Set the maximum number of threads PyTorch can use
+    '''
+    torch.set_num_threads(num_threads)
+    os.environ["OMP_NUM_THREADS"] = str(num_threads)
+    os.environ["MKL_NUM_THREADS"] = str(num_threads)
+
+
+def fix_random(seed):
+    '''
+    Fix all the possible sources of randomness
+    '''
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+
+def format_action_probabilities(action_probabilities):
+    '''
+    Helper function to pretty print action probabilities
+    '''
+    action_probabilities = np.round(action_probabilities, 3)
+    actions = ["↻", "←", "↑", "→", "◼"]
+
+    buffer = ""
+    for action, action_prob in zip(actions, action_probabilities):
+        buffer += action + " " + "{:.3f}".format(action_prob) + " "
+
+    return buffer
+
+
+def create_rail_env(args, observation_builder, env=""):
     '''
     Build a RailEnv object with the specified parameters
     '''
@@ -44,12 +72,6 @@ def create_rail_env(args, env=""):
             max_rails_between_cities=args.max_rails_between_cities,
             max_rails_in_city=args.max_rails_in_cities,
         )
-
-    # Initialize predictor and observer
-    predictor = ShortestPathPredictor(max_depth=args.max_depth)
-    observation_builder = CustomObservation(
-        max_depth=args.max_depth, predictor=predictor
-    )
 
     # Initialize malfunctions
     malfunctions = None
@@ -83,43 +105,39 @@ def create_rail_env(args, env=""):
     )
 
 
-def set_num_threads(num_threads):
+def tensorboard_log(writer, name, x, y):
     '''
-    Set the maximum number of threads PyTorch can use
+    Log the given x/y values to tensorboard
     '''
-    torch.set_num_threads(args.num_threads)
-    os.environ["OMP_NUM_THREADS"] = str(training_params.num_threads)
-    os.environ["MKL_NUM_THREADS"] = str(training_params.num_threads)
-
-
-def fix_random(seed):
-    '''
-    Fix all the possible sources of randomness
-    '''
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
+    if type(x) in (int, float, str):
+        writer.add_scalar(name, x, y)
+    else:
+        writer.add_scalar(f"{name}_min", np.min(x), y)
+        writer.add_scalar(f"{name}_max", np.max(x), y)
+        writer.add_scalar(f"{name}_mean", np.mean(x), y)
+        writer.add_scalar(f"{name}_std", np.std(x), y)
+        writer.add_histogram(name, np.array(x), y)
 
 
 def train_agents(args):
     '''
     Train and evaluate agents on the specified environments
     '''
+    # Initialize threads and seeds
     set_num_threads(args.num_threads)
     if args.fix_random:
         fix_random(RANDOM_SEED)
 
-    # Unique ID for this training
-    now = datetime.now()
-    training_id = now.strftime('%y%m%d%H%M%S')
+    # Initialize predictor and observer
+    predictor = ShortestPathPredictor(max_depth=args.max_depth)
+    observation_builder = CustomObservation(
+        max_depth=args.max_depth, predictor=predictor
+    )
 
     # Setup the environments
-    train_env = create_rail_env(args, env=args.train_env)
+    train_env = create_rail_env(args, observation_builder, env=args.train_env)
     train_env.reset(regenerate_schedule=True, regenerate_rail=True)
-    val_env = create_rail_env(args, env=args.val_env)
+    val_env = create_rail_env(args, observation_builder, env=args.val_env)
     val_env.reset(regenerate_schedule=True, regenerate_rail=True)
 
     # Setup renderer
@@ -132,25 +150,20 @@ def train_agents(args):
             screen_width=800
         )
 
-    # Compute state size and action size
+    # Set state size and action size
     state_size = (args.max_depth ** 2) * observation_builder.FEATURES
     action_size = 5
 
-    action_count = [0] * action_size
-    action_dict = dict()
-    agent_obs = [None] * args.num_trains
-    agent_prev_obs = [None] * args.num_trains
-    agent_prev_action = [2] * args.num_trains
-    update_values = [False] * args.num_trains
-
     # Smoothed values used as target for hyperparameter tuning
     smoothed_normalized_score = -1.0
-    smoothed_eval_normalized_score = -1.0
+    smoothed_val_normalized_score = -1.0
     smoothed_completion = 0.0
-    smoothed_eval_completion = 0.0
+    smoothed_val_completion = 0.0
+    train_smoothing = 0.99
+    val_smoothing = 0.9
 
-    # Double Dueling DQN policy
-    policy = DDDQNPolicy(state_size, action_size, train_params)
+    # Initialize the agents policy
+    policy = DDDQNPolicy(state_size, action_size, args)
 
     # Handle replay buffer
     if args.restore_replay_buffer:
@@ -164,15 +177,17 @@ def train_agents(args):
             print(e)
             exit(1)
     print("\n💾 Replay buffer status: {}/{} experiences".format(
-        len(policy.memory.memory), train_params.buffer_size)
-    )
+        len(policy.memory.memory), args.buffer_size
+    ))
 
-    # TensorBoard writer
+    # Set tensorboard writer
     writer = SummaryWriter()
-    writer.add_hparams(vars(train_params), {})
-    writer.add_hparams(vars(train_env_params), {})
-    writer.add_hparams(vars(obs_params), {})
 
+    # Set the unique ID for this training
+    now = datetime.now()
+    training_id = now.strftime('%Y%m%d-%H%M%S')
+
+    # Print initial training info
     training_timer = Timer()
     training_timer.start()
     print("\n🚉 Training {} trains on {}x{} grid for {} episodes, evaluating on {} episodes every {} episodes. Training id '{}'.\n".format(
@@ -184,43 +199,47 @@ def train_agents(args):
         training_id
     ))
 
-    for episode_idx in range(args.n_train_episodes + 1):
+    # Do the specified number of episodes
+    for episode in range(args.n_train_episodes + 1):
+        # Initialize timers
         step_timer = Timer()
         reset_timer = Timer()
         learn_timer = Timer()
-        preproc_timer = Timer()
         inference_timer = Timer()
 
-        # Reset environment
+        # Reset environment and renderer
         reset_timer.start()
         obs, info = train_env.reset(
             regenerate_rail=True, regenerate_schedule=True
         )
         reset_timer.end()
-
         if args.render:
             env_renderer.set_new_rail()
 
-        score = 0
-        nb_steps = 0
+        # Initialize data structures for training info
+        score, steps = 0, 0
         actions_taken = []
         agent_prev_obs = list(obs)
+        agent_prev_action = [2] * args.num_trains
+        update_values = [False] * args.num_trains
+        action_count = [0] * action_size
+        action_dict = dict()
 
-        # Run episode
+        # Do an episode
         for step in range(args.max_moves - 1):
+            # Inference step
             inference_timer.start()
             for agent in train_env.get_agent_handles():
                 if info['action_required'][agent]:
+                    action = policy.act(obs[agent], eps=args.eps_start)
                     update_values[agent] = True
-                    action = policy.act(agent_obs[agent], eps=args.eps_start)
-
                     action_count[action] += 1
                     actions_taken.append(action)
                 else:
                     # An action is not required if the train hasn't joined the railway network,
                     # if it already reached its target, or if is currently malfunctioning.
-                    update_values[agent] = False
                     action = 0
+                    update_values[agent] = False
                 action_dict.update({agent: action})
             inference_timer.end()
 
@@ -230,71 +249,69 @@ def train_agents(args):
             step_timer.end()
 
             # Render an episode at some interval
-            if args.render and episode_idx % args.checkpoint_interval == 0:
+            if args.render and episode % args.checkpoint_interval == 0:
                 env_renderer.render_env(
-                    show=True,
-                    frames=False,
-                    show_observations=False,
-                    show_predictions=False
+                    show=True, show_observations=False, show_predictions=True
                 )
 
             # Update replay buffer and train agent
             for agent in train_env.get_agent_handles():
+                # Only learn from timesteps where somethings happened
                 if update_values[agent] or done['__all__']:
-                    # Only learn from timesteps where somethings happened
                     learn_timer.start()
-                    policy.step(agent_prev_obs[agent], agent_prev_action[agent],
-                                all_rewards[agent], agent_obs[agent], done[agent])
+                    policy.step(
+                        agent_prev_obs[agent], agent_prev_action[agent],
+                        all_rewards[agent], obs[agent], done[agent]
+                    )
                     learn_timer.end()
-
-                    agent_prev_obs[agent] = agent_obs[agent].copy()
+                    agent_prev_obs[agent] = obs[agent].copy()
                     agent_prev_action[agent] = action_dict[agent]
 
-                # Preprocess the new observations
-                if next_obs[agent] is not None:
-                    preproc_timer.start()
-                    # agent_obs[agent] = normalize_observation(
-                    #    next_obs[agent], observation_tree_depth, observation_radius=observation_radius)
-                    agent_obs[agent] = next_obs[agent]
-                    preproc_timer.end()
-
+                # Update observation and score
+                obs[agent] = next_obs[agent]
                 score += all_rewards[agent]
 
-            nb_steps = step
-
+            # Break if every agent arrived
+            steps = step
             if done['__all__']:
                 break
 
         # Epsilon decay
         args.eps_start = max(args.eps_end, args.eps_decay * args.eps_start)
 
-        # Collect information about training
-        tasks_finished = sum(done[idx]
-                             for idx in train_env.get_agent_handles())
+        # Save final scores
+        tasks_finished = sum(
+            done[i] for i in train_env.get_agent_handles()
+        )
         completion = tasks_finished / max(1, train_env.get_num_agents())
-        normalized_score = score / \
-            (args.max_moves * train_env.get_num_agents())
+        normalized_score = (
+            score / (args.max_moves * train_env.get_num_agents())
+        )
         action_probs = action_count / np.sum(action_count)
-        action_count = [1] * action_size
+        smoothed_normalized_score = (
+            smoothed_normalized_score * train_smoothing +
+            normalized_score * (1.0 - train_smoothing)
+        )
+        smoothed_completion = (
+            smoothed_completion * train_smoothing +
+            completion * (1.0 - train_smoothing)
+        )
 
-        smoothing = 0.99
-        smoothed_normalized_score = smoothed_normalized_score * \
-            smoothing + normalized_score * (1.0 - smoothing)
-        smoothed_completion = smoothed_completion * \
-            smoothing + completion * (1.0 - smoothing)
-
-        # Print logs
-        if episode_idx % args.checkpoint_interval == 0:
-            torch.save(policy.qnetwork_local, './checkpoints/' +
-                       training_id + '-' + str(episode_idx) + '.pth')
-
+        # Save model and replay buffer at checkpoint
+        if episode % args.checkpoint_interval == 0:
+            torch.save(
+                policy.qnetwork_local, './checkpoints/' +
+                training_id + '-' + str(episode) + '.pth'
+            )
             if args.save_replay_buffer:
                 policy.save_replay_buffer(
-                    './replay_buffers/' + training_id + '-' + str(episode_idx) + '.pkl')
-
+                    './replay_buffers/' + training_id +
+                    '-' + str(episode) + '.pkl'
+                )
             if args.render:
                 env_renderer.close_window()
 
+        # Print final episode info
         print(
             '\r🚂 Episode {}'
             '\t 🏆 Score: {:.3f}'
@@ -302,114 +319,109 @@ def train_agents(args):
             '\t 💯 Done: {:.2f}%'
             ' Avg: {:.2f}%'
             '\t 🎲 Epsilon: {:.3f} '
-            '\t 🔀 Action Probs: {}'.format(
-                episode_idx,
+            '\t 🔀 Action probabilities: {}'.format(
+                episode,
                 normalized_score,
                 smoothed_normalized_score,
                 100 * completion,
                 100 * smoothed_completion,
                 args.eps_start,
-                format_action_prob(action_probs)
-            ), end=" ")
+                format_action_probabilities(action_probs)
+            ), end=" "
+        )
 
         # Evaluate policy and log results at some interval
-        if episode_idx % args.checkpoint_interval == 0 and args.n_val_episodes > 0:
-            scores, completions, nb_steps_eval = eval_policy(
-                eval_env, policy, train_params, obs_params)
+        if episode % args.checkpoint_interval == 0 and args.n_val_episodes > 0:
+            scores, completions, val_steps = eval_policy(
+                eval_env, policy, train_params, obs_params
+            )
 
-            writer.add_scalar("evaluation/scores_min",
-                              np.min(scores), episode_idx)
-            writer.add_scalar("evaluation/scores_max",
-                              np.max(scores), episode_idx)
-            writer.add_scalar("evaluation/scores_mean",
-                              np.mean(scores), episode_idx)
-            writer.add_scalar("evaluation/scores_std",
-                              np.std(scores), episode_idx)
-            writer.add_histogram("evaluation/scores",
-                                 np.array(scores), episode_idx)
-            writer.add_scalar("evaluation/completions_min",
-                              np.min(completions), episode_idx)
-            writer.add_scalar("evaluation/completions_max",
-                              np.max(completions), episode_idx)
-            writer.add_scalar("evaluation/completions_mean",
-                              np.mean(completions), episode_idx)
-            writer.add_scalar("evaluation/completions_std",
-                              np.std(completions), episode_idx)
-            writer.add_histogram("evaluation/completions",
-                                 np.array(completions), episode_idx)
-            writer.add_scalar("evaluation/nb_steps_min",
-                              np.min(nb_steps_eval), episode_idx)
-            writer.add_scalar("evaluation/nb_steps_max",
-                              np.max(nb_steps_eval), episode_idx)
-            writer.add_scalar("evaluation/nb_steps_mean",
-                              np.mean(nb_steps_eval), episode_idx)
-            writer.add_scalar("evaluation/nb_steps_std",
-                              np.std(nb_steps_eval), episode_idx)
-            writer.add_histogram("evaluation/nb_steps",
-                                 np.array(nb_steps_eval), episode_idx)
+            # Save final validation scores
+            smoothed_val_normalized_score = (
+                smoothed_val_normalized_score * val_smoothing +
+                np.mean(scores) * (1.0 - val_smoothing)
+            )
+            smoothed_val_completion = (
+                smoothed_val_completion * val_smoothing +
+                np.mean(completions) * (1.0 - val_smoothing)
+            )
 
-            smoothing = 0.9
-            smoothed_eval_normalized_score = smoothed_eval_normalized_score * \
-                smoothing + np.mean(scores) * (1.0 - smoothing)
-            smoothed_eval_completion = smoothed_eval_completion * \
-                smoothing + np.mean(completions) * (1.0 - smoothing)
-            writer.add_scalar("evaluation/smoothed_score",
-                              smoothed_eval_normalized_score, episode_idx)
-            writer.add_scalar("evaluation/smoothed_completion",
-                              smoothed_eval_completion, episode_idx)
+            # Log validation metrics to tensorboard
+            tensorboard_log(
+                writer, "validation/scores", scores, episode)
+            tensorboard_log(
+                writer, "validation/completions", completions, episode
+            )
+            tensorboard_log(
+                writer, "validation/steps", val_steps, episode
+            )
+            tensorboard_log(
+                writer, "validation/smoothed_score",
+                smoothed_val_normalized_score, episode
+            )
+            tensorboard_log(
+                writer, "validation/smoothed_completion",
+                smoothed_val_completion, episode
+            )
 
-        # Save logs to tensorboard
-        writer.add_scalar("training/score", normalized_score, episode_idx)
-        writer.add_scalar("training/smoothed_score",
-                          smoothed_normalized_score, episode_idx)
-        writer.add_scalar("training/completion",
-                          np.mean(completion), episode_idx)
-        writer.add_scalar("training/smoothed_completion",
-                          np.mean(smoothed_completion), episode_idx)
-        writer.add_scalar("training/nb_steps", nb_steps, episode_idx)
-        writer.add_histogram("actions/distribution",
-                             np.array(actions_taken), episode_idx)
-        writer.add_scalar("actions/nothing",
-                          action_probs[RailEnvActions.DO_NOTHING], episode_idx)
-        writer.add_scalar(
-            "actions/left", action_probs[RailEnvActions.MOVE_LEFT], episode_idx)
-        writer.add_scalar(
-            "actions/forward", action_probs[RailEnvActions.MOVE_FORWARD], episode_idx)
-        writer.add_scalar(
-            "actions/right", action_probs[RailEnvActions.MOVE_RIGHT], episode_idx)
-        writer.add_scalar(
-            "actions/stop", action_probs[RailEnvActions.STOP_MOVING], episode_idx)
-        writer.add_scalar("training/epsilon", args.eps_start, episode_idx)
-        writer.add_scalar("training/buffer_size",
-                          len(policy.memory), episode_idx)
-        writer.add_scalar("training/loss", policy.loss, episode_idx)
-        writer.add_scalar("timer/reset", reset_timer.get(), episode_idx)
-        writer.add_scalar("timer/step", step_timer.get(), episode_idx)
-        writer.add_scalar("timer/learn", learn_timer.get(), episode_idx)
-        writer.add_scalar("timer/preproc", preproc_timer.get(), episode_idx)
-        writer.add_scalar(
-            "timer/total", training_timer.get_current(), episode_idx)
+        # Log training actions info to tensorboard
+        tensorboard_log(
+            writer, "actions/distribution", np.array(actions_taken), episode
+        )
+        tensorboard_log(
+            writer, "actions/nothing", action_probs[RailEnvActions.DO_NOTHING], episode
+        )
+        tensorboard_log(
+            writer, "actions/left", action_probs[RailEnvActions.MOVE_LEFT], episode
+        )
+        tensorboard_log(
+            writer, "actions/forward", action_probs[RailEnvActions.MOVE_FORWARD], episode
+        )
+        tensorboard_log(
+            writer, "actions/right", action_probs[RailEnvActions.MOVE_RIGHT], episode
+        )
+        tensorboard_log(
+            writer, "actions/stop", action_probs[RailEnvActions.STOP_MOVING], episode
+        )
 
+        # Log training info to tensorboard
+        tensorboard_log(writer, "training/steps", steps, episode)
+        tensorboard_log(writer, "training/epsilon", args.eps_start, episode)
+        tensorboard_log(writer, "training/loss", policy.loss, episode)
+        tensorboard_log(writer, "training/score", normalized_score, episode)
+        tensorboard_log(writer, "training/completion", completion, episode)
+        tensorboard_log(
+            writer, "training/smoothed_score", smoothed_normalized_score, episode
+        )
+        tensorboard_log(
+            writer, "training/smoothed_completion", smoothed_completion, episode
+        )
+        tensorboard_log(
+            writer, "training/buffer_size", len(policy.memory), episode
+        )
 
-def format_action_prob(action_probs):
-    action_probs = np.round(action_probs, 3)
-    actions = ["↻", "←", "↑", "→", "◼"]
+        # Log training time info to tensorboard
+        tensorboard_log(writer, "timer/reset", reset_timer.get(), episode)
+        tensorboard_log(writer, "timer/step", step_timer.get(), episode)
+        tensorboard_log(writer, "timer/learn", learn_timer.get(), episode)
+        tensorboard_log(
+            writer, "timer/total", training_timer.get_current(), episode
+        )
 
-    buffer = ""
-    for action, action_prob in zip(actions, action_probs):
-        buffer += action + " " + "{:.3f}".format(action_prob) + " "
-
-    return buffer
+        # Close tensorboard
+        writer.close()
 
 
 def eval_policy(args, env, policy):
+    '''
+    Perform a validation round with the given policy
+    in the specified environment
+    '''
     action_dict = dict()
-    scores = []
-    completions = []
-    steps = []
+    scores, completions, steps = [], [], []
 
     # Do the specified number of episodes
-    for episode_idx in range(args.n_val_episodes):
+    for episode in range(args.n_val_episodes):
         score = 0.0
         final_step = 0
         obs, info = env.reset(regenerate_rail=True, regenerate_schedule=True)
@@ -433,16 +445,14 @@ def eval_policy(args, env, policy):
                 break
 
         # Save final scores
-        normalized_score = score / (args.max_moves * env.get_num_agents())
-        scores.append(normalized_score)
+        scores.append(score / (args.max_moves * env.get_num_agents()))
         tasks_finished = sum(done[idx] for idx in env.get_agent_handles())
-        completion = tasks_finished / max(1, env.get_num_agents())
-        completions.append(completion)
+        completions.append(tasks_finished / max(1, env.get_num_agents()))
         steps.append(final_step)
 
     # Print validation results
     print(
-        "\t✅ Eval: score {:.3f} done {:.1f}%".format(
+        "\t✅ Validation: score {:.3f} done {:.1f}%".format(
             np.mean(scores), np.mean(completions) * 100.0
         )
     )
@@ -547,7 +557,7 @@ def parse_args():
         help="exploration decay", type=float
     )
     parser.add_argument(
-        "--buffer_size", action='store', default=int(1e5)
+        "--buffer_size", action='store', default=int(1e5),
         help="replay buffer size", type=int
     )
     parser.add_argument(
@@ -559,7 +569,7 @@ def parse_args():
         help="replay buffer to restore", type=str
     )
     parser.add_argument(
-        "--save_replay_buffer", action='store_true'
+        "--save_replay_buffer", action='store_true',
         help="save replay buffer at each evaluation interval"
     )
     parser.add_argument(
@@ -579,7 +589,7 @@ def parse_args():
         help="learning rate", type=float
     )
     parser.add_argument(
-        "--hidden_size", default=128
+        "--hidden_size", default=128,
         help="hidden size (2 fc layers)", type=int
     )
     parser.add_argument(
@@ -587,7 +597,7 @@ def parse_args():
         help="how often to update the network", type=int
     )
     parser.add_argument(
-        "--use_gpu", action='store_true'
+        "--use_gpu", action='store_true',
         help="use GPU if available"
     )
     parser.add_argument(
@@ -595,11 +605,11 @@ def parse_args():
         help="number of threads PyTorch can use", type=int
     )
     parser.add_argument(
-        "--render", action='store_true'
+        "--render", action='store_true',
         help="render 1 episode in 100"
     )
     parser.add_argument(
-        "--fix_random", action='store_true'
+        "--fix_random", action='store_true',
         help="fix all the possible sources of randomness"
     )
 

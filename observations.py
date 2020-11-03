@@ -136,12 +136,12 @@ class CustomObservation(ObservationBuilder):
                 )
                 self._update_data(handle, val[0], remaining_steps)
 
-                print(f'Handle: {handle} Deviation Paths:')
-                for dev in val[1]:
-                    print(dev.path)
+                #print(f'Handle: {handle} Deviation Paths:')
+                # for dev in val[1]:
+                #    print(dev.path)
 
-        print(f'SHORTEST PATHS: \n {self._shortest_paths} \n')
-        print(f'CUMULATIVE WEIGHTS: \n {self._shortest_cum_weights}\n')
+        #print(f'SHORTEST PATHS: \n {self._shortest_paths} \n')
+        #print(f'CUMULATIVE WEIGHTS: \n {self._shortest_cum_weights}\n')
         return super().get_many(handles)
 
     def _update_data(self, handle, prediction, remaining_steps):
@@ -221,13 +221,13 @@ class CustomObservation(ObservationBuilder):
             path = packed_paths[handle].tolist()[:len(path)]
             path_weights = packed_weights[handle].tolist()
 
-        print(f'Handle {handle} -> Path {path}')
+        #print(f'Handle {handle} -> Path {path}')
         deadlocks, deadlock_distances = self.find_deadlocks(
             handle, path, path_weights, packed_paths, packed_weights
         )
-        print(deadlocks)
-        print(deadlock_distances)
-        print()
+        # print(deadlocks)
+        # print(deadlock_distances)
+        # print()
         # Build the feature matrix
         feature_matrix = np.vstack([
             num_agents, agent_distances, target_distances,
@@ -391,8 +391,8 @@ class CustomObservation(ObservationBuilder):
                         space = self.railway_encoding.graph.get_edge_data(
                             source, dest
                         )["weight"]
-                        print(
-                            f'Handle {handle} -> Deadlock Edge: {source}-{dest} Space: {space} \n My Turns {cum_weights[j],cum_weights[j+1]} \n Oth Turns {packed_weights[agent, i],packed_weights[agent, i+1]}')
+                        # print(
+                        #    f'Handle {handle} -> Deadlock Edge: {source}-{dest} Space: {space} \n My Turns {cum_weights[j],cum_weights[j+1]} \n Oth Turns {packed_weights[agent, i],packed_weights[agent, i+1]}')
                         deadlocks[j:len(path)] += 1
                         if cum_weights[j] < 0 and packed_weights[agent, i] < 0:
                             space += (cum_weights[j] /
