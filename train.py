@@ -1,5 +1,4 @@
 from models import DDDQNPolicy
-from observation_utils import normalize_observation
 from utils import Timer
 from datetime import datetime
 import os
@@ -18,10 +17,8 @@ import torch
 from flatland.envs.rail_env import RailEnv, RailEnvActions
 from flatland.envs.rail_generators import sparse_rail_generator
 from flatland.envs.schedule_generators import sparse_schedule_generator
-from flatland.envs.observations import TreeObsForRailEnv
 
 from flatland.envs.malfunction_generators import ParamMalfunctionGen, MalfunctionParameters
-from flatland.envs.predictions import ShortestPathPredictorForRailEnv
 from predictions import ShortestPathPredictor
 from observations import CustomObservation
 
@@ -29,119 +26,122 @@ base_dir = Path(__file__).resolve().parent.parent
 sys.path.append(str(base_dir))
 
 
-try:
-    import wandb
-
-    # wandb.init(sync_tensorboard=True)
-except ImportError:
-    print("Install wandb to log to Weights & Biases")
+RANDOM_SEED = 42
 
 
-def create_rail_env(env_params, tree_observation):
-    n_agents = env_params.n_agents
-    x_dim = env_params.x_dim
-    y_dim = env_params.y_dim
-    n_cities = env_params.n_cities
-    max_rails_between_cities = env_params.max_rails_between_cities
-    max_rails_in_city = env_params.max_rails_in_city
-    seed = env_params.seed
+def create_rail_env(args, env=""):
+    '''
+    Build a RailEnv object with the specified parameters
+    '''
+    # Check if an environment file is provided
+    if env:
+        rail_generator = rail_from_file(env)
+    else:
+        rail_generator = sparse_rail_generator(
+            max_num_cities=args.max_cities,
+            seed=RANDOM_SEED,
+            grid_mode=args.grid,
+            max_rails_between_cities=args.max_rails_between_cities,
+            max_rails_in_city=args.max_rails_in_cities,
+        )
 
-    # Break agents from time to time
-    malfunction_parameters = MalfunctionParameters(
-        # Rate of malfunction occurence of single agent
-        malfunction_rate=env_params.malfunction_rate,
-        min_duration=20,  # Minimal duration of malfunction
-        max_duration=50  # Max duration of malfunction
+    # Initialize predictor and observer
+    predictor = ShortestPathPredictor(max_depth=args.max_depth)
+    observation_builder = CustomObservation(
+        max_depth=args.max_depth, predictor=predictor
     )
 
+    # Initialize malfunctions
+    malfunctions = None
+    if args.malfunction:
+        malfunctions = ParamMalfunctionGen(MalfunctionParameters(
+            malfunction_rate=args.malfunction_rate,
+            min_duration=args.malfunction_min_duration,
+            max_duration=args.malfunction_max_duration
+        ))
+
+    # Initialize agents speeds
+    if args.variable_speed:
+        speed_map = {
+            1.: 0.25,
+            1. / 2.: 0.25,
+            1. / 3.: 0.25,
+            1. / 4.: 0.25
+        }
+        schedule_generator = sparse_schedule_generator(speed_map)
+
+    # Build the environment
     return RailEnv(
-        width=x_dim, height=y_dim,
-        rail_generator=sparse_rail_generator(
-            max_num_cities=n_cities,
-            grid_mode=False,
-            max_rails_between_cities=max_rails_between_cities,
-            max_rails_in_city=max_rails_in_city
-        ),
-        schedule_generator=sparse_schedule_generator(),
-        number_of_agents=n_agents,
-        malfunction_generator=ParamMalfunctionGen(malfunction_parameters),
-        obs_builder_object=tree_observation,
-        random_seed=seed
+        width=args.width,
+        height=args.height,
+        rail_generator=rail_generator,
+        schedule_generator=schedule_generator if args.variable_speed else None,
+        number_of_agents=args.num_trains,
+        obs_builder_object=observation_builder,
+        malfunction_generator=malfunctions,
+        remove_agents_at_target=True
     )
 
 
-def train_agent(train_params, train_env_params, eval_env_params, obs_params):
-    # Environment parameters
-    n_agents = train_env_params.n_agents
-    x_dim = train_env_params.x_dim
-    y_dim = train_env_params.y_dim
-    n_cities = train_env_params.n_cities
-    max_rails_between_cities = train_env_params.max_rails_between_cities
-    max_rails_in_city = train_env_params.max_rails_in_city
-    seed = train_env_params.seed
+def set_num_threads(num_threads):
+    '''
+    Set the maximum number of threads PyTorch can use
+    '''
+    torch.set_num_threads(args.num_threads)
+    os.environ["OMP_NUM_THREADS"] = str(training_params.num_threads)
+    os.environ["MKL_NUM_THREADS"] = str(training_params.num_threads)
+
+
+def fix_random(seed):
+    '''
+    Fix all the possible sources of randomness
+    '''
+    np.random.seed(seed)
+    random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.benchmark = False
+    torch.backends.cudnn.deterministic = True
+
+
+def train_agents(args):
+    '''
+    Train and evaluate agents on the specified environments
+    '''
+    set_num_threads(args.num_threads)
+    if args.fix_random:
+        fix_random(RANDOM_SEED)
 
     # Unique ID for this training
     now = datetime.now()
     training_id = now.strftime('%y%m%d%H%M%S')
 
-    # Observation parameters
-    observation_tree_depth = obs_params.observation_tree_depth
-    observation_radius = obs_params.observation_radius
-    observation_max_path_depth = obs_params.observation_max_path_depth
-
-    # Training parameters
-    eps_start = train_params.eps_start
-    eps_end = train_params.eps_end
-    eps_decay = train_params.eps_decay
-    n_episodes = train_params.n_episodes
-    checkpoint_interval = train_params.checkpoint_interval
-    n_eval_episodes = train_params.n_evaluation_episodes
-    restore_replay_buffer = train_params.restore_replay_buffer
-    save_replay_buffer = train_params.save_replay_buffer
-
-    # Set the seeds
-    random.seed(seed)
-    np.random.seed(seed)
-
-    # Observation builder
-    #predictor = ShortestPathPredictorForRailEnv(observation_max_path_depth)
-    # tree_observation = TreeObsForRailEnv(
-    #    max_depth=observation_tree_depth, predictor=predictor)
-    predictor = ShortestPathPredictor(
-        max_depth=observation_tree_depth)
-    observation_builder = CustomObservation(
-        max_depth=observation_tree_depth, predictor=predictor
-    )
     # Setup the environments
-    train_env = create_rail_env(train_env_params, observation_builder)
+    train_env = create_rail_env(args, env=args.train_env)
     train_env.reset(regenerate_schedule=True, regenerate_rail=True)
-    eval_env = create_rail_env(eval_env_params, observation_builder)
-    eval_env.reset(regenerate_schedule=True, regenerate_rail=True)
+    val_env = create_rail_env(args, env=args.val_env)
+    val_env.reset(regenerate_schedule=True, regenerate_rail=True)
 
     # Setup renderer
-    if train_params.render:
-        env_renderer = RenderTool(train_env)
+    if args.render:
+        env_renderer = RenderTool(
+            train_env,
+            agent_render_variant=AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX,
+            show_debug=True,
+            screen_height=600,
+            screen_width=800
+        )
 
-    # Calculate the state size given the depth of the tree observation and the number of features
-    #n_features_per_node = train_env.obs_builder.observation_dim
-    #n_nodes = sum([np.power(4, i) for i in range(observation_tree_depth + 1)])
-    #state_size = n_features_per_node * n_nodes
-    state_size = (observation_tree_depth ** 2) * observation_builder.FEATURES
-    # The action space of flatland is 5 discrete actions
+    # Compute state size and action size
+    state_size = (args.max_depth ** 2) * observation_builder.FEATURES
     action_size = 5
-
-    # Max number of steps per episode
-    # This is the official formula used during evaluations
-    # See details in flatland.envs.schedule_generators.sparse_schedule_generator
-    # max_steps = int(4 * 2 * (env.height + env.width + (n_agents / n_cities)))
-    max_steps = train_env._max_episode_steps
 
     action_count = [0] * action_size
     action_dict = dict()
-    agent_obs = [None] * n_agents
-    agent_prev_obs = [None] * n_agents
-    agent_prev_action = [2] * n_agents
-    update_values = [False] * n_agents
+    agent_obs = [None] * args.num_trains
+    agent_prev_obs = [None] * args.num_trains
+    agent_prev_action = [2] * args.num_trains
+    update_values = [False] * args.num_trains
 
     # Smoothed values used as target for hyperparameter tuning
     smoothed_normalized_score = -1.0
@@ -152,24 +152,20 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
     # Double Dueling DQN policy
     policy = DDDQNPolicy(state_size, action_size, train_params)
 
-    # Loads existing replay buffer
-    if restore_replay_buffer:
+    # Handle replay buffer
+    if args.restore_replay_buffer:
         try:
-            policy.load_replay_buffer(restore_replay_buffer)
+            policy.load_replay_buffer(args.restore_replay_buffer)
             policy.test()
         except RuntimeError as e:
             print(
-                "\n🛑 Could't load replay buffer, were the experiences generated using the same tree depth?")
+                "\n🛑 Could't load replay buffer, were the experiences generated using the same depth?"
+            )
             print(e)
             exit(1)
-
     print("\n💾 Replay buffer status: {}/{} experiences".format(
-        len(policy.memory.memory), train_params.buffer_size))
-
-    hdd = psutil.disk_usage('/')
-    if save_replay_buffer and (hdd.free / (2 ** 30)) < 500.0:
-        print("⚠️  Careful! Saving replay buffers will quickly consume a lot of disk space. You have {:.2f}gb left.".format(
-            hdd.free / (2 ** 30)))
+        len(policy.memory.memory), train_params.buffer_size)
+    )
 
     # TensorBoard writer
     writer = SummaryWriter()
@@ -179,17 +175,16 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
 
     training_timer = Timer()
     training_timer.start()
-
     print("\n🚉 Training {} trains on {}x{} grid for {} episodes, evaluating on {} episodes every {} episodes. Training id '{}'.\n".format(
         train_env.get_num_agents(),
-        x_dim, y_dim,
-        n_episodes,
-        n_eval_episodes,
-        checkpoint_interval,
+        args.width, args.height,
+        args.n_train_episodes,
+        args.n_val_episodes,
+        args.checkpoint_interval,
         training_id
     ))
 
-    for episode_idx in range(n_episodes + 1):
+    for episode_idx in range(args.n_train_episodes + 1):
         step_timer = Timer()
         reset_timer = Timer()
         learn_timer = Timer()
@@ -199,31 +194,25 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
         # Reset environment
         reset_timer.start()
         obs, info = train_env.reset(
-            regenerate_rail=True, regenerate_schedule=True)
+            regenerate_rail=True, regenerate_schedule=True
+        )
         reset_timer.end()
 
-        if train_params.render:
+        if args.render:
             env_renderer.set_new_rail()
 
         score = 0
         nb_steps = 0
         actions_taken = []
-
-        # Build initial agent-specific observations
-        for agent in train_env.get_agent_handles():
-            if obs[agent] is not None:
-                # agent_obs[agent] = normalize_observation(
-                #    obs[agent], observation_tree_depth, observation_radius=observation_radius)
-                agent_obs[agent] = obs[agent]
-                agent_prev_obs[agent] = agent_obs[agent].copy()
+        agent_prev_obs = list(obs)
 
         # Run episode
-        for step in range(max_steps - 1):
+        for step in range(args.max_moves - 1):
             inference_timer.start()
             for agent in train_env.get_agent_handles():
                 if info['action_required'][agent]:
                     update_values[agent] = True
-                    action = policy.act(agent_obs[agent], eps=eps_start)
+                    action = policy.act(agent_obs[agent], eps=args.eps_start)
 
                     action_count[action] += 1
                     actions_taken.append(action)
@@ -241,7 +230,7 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
             step_timer.end()
 
             # Render an episode at some interval
-            if train_params.render and episode_idx % checkpoint_interval == 0:
+            if args.render and episode_idx % args.checkpoint_interval == 0:
                 env_renderer.render_env(
                     show=True,
                     frames=False,
@@ -277,13 +266,14 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
                 break
 
         # Epsilon decay
-        eps_start = max(eps_end, eps_decay * eps_start)
+        args.eps_start = max(args.eps_end, args.eps_decay * args.eps_start)
 
         # Collect information about training
         tasks_finished = sum(done[idx]
                              for idx in train_env.get_agent_handles())
         completion = tasks_finished / max(1, train_env.get_num_agents())
-        normalized_score = score / (max_steps * train_env.get_num_agents())
+        normalized_score = score / \
+            (args.max_moves * train_env.get_num_agents())
         action_probs = action_count / np.sum(action_count)
         action_count = [1] * action_size
 
@@ -294,15 +284,15 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
             smoothing + completion * (1.0 - smoothing)
 
         # Print logs
-        if episode_idx % checkpoint_interval == 0:
+        if episode_idx % args.checkpoint_interval == 0:
             torch.save(policy.qnetwork_local, './checkpoints/' +
                        training_id + '-' + str(episode_idx) + '.pth')
 
-            if save_replay_buffer:
+            if args.save_replay_buffer:
                 policy.save_replay_buffer(
                     './replay_buffers/' + training_id + '-' + str(episode_idx) + '.pkl')
 
-            if train_params.render:
+            if args.render:
                 env_renderer.close_window()
 
         print(
@@ -318,12 +308,12 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
                 smoothed_normalized_score,
                 100 * completion,
                 100 * smoothed_completion,
-                eps_start,
+                args.eps_start,
                 format_action_prob(action_probs)
             ), end=" ")
 
         # Evaluate policy and log results at some interval
-        if episode_idx % checkpoint_interval == 0 and n_eval_episodes > 0:
+        if episode_idx % args.checkpoint_interval == 0 and args.n_val_episodes > 0:
             scores, completions, nb_steps_eval = eval_policy(
                 eval_env, policy, train_params, obs_params)
 
@@ -389,7 +379,7 @@ def train_agent(train_params, train_env_params, eval_env_params, obs_params):
             "actions/right", action_probs[RailEnvActions.MOVE_RIGHT], episode_idx)
         writer.add_scalar(
             "actions/stop", action_probs[RailEnvActions.STOP_MOVING], episode_idx)
-        writer.add_scalar("training/epsilon", eps_start, episode_idx)
+        writer.add_scalar("training/epsilon", args.eps_start, episode_idx)
         writer.add_scalar("training/buffer_size",
                           len(policy.memory), episode_idx)
         writer.add_scalar("training/loss", policy.loss, episode_idx)
@@ -412,185 +402,217 @@ def format_action_prob(action_probs):
     return buffer
 
 
-def eval_policy(env, policy, train_params, obs_params):
-    n_eval_episodes = train_params.n_evaluation_episodes
-    max_steps = env._max_episode_steps
-    tree_depth = obs_params.observation_tree_depth
-    observation_radius = obs_params.observation_radius
-
+def eval_policy(args, env, policy):
     action_dict = dict()
     scores = []
     completions = []
-    nb_steps = []
+    steps = []
 
-    for episode_idx in range(n_eval_episodes):
-        agent_obs = [None] * env.get_num_agents()
+    # Do the specified number of episodes
+    for episode_idx in range(args.n_val_episodes):
         score = 0.0
-
+        final_step = 0
         obs, info = env.reset(regenerate_rail=True, regenerate_schedule=True)
 
-        final_step = 0
-
-        for step in range(max_steps - 1):
+        # Do an episode
+        for step in range(args.max_moves - 1):
+            # Perform a step
             for agent in env.get_agent_handles():
-                if obs[agent] is not None:
-                    # agent_obs[agent] = normalize_observation(
-                    #    obs[agent], tree_depth=tree_depth, observation_radius=observation_radius)
-                    agent_obs[agent] = obs[agent]
-                if step == 0:
-                    print(agent_obs[agent].shape)
-                action = 0
                 if info['action_required'][agent]:
-                    action = policy.act(agent_obs[agent], eps=0.0)
+                    action = policy.act(obs[agent], eps=0.0)
                 action_dict.update({agent: action})
-
             obs, all_rewards, done, info = env.step(action_dict)
 
+            # Update rewards
             for agent in env.get_agent_handles():
                 score += all_rewards[agent]
 
+            # Break if every agent arrived
             final_step = step
-
             if done['__all__']:
                 break
 
-        normalized_score = score / (max_steps * env.get_num_agents())
+        # Save final scores
+        normalized_score = score / (args.max_moves * env.get_num_agents())
         scores.append(normalized_score)
-
         tasks_finished = sum(done[idx] for idx in env.get_agent_handles())
         completion = tasks_finished / max(1, env.get_num_agents())
         completions.append(completion)
+        steps.append(final_step)
 
-        nb_steps.append(final_step)
+    # Print validation results
+    print(
+        "\t✅ Eval: score {:.3f} done {:.1f}%".format(
+            np.mean(scores), np.mean(completions) * 100.0
+        )
+    )
+    return scores, completions, steps
 
-    print("\t✅ Eval: score {:.3f} done {:.1f}%".format(
-        np.mean(scores), np.mean(completions) * 100.0))
 
-    return scores, completions, nb_steps
+def parse_args():
+    '''
+    Parse terminal arguments
+    '''
+    parser = ArgumentParser()
+
+    # Environment parameters
+    parser.add_argument(
+        "--train_env", action='store', default="",
+        help="path to the train environment file", type=str
+    )
+    parser.add_argument(
+        "--val_env", action='store', default="",
+        help="path to the validation environment file", type=str
+    )
+    parser.add_argument(
+        "--num_trains", action='store', default=1,
+        help="number of trains to spawn", type=int
+    )
+    parser.add_argument(
+        "--width", action='store', default=16,
+        help="environment width", type=int
+    )
+    parser.add_argument(
+        "--height", action='store', default=16,
+        help="environment height", type=int
+    )
+    parser.add_argument(
+        "--malfunction", action='store_true', default=False,
+        help="enable malfunctions"
+    )
+    parser.add_argument(
+        "--malfunction_rate", action='store', default=1 / 10000,
+        help="malfunction rate", type=float
+    )
+    parser.add_argument(
+        "--malfunction_min_duration", action='store', default=20,
+        help="malfunction minimum duration", type=int
+    )
+    parser.add_argument(
+        "--malfunction_max_duration", action='store', default=50,
+        help="malfunction maximum duration", type=int
+    )
+    parser.add_argument(
+        "--max_moves", action='store', default=500,
+        help="maximum number of moves in an episode", type=int
+    )
+    parser.add_argument(
+        "--max_depth", action='store', default=5,
+        help="predictor maximum depth", type=int
+    )
+    parser.add_argument(
+        "--max_cities", action='store', default=3,
+        help="maximum number of cities where agents can start or end", type=int
+    )
+    parser.add_argument(
+        "--grid", action='store_true',
+        help="type of city distribution"
+    )
+    parser.add_argument(
+        "--max_rails_between_cities", action='store', default=4,
+        help="maximum number of tracks allowed between cities", type=int
+    )
+    parser.add_argument(
+        "--max_rails_in_cities", action='store', default=4,
+        help="maximum number of parallel tracks within a city", type=int
+    )
+    parser.add_argument(
+        "--variable_speed", action='store_true', default=False,
+        help="enable variable speed"
+    )
+
+    # Training parameters
+    parser.add_argument(
+        "--n_train_episodes", action='store', default=2500,
+        help="number of episodes to run", type=int
+    )
+    parser.add_argument(
+        "--n_val_episodes", action='store', default=25,
+        help="number of evaluation episodes", type=int
+    )
+    parser.add_argument(
+        "--checkpoint_interval", action='store', default=100,
+        help="checkpoint interval", type=int
+    )
+    parser.add_argument(
+        "--eps_start", action='store', default=1.0,
+        help="initial exploration", type=float
+    )
+    parser.add_argument(
+        "--eps_end", action='store', default=0.01,
+        help="final exploration", type=float
+    )
+    parser.add_argument(
+        "--eps_decay", action='store', default=0.99,
+        help="exploration decay", type=float
+    )
+    parser.add_argument(
+        "--buffer_size", action='store', default=int(1e5)
+        help="replay buffer size", type=int
+    )
+    parser.add_argument(
+        "--buffer_min_size", action='store', default=0,
+        help="minimum buffer size to start training", type=int
+    )
+    parser.add_argument(
+        "--restore_replay_buffer", action='store', default="",
+        help="replay buffer to restore", type=str
+    )
+    parser.add_argument(
+        "--save_replay_buffer", action='store_true'
+        help="save replay buffer at each evaluation interval"
+    )
+    parser.add_argument(
+        "--batch_size", action='store', default=128,
+        help="minibatch size", type=int
+    )
+    parser.add_argument(
+        "--gamma", action='store', default=0.99,
+        help="discount factor", type=float
+    )
+    parser.add_argument(
+        "--tau", action='store', default=1e-3,
+        help="soft update of target parameters", type=float
+    )
+    parser.add_argument(
+        "--learning_rate", action='store', default=0.5e-4,
+        help="learning rate", type=float
+    )
+    parser.add_argument(
+        "--hidden_size", default=128
+        help="hidden size (2 fc layers)", type=int
+    )
+    parser.add_argument(
+        "--update_every", action='store', default=8,
+        help="how often to update the network", type=int
+    )
+    parser.add_argument(
+        "--use_gpu", action='store_true'
+        help="use GPU if available"
+    )
+    parser.add_argument(
+        "--num_threads", action='store', default=1,
+        help="number of threads PyTorch can use", type=int
+    )
+    parser.add_argument(
+        "--render", action='store_true'
+        help="render 1 episode in 100"
+    )
+    parser.add_argument(
+        "--fix_random", action='store_true'
+        help="fix all the possible sources of randomness"
+    )
+
+    return parser.parse_args()
+
+
+def main():
+    '''
+    Train environment with custom observation and prediction
+    '''
+    args = parse_args()
+    train_agents(args)
 
 
 if __name__ == "__main__":
-    parser = ArgumentParser()
-    parser.add_argument(
-        "-n", "--n_episodes", help="number of episodes to run", default=2500, type=int)
-    parser.add_argument("-t", "--training_env_config",
-                        help="training config id (eg 0 for Test_0)", default=0, type=int)
-    parser.add_argument("-e", "--evaluation_env_config",
-                        help="evaluation config id (eg 0 for Test_0)", default=0, type=int)
-    parser.add_argument("--n_evaluation_episodes",
-                        help="number of evaluation episodes", default=25, type=int)
-    parser.add_argument("--checkpoint_interval",
-                        help="checkpoint interval", default=100, type=int)
-    parser.add_argument("--eps_start", help="max exploration",
-                        default=1.0, type=float)
-    parser.add_argument("--eps_end", help="min exploration",
-                        default=0.01, type=float)
-    parser.add_argument(
-        "--eps_decay", help="exploration decay", default=0.99, type=float)
-    parser.add_argument(
-        "--buffer_size", help="replay buffer size", default=int(1e5), type=int)
-    parser.add_argument(
-        "--buffer_min_size", help="min buffer size to start training", default=0, type=int)
-    parser.add_argument("--restore_replay_buffer",
-                        help="replay buffer to restore", default="", type=str)
-    parser.add_argument("--save_replay_buffer",
-                        help="save replay buffer at each evaluation interval", default=False, type=bool)
-    parser.add_argument(
-        "--batch_size", help="minibatch size", default=128, type=int)
-    parser.add_argument("--gamma", help="discount factor",
-                        default=0.99, type=float)
-    parser.add_argument(
-        "--tau", help="soft update of target parameters", default=1e-3, type=float)
-    parser.add_argument("--learning_rate",
-                        help="learning rate", default=0.5e-4, type=float)
-    parser.add_argument(
-        "--hidden_size", help="hidden size (2 fc layers)", default=128, type=int)
-    parser.add_argument(
-        "--update_every", help="how often to update the network", default=8, type=int)
-    parser.add_argument(
-        "--use_gpu", help="use GPU if available", default=False, type=bool)
-    parser.add_argument(
-        "--num_threads", help="number of threads PyTorch can use", default=1, type=int)
-    parser.add_argument(
-        "--render", help="render 1 episode in 100", default=False, type=bool)
-    training_params = parser.parse_args()
-
-    env_params = [
-        {
-            # Test Medium size 5 agent no malfunction same speed
-            "n_agents": 5,
-            "x_dim": 16*3,
-            "y_dim": 9*3,
-            "n_cities": 2,
-            "max_rails_between_cities": 2,
-            "max_rails_in_city": 3,
-            "malfunction_rate": 0,
-            "seed": 14
-        },
-        {
-            # Test_0
-            "n_agents": 5,
-            "x_dim": 25,
-            "y_dim": 25,
-            "n_cities": 2,
-            "max_rails_between_cities": 2,
-            "max_rails_in_city": 3,
-            "malfunction_rate": 1 / 50,
-            "seed": 0
-        },
-        {
-            # Test_1
-            "n_agents": 10,
-            "x_dim": 30,
-            "y_dim": 30,
-            "n_cities": 2,
-            "max_rails_between_cities": 2,
-            "max_rails_in_city": 3,
-            "malfunction_rate": 1 / 100,
-            "seed": 0
-        },
-        {
-            # Test_2
-            "n_agents": 20,
-            "x_dim": 30,
-            "y_dim": 30,
-            "n_cities": 3,
-            "max_rails_between_cities": 2,
-            "max_rails_in_city": 3,
-            "malfunction_rate": 1 / 200,
-            "seed": 0
-        },
-    ]
-
-    obs_params = {
-        "observation_tree_depth": 5,
-        "observation_radius": 10,
-        "observation_max_path_depth": 30
-    }
-
-    def check_env_config(id):
-        if id >= len(env_params) or id < 0:
-            print("\n🛑 Invalid environment configuration, only Test_0 to Test_{} are supported.".format(
-                len(env_params) - 1))
-            exit(1)
-
-    check_env_config(training_params.training_env_config)
-    check_env_config(training_params.evaluation_env_config)
-
-    training_env_params = env_params[training_params.training_env_config]
-    evaluation_env_params = env_params[training_params.evaluation_env_config]
-
-    print("\nTraining parameters:")
-    pprint(vars(training_params))
-    print("\nTraining environment parameters (Test_{}):".format(
-        training_params.training_env_config))
-    pprint(training_env_params)
-    print("\nEvaluation environment parameters (Test_{}):".format(
-        training_params.evaluation_env_config))
-    pprint(evaluation_env_params)
-    print("\nObservation parameters:")
-    pprint(obs_params)
-
-    os.environ["OMP_NUM_THREADS"] = str(training_params.num_threads)
-    train_agent(training_params, Namespace(**training_env_params),
-                Namespace(**evaluation_env_params), Namespace(**obs_params))
+    main()
