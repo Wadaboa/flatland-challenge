@@ -40,7 +40,9 @@ from railway_encoding import CellOrientationGraph
             - Packed paths and weights with numpy and only positions, remove direction
             - Add partial shortest path feature results to deviations path
             - Check normalization correctness
-            - Differentiate `inf` from maximum value in normalization
+            - Differentiate `inf` from maximum value in normalization (-2,2 ha senso?)
+            - Check distances correctness
+            - Represent distances as minimum distances inside an arc (not in the path before the node)
             - Handle observation not present at all (all -1 or all 0 ???)
 '''
 
@@ -136,12 +138,12 @@ class CustomObservation(ObservationBuilder):
                 )
                 self._update_data(handle, val[0], remaining_steps)
 
-                #print(f'Handle: {handle} Deviation Paths:')
+                # print(f'Handle: {handle} Deviation Paths:')
                 # for dev in val[1]:
                 #    print(dev.path)
 
-        #print(f'SHORTEST PATHS: \n {self._shortest_paths} \n')
-        #print(f'CUMULATIVE WEIGHTS: \n {self._shortest_cum_weights}\n')
+        # print(f'SHORTEST PATHS: \n {self._shortest_paths} \n')
+        # print(f'CUMULATIVE WEIGHTS: \n {self._shortest_cum_weights}\n')
         return super().get_many(handles)
 
     def _update_data(self, handle, prediction, remaining_steps):
@@ -221,7 +223,7 @@ class CustomObservation(ObservationBuilder):
             path = packed_paths[handle].tolist()[:len(path)]
             path_weights = packed_weights[handle].tolist()
 
-        #print(f'Handle {handle} -> Path {path}')
+        # print(f'Handle {handle} -> Path {path}')
         deadlocks, deadlock_distances = self.find_deadlocks(
             handle, path, path_weights, packed_paths, packed_weights
         )
@@ -263,14 +265,14 @@ class CustomObservation(ObservationBuilder):
             position = self.railway_encoding.get_agent_cell(agent)
             # Check if agent is not DONE_REMOVED -> position is None
             if position is not None:
-                node, remaining_distance = self.railway_encoding.next_node(
+                node, next_node_distance = self.railway_encoding.next_node(
                     position
                 )
                 nodes = self.railway_encoding.get_nodes((node[0], node[1]))
                 next_nodes = list(self.railway_encoding.graph.successors(node))
                 for other_node in nodes:
                     index = utils.get_index(path, other_node)
-                    if index:
+                    if index is not None:
                         if (other_node != node and
                             (len(next_nodes) > 1 or len(path) <= index + 1 or
                              (len(next_nodes) > 0 and next_nodes[0] != path[index + 1]))):
@@ -280,27 +282,31 @@ class CustomObservation(ObservationBuilder):
                         if malfunction > 0:
                             directions.append(directions[0] + 2)
                         break
-                if index:
+                if index is not None:
                     # For each computed direction (same and opposite)
                     for direction in directions:
                         num_agents[index:len(path), direction] += 1
                         value = (
                             cum_weights[index] +
-                            self.speed_data[agent].remaining
+                            self.speed_data[handle].remaining
                         )
                         # Same direction
                         if direction % 2 == 0:
                             value -= (
-                                remaining_distance *
+                                next_node_distance *
                                 self.speed_data[handle].times
                             )
                         # Other direction
                         else:
                             value += (
-                                remaining_distance *
+                                next_node_distance *
                                 self.speed_data[handle].times
                             )
                         # If malfunctioning
+
+                        ##########################
+                        # RIVEDERE DISTANZA IN CASO DI "MALFUNCTION"
+                        ##########################
                         if direction >= 2:
                             value = np.clip(malfunction - value, 0, None)
                         # Update distances
@@ -391,6 +397,7 @@ class CustomObservation(ObservationBuilder):
                         space = self.railway_encoding.graph.get_edge_data(
                             source, dest
                         )["weight"]
+                        init_space = space
                         # print(
                         #    f'Handle {handle} -> Deadlock Edge: {source}-{dest} Space: {space} \n My Turns {cum_weights[j],cum_weights[j+1]} \n Oth Turns {packed_weights[agent, i],packed_weights[agent, i+1]}')
                         deadlocks[j:len(path)] += 1
@@ -409,6 +416,9 @@ class CustomObservation(ObservationBuilder):
                                 packed_weights[agent, i] -
                                 abs(cum_weights[j])
                             ) / self.speed_data[agent].times
+                        if space < 0:
+                            print(init_space, space, self.last_nodes[handle][1], cum_weights[j],
+                                  packed_weights[agent, i])
                         crash_turn = np.ceil(
                             np.clip(cum_weights[j], 0, None) +
                             space / (1/self.speed_data[agent].times + 1 /
@@ -421,16 +431,33 @@ class CustomObservation(ObservationBuilder):
                     break
         return deadlocks, crash_turns
 
+    def normalize_distance(self, distances):
+        finite_distances = distances[
+            np.isfinite(distances)
+        ]
+        try:
+            max_distance = finite_distances.max()
+            min_distance = finite_distances.min()
+            if max_distance != min_distance:
+                distances = (
+                    (distances - min_distance) /
+                    (max_distance - min_distance)
+                )
+            else:
+                distances = distances / max_distance
+        except:
+            pass
+        distances[distances == np.inf] = 2
+        return distances
+
     def normalize(self, observation):
-        normalized_observation = np.full(
-            (self.max_depth, self.max_depth, self.FEATURES), -1, np.dtype('float32')
-        )
-        num_agents = observation[:, :, 0:4]
-        agent_distances = observation[:, :, 4:8]
-        target_distances = observation[:, :, 8]
-        c_nodes = observation[:, :, 9]
-        deadlocks = observation[:, :, 10]
-        deadlock_distances = observation[:, :, 11]
+        normalized_observation = observation.copy()
+        num_agents = normalized_observation[:, :, 0:4]
+        agent_distances = normalized_observation[:, :, 4:8]
+        target_distances = normalized_observation[:, :, 8]
+        c_nodes = normalized_observation[:, :, 9]
+        deadlocks = normalized_observation[:, :, 10]
+        deadlock_distances = normalized_observation[:, :, 11]
 
         # Normalize number of agents in path
         done_agents = sum([
@@ -447,30 +474,9 @@ class CustomObservation(ObservationBuilder):
         deadlocks /= remaining_agents
 
         # Normalize distances
-        finite_target_distances = target_distances[
-            np.isfinite(target_distances)
-        ]
-        try:
-            max_distance = finite_target_distances.max()
-            min_distance = finite_target_distances.min()
-            if max_distance != min_distance:
-                agent_distances = (
-                    (agent_distances - min_distance) /
-                    (max_distance - min_distance)
-                )
-                target_distances = (
-                    (target_distances - min_distance) /
-                    (max_distance - min_distance)
-                )
-                deadlock_distances = (
-                    (deadlock_distances - min_distance) /
-                    (max_distance - min_distance)
-                )
-        except:
-            pass
-        agent_distances[agent_distances == np.inf] = 1
-        target_distances[target_distances == np.inf] = 1
-        deadlock_distances[deadlock_distances == np.inf] = 1
+        agent_distances = self.normalize_distance(agent_distances)
+        target_distances = self.normalize_distance(target_distances)
+        deadlock_distances = self.normalize_distance(deadlock_distances)
 
         # Build the normalized observation
         normalized_observation[:, :, 0:4] = num_agents
@@ -479,5 +485,14 @@ class CustomObservation(ObservationBuilder):
         normalized_observation[:, :, 9] = c_nodes
         normalized_observation[:, :, 10] = deadlocks
         normalized_observation[:, :, 11] = deadlock_distances
-        normalized_observation[normalized_observation == -np.inf] = -1
+        normalized_observation[normalized_observation == -np.inf] = -2
+
+        # Check if the output is in range [-2, 2]
+        if not np.logical_and(
+            normalized_observation >= -2,
+            normalized_observation <= 2
+        ).all():
+            print(observation)
+            print(normalized_observation)
+
         return normalized_observation

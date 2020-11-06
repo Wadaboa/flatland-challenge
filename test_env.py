@@ -16,6 +16,7 @@ from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 from observations import CustomObservation
 from predictions import ShortestPathPredictor
 from policies import RandomPolicy
+import utils
 
 
 RANDOM_SEED = 42
@@ -142,6 +143,7 @@ def main():
     Test environment with custom observation and prediction
     '''
     args = parse_args()
+    utils.fix_random(RANDOM_SEED)
 
     # Check if an environment file is provided
     if args.test_env:
@@ -149,10 +151,10 @@ def main():
     else:
         rail_generator = sparse_rail_generator(
             max_num_cities=args.max_cities,
-            seed=RANDOM_SEED,
             grid_mode=args.grid,
             max_rails_between_cities=args.max_rails_between_cities,
             max_rails_in_city=args.max_rails_in_cities,
+            seed=RANDOM_SEED
         )
 
     # Initialize predictor and observer
@@ -189,9 +191,10 @@ def main():
         number_of_agents=args.num_trains,
         obs_builder_object=observation_builder,
         malfunction_generator=malfunctions,
-        remove_agents_at_target=True
+        remove_agents_at_target=True,
+        random_seed=RANDOM_SEED
     )
-    observations, _ = env.reset()
+    observations, _ = env.reset(random_seed=RANDOM_SEED)
 
     # Initiate the renderer
     if args.enable_renderer:

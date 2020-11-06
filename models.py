@@ -209,7 +209,7 @@ class DDDQNPolicy(Policy):
         self.t_step = (self.t_step + 1) % self.update_every
         if self.t_step == 0:
             # If enough samples are available in memory, get random subset and learn
-            if len(self.memory) > self.buffer_min_size and len(self.memory) > self.batch_size:
+            if len(self.memory) > self.buffer_min_size and len(self.memory) >= self.batch_size:
                 self._learn()
 
     def _learn(self):
@@ -317,7 +317,6 @@ class ReplayBuffer:
     def sample(self):
         """Randomly sample a batch of experiences from memory."""
         experiences = random.sample(self.memory, k=self.batch_size)
-
         states = torch.from_numpy(self.__v_stack_impr([e.state for e in experiences if e is not None])) \
             .float().to(self.device)
         actions = torch.from_numpy(self.__v_stack_impr([e.action for e in experiences if e is not None])) \
@@ -339,7 +338,6 @@ class ReplayBuffer:
         #sub_dim = len(states[0][0]) if isinstance(states[0], Iterable) else 1
         #np_states = np.reshape(np.array(states), (len(states), sub_dim))
         np_states = np.array(states)
-        print(f"BUFFER SIZE: {np_states.shape}")
         # print("BUFFER:")
         # print(np_states)
         return np_states

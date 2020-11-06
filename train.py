@@ -1,5 +1,6 @@
 import os
 import random
+import sys
 from argparse import ArgumentParser
 from datetime import datetime
 
@@ -16,10 +17,10 @@ from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 from predictions import ShortestPathPredictor
 from observations import CustomObservation
 from models import DDDQNPolicy
-from utils import Timer
+import utils
 
 
-RANDOM_SEED = 42
+RANDOM_SEED = 1
 
 
 def set_num_threads(num_threads):
@@ -31,16 +32,18 @@ def set_num_threads(num_threads):
     os.environ["MKL_NUM_THREADS"] = str(num_threads)
 
 
-def fix_random(seed):
+def tensorboard_log(writer, name, x, y):
     '''
-    Fix all the possible sources of randomness
+    Log the given x/y values to tensorboard
     '''
-    np.random.seed(seed)
-    random.seed(seed)
-    torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
+    if type(x) in (int, float, str):
+        writer.add_scalar(name, x, y)
+    else:
+        writer.add_scalar(f"{name}_min", np.min(x), y)
+        writer.add_scalar(f"{name}_max", np.max(x), y)
+        writer.add_scalar(f"{name}_mean", np.mean(x), y)
+        writer.add_scalar(f"{name}_std", np.std(x), y)
+        writer.add_histogram(name, np.array(x), y)
 
 
 def format_action_probabilities(action_probabilities):
@@ -67,10 +70,10 @@ def create_rail_env(args, observation_builder, env=""):
     else:
         rail_generator = sparse_rail_generator(
             max_num_cities=args.max_cities,
-            seed=RANDOM_SEED,
             grid_mode=args.grid,
             max_rails_between_cities=args.max_rails_between_cities,
             max_rails_in_city=args.max_rails_in_cities,
+            seed=RANDOM_SEED
         )
 
     # Initialize malfunctions
@@ -101,22 +104,9 @@ def create_rail_env(args, observation_builder, env=""):
         number_of_agents=args.num_trains,
         obs_builder_object=observation_builder,
         malfunction_generator=malfunctions,
-        remove_agents_at_target=True
+        remove_agents_at_target=True,
+        random_seed=RANDOM_SEED
     )
-
-
-def tensorboard_log(writer, name, x, y):
-    '''
-    Log the given x/y values to tensorboard
-    '''
-    if type(x) in (int, float, str):
-        writer.add_scalar(name, x, y)
-    else:
-        writer.add_scalar(f"{name}_min", np.min(x), y)
-        writer.add_scalar(f"{name}_max", np.max(x), y)
-        writer.add_scalar(f"{name}_mean", np.mean(x), y)
-        writer.add_scalar(f"{name}_std", np.std(x), y)
-        writer.add_histogram(name, np.array(x), y)
 
 
 def train_agents(args):
@@ -126,7 +116,7 @@ def train_agents(args):
     # Initialize threads and seeds
     set_num_threads(args.num_threads)
     if args.fix_random:
-        fix_random(RANDOM_SEED)
+        utils.fix_random(RANDOM_SEED)
 
     # Initialize predictor and observer
     predictor = ShortestPathPredictor(max_depth=args.max_depth)
@@ -136,9 +126,7 @@ def train_agents(args):
 
     # Setup the environments
     train_env = create_rail_env(args, observation_builder, env=args.train_env)
-    train_env.reset(regenerate_schedule=True, regenerate_rail=True)
     val_env = create_rail_env(args, observation_builder, env=args.val_env)
-    val_env.reset(regenerate_schedule=True, regenerate_rail=True)
 
     # Setup renderer
     if args.render:
@@ -188,7 +176,7 @@ def train_agents(args):
     training_id = now.strftime('%Y%m%d-%H%M%S')
 
     # Print initial training info
-    training_timer = Timer()
+    training_timer = utils.Timer()
     training_timer.start()
     print("\n🚉 Training {} trains on {}x{} grid for {} episodes, evaluating on {} episodes every {} episodes. Training id '{}'.\n".format(
         train_env.get_num_agents(),
@@ -202,16 +190,20 @@ def train_agents(args):
     # Do the specified number of episodes
     for episode in range(args.n_train_episodes + 1):
         # Initialize timers
-        step_timer = Timer()
-        reset_timer = Timer()
-        learn_timer = Timer()
-        inference_timer = Timer()
+        step_timer = utils.Timer()
+        reset_timer = utils.Timer()
+        learn_timer = utils.Timer()
+        inference_timer = utils.Timer()
 
         # Reset environment and renderer
         reset_timer.start()
-        obs, info = train_env.reset(
-            regenerate_rail=True, regenerate_schedule=True
-        )
+        if args.fix_random:
+            obs, info = train_env.reset(random_seed=RANDOM_SEED)
+        else:
+            obs, info = train_env.reset(
+                regenerate_rail=True, regenerate_schedule=True,
+                random_seed=utils.get_seed(train_env)
+            )
         reset_timer.end()
         if args.render:
             env_renderer.set_new_rail()
@@ -219,7 +211,7 @@ def train_agents(args):
         # Initialize data structures for training info
         score, steps = 0, 0
         actions_taken = []
-        agent_prev_obs = list(obs)
+        agent_prev_obs = dict(obs)
         agent_prev_action = [2] * args.num_trains
         update_values = [False] * args.num_trains
         action_count = [0] * action_size
@@ -256,7 +248,7 @@ def train_agents(args):
 
             # Update replay buffer and train agent
             for agent in train_env.get_agent_handles():
-                # Only learn from timesteps where somethings happened
+                # Only learn from timesteps where something happened
                 if update_values[agent] or done['__all__']:
                     learn_timer.start()
                     policy.step(
@@ -333,7 +325,7 @@ def train_agents(args):
         # Evaluate policy and log results at some interval
         if episode % args.checkpoint_interval == 0 and args.n_val_episodes > 0:
             scores, completions, val_steps = eval_policy(
-                eval_env, policy, train_params, obs_params
+                args, val_env, policy
             )
 
             # Save final validation scores
@@ -401,11 +393,13 @@ def train_agents(args):
         )
 
         # Log training time info to tensorboard
-        tensorboard_log(writer, "timer/reset", reset_timer.get(), episode)
-        tensorboard_log(writer, "timer/step", step_timer.get(), episode)
-        tensorboard_log(writer, "timer/learn", learn_timer.get(), episode)
+        tensorboard_log(writer, "utils.Timer/reset",
+                        reset_timer.get(), episode)
+        tensorboard_log(writer, "utils.Timer/step", step_timer.get(), episode)
+        tensorboard_log(writer, "utils.Timer/learn",
+                        learn_timer.get(), episode)
         tensorboard_log(
-            writer, "timer/total", training_timer.get_current(), episode
+            writer, "utils.Timer/total", training_timer.get_current(), episode
         )
 
         # Close tensorboard
@@ -424,6 +418,13 @@ def eval_policy(args, env, policy):
     for episode in range(args.n_val_episodes):
         score = 0.0
         final_step = 0
+        if args.fix_random:
+            obs, info = env.reset(random_seed=RANDOM_SEED)
+        else:
+            obs, info = env.reset(
+                regenerate_rail=True, regenerate_schedule=True,
+                random_seed=utils.get_seed(env)
+            )
         obs, info = env.reset(regenerate_rail=True, regenerate_schedule=True)
 
         # Do an episode
