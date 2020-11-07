@@ -157,7 +157,7 @@ class ShortestPathPredictor(PredictionBuilder):
         '''
         agent = self.env.agents[handle]
         if agent.status == RailAgentStatus.DONE_REMOVED or agent.status == RailAgentStatus.DONE:
-            return
+            return None
 
         # Build predictions
         lenght, path = self.get_shortest_path(handle)

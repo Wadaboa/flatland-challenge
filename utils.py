@@ -12,6 +12,10 @@ def get_index(arr, elem):
     return arr.index(elem) if elem in arr else None
 
 
+def reciprocal_sum(a, b):
+    return (1 / a) + (1 / b)
+
+
 def fix_random(seed):
     '''
     Fix all the possible sources of randomness

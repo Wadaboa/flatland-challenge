@@ -187,7 +187,7 @@ class CellOrientationGraph():
         for node in nodes:
             self.remove_node(node)
 
-    def get_nodes(self, position, packed_graph=True):
+    def get_nodes(self, position, unpacked=False):
         '''
         Given a position (row, column), return a list
         of nodes present in the packed or unpacked graph of the type
@@ -196,8 +196,9 @@ class CellOrientationGraph():
         nodes = []
         for direction in TRANS:
             node = (position[0], position[1], direction.value)
-            if ((packed_graph and self.graph.has_node(node)) or
-                    (not packed_graph and self._unpacked_graph.has_node(node))):
+            node_in_packed = not unpacked and self.graph.has_node(node)
+            node_in_unpacked = unpacked and self._unpacked_graph.has_node(node)
+            if node_in_packed or node_in_unpacked:
                 nodes.append(node)
         return nodes
 
