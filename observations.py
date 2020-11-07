@@ -16,34 +16,50 @@ from railway_encoding import CellOrientationGraph
 
 
 '''
-    -Graph:
-        - Divide intersection nodes on arrival direction
+Observation:
+    - Structure:
+        * Tensor of shape (max_depth, max_depth, features), where max_depth 
+          is the maximum number of nodes in the packed graph to consider and
+          features is the total amount of features for each node
+        * The observation contains the features of the nodes in the shortest path
+          as the first row and the features of the nodes in the deviation paths
+          (which are exactly max_depth - 1) as the following rows
+    - Features:
+        1. Number of agents (going in my direction) identified in the subpath 
+           from the root up to each node in the path
+        2. Number of agents (going in a direction different from mine) identified 
+           in the subpath from the root up to each node in the path
+        3. Number of malfunctioning agents (going in my direction) identified in the subpath 
+           from the root up to each node in the path
+        4. Number of malfunctioning agents (going in a direction different from mine) identified 
+           in the subpath from the root up to each node in the path
+        5. Minimum distances from an agent to other agent's (going in my direction) 
+           in each edge of the path
+        6. Minimum distances from an agent to other agent's (going in a direction 
+           different than mine) in each edge of the path
+        7. Maximum number of malfunctioning turns of other agents (going in my direction),
+           in each edge of the path
+        8. Maximum number of malfunctioning turns of other agents (going in a direction 
+           different from mine), in each edge of the path
+        9. Distances from the target, from each node in the path
+        10. Number of agents using the node to reach their target in the shortest path
+        11. Number of agents in deadlock in the previous path, assuming that all the 
+            other agents follow their shortest path
+        12. How many turns before a possible deadlock
+'''
+
+'''
+Todo:
     - Observation:
-        - Structure:
-            - Shortest path cut on the 5th node
-            - Foreach node on Shortest path alternative route lenght max 5
-        - Features node:
-            - [Y] Num. agents on the previous path in the same direction
-            - [Y] Min distance agent on the previous path in the same direction from agent root
-            - [Y] Num. agents on the previous path in the opposite direction
-            - [Y] Min distance agent on the previous path in the opposite direction from agent root
-            - [Y] Distance from the target
-            - [Y] Num. agents using the node to reach their target in the shortest path
-            - [Y] Num. agents in deadlock in the previous path if the other agents follow their shortest path
-            - [Y] Distance from the nearest deadlock in the path computed as above
-            - [Y] Number of agent malfunctioning in the previous path in the same direction
-            - [Y] Number of agent malfunctioning in the previous path in the opposite direction
-            - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the same direction (difference between malfunction time and distance)
-            - [Y] Turns to wait blocked if there is an agent on path malfunctioning in the opposite direction (difference between malfunction time and distance)
-        - Todo:
-            - Test new Deadlock and deadlock distances
-            - Packed paths and weights with numpy and only positions, remove direction
-            - Add partial shortest path feature results to deviations path
-            - Check normalization correctness
-            - Differentiate `inf` from maximum value in normalization (-2,2 ha senso?)
-            - Check distances correctness
-            - Represent distances as minimum distances inside an arc (not in the path before the node)
-            - Handle observation not present at all (all -1 or all 0 ???)
+        * Test deadlock distance with variable speeds
+        * Test malfunctions observations
+        * Add malfunction turns to cumulative weights
+        * Check normalization correctness
+        * Handle observation not present at all
+        * Store agents in deadlock and substitute their shortest paths 
+          as if they cannot reach their target (i.e. store current and next node)
+        * Add function to check for current deadlocks (agents one in front of another or cycles)
+        * The first agents to enter the rail are the fastest ones (not the ones with minimum handles)
 '''
 
 # SpeedData:
@@ -55,6 +71,8 @@ SpeedData = namedtuple('SpeedData', ['times', 'remaining'])
 class CustomObservation(ObservationBuilder):
 
     FEATURES = 12
+    LOWER, UPPER = -1, 1
+    UNDER, OVER = -2, 2
 
     def __init__(self, max_depth, predictor):
         super().__init__()
@@ -87,18 +105,21 @@ class CustomObservation(ObservationBuilder):
         self.other_agents = dict()
         self.speed_data = dict()
         self.last_nodes = []
+        self.last_positions = []
         for handle, agent in enumerate(self.env.agents):
             times_per_cell = int(np.reciprocal(agent.speed_data["speed"]))
             self.speed_data[handle] = SpeedData(
                 times=times_per_cell, remaining=0
             )
             self.other_agents[handle] = self.agent_handles - {handle}
+            agent_position = self.railway_encoding.get_agent_cell(handle)
             prev_node, prev_weight = self.railway_encoding.previous_node(
-                self.railway_encoding.get_agent_cell(handle)
+                agent_position
             )
             self.last_nodes.append(
-                prev_node, prev_weight * times_per_cell
+                (prev_node, prev_weight * times_per_cell)
             )
+            self.last_positions.append(agent_position)
 
     def reset(self):
         self._init_env()
@@ -109,11 +130,23 @@ class CustomObservation(ObservationBuilder):
         if self.predictor:
             self.predictor.set_env(self.env)
 
-    def _update_shortest(self, handle, prediction, remaining_turns_in_cell):
+    def _update_shortest(self, handle, prediction):
         '''
         Store shortest paths, shortest positions and shortest cumulative weights
         for the current observation of the given agent
         '''
+        # Update speed data
+        remaining_turns_in_cell = 0
+        if self.env.agents[handle].speed_data["speed"] < 1.0:
+            remaining_turns_in_cell = int(
+                (1 - np.clip(self.env.agents[handle].speed_data["position_fraction"], 0.0, 1.0)) /
+                self.env.agents[handle].speed_data["speed"]
+            )
+        self.speed_data[handle] = SpeedData(
+            times=self.speed_data[handle].times,
+            remaining=remaining_turns_in_cell
+        )
+
         # Update shortest paths
         shortest_path = np.array(prediction.path, np.dtype('int, int, int'))
         self._shortest_paths[handle, :shortest_path.shape[0]] = shortest_path
@@ -136,27 +169,17 @@ class CustomObservation(ObservationBuilder):
             shortest_cum_weights
         )
 
-        # Update last visited node
+        # Update last visited node and last positions
         agent_position = tuple(shortest_path[0])
-        if agent_position in self.railway_encoding.graph.nodes:
-            self.last_nodes[handle] = (agent_position, 0)
-        else:
-            self.last_nodes[handle] = (
-                self.last_nodes[handle][0],
-                self.last_nodes[handle][1] + 1
-            )
-
-        # Update speed data
-        remaining_turns_in_cell = 0
-        if self.env.agents[handle].speed_data["speed"] < 1.0:
-            remaining_turns_in_cell = int(
-                (1 - np.clip(self.env.agents[handle].speed_data["position_fraction"], 0.0, 1.0)) /
-                self.env.agents[handle].speed_data["speed"]
-            )
-        self.speed_data[handle] = SpeedData(
-            times=self.speed_data[handle].times,
-            remaining=remaining_turns_in_cell
-        )
+        if self.last_positions[handle] != agent_position:
+            if agent_position in self.railway_encoding.graph.nodes:
+                self.last_nodes[handle] = (agent_position, 0)
+            else:
+                self.last_nodes[handle] = (
+                    self.last_nodes[handle][0],
+                    self.last_nodes[handle][1] + 1
+                )
+            self.last_positions[handle] = agent_position
 
     def get_many(self, handles=None):
         self.predictions = self.predictor.get_many()
@@ -167,16 +190,14 @@ class CustomObservation(ObservationBuilder):
         self._shortest_positions = np.full(
             (len(self.agent_handles), self.max_depth), -1, np.dtype('int, int')
         )
-        self._shortest_cum_weights = np.full(
-            (len(self.agent_handles), self.max_depth), np.inf
+        self._shortest_cum_weights = np.zeros(
+            (len(self.agent_handles), self.max_depth)
         )
         for handle, prediction in self.predictions.items():
             # Check if agent is not at target
             if self.predictions[handle] is not None:
                 shortest_prediction = prediction[0]
-                self._update_shortest(
-                    handle, shortest_prediction, remaining_turns_in_cell
-                )
+                self._update_shortest(handle, shortest_prediction)
 
         return super().get_many(handles)
 
@@ -193,12 +214,15 @@ class CustomObservation(ObservationBuilder):
             prev_num_agents = shortest_feats[:, :4]
             self.observations[handle][0, :, :] = shortest_feats
             for i, deviation_prediction in enumerate(deviation_paths_prediction):
-                prev_deadlocks = shortest_feats[i, 10]
+                prev_deadlocks = 0
+                prev_num_agents_values = None
+                if i >= 1:
+                    prev_deadlocks = shortest_feats[i - 1, 10]
+                    prev_num_agents_values = prev_num_agents[i - 1, :]
                 dev_feats = self._fill_path_values(
                     handle, deviation_prediction, packed_positions, packed_weights,
-                    remaining_steps=self._shortest_cum_weights[handle, i],
-                    prev_num_agents=prev_num_agents[i, :],
-                    prev_deadlocks=prev_deadlocks
+                    turns_to_deviation=self._shortest_cum_weights[handle, i],
+                    prev_deadlocks=prev_deadlocks, prev_num_agents=prev_num_agents_values
                 )
                 self.observations[handle][i + 1, :, :] = dev_feats
 
@@ -218,11 +242,13 @@ class CustomObservation(ObservationBuilder):
         return self.observations[handle]
 
     def _fill_path_values(self, handle, prediction, packed_positions, packed_weights,
-                          turns_to_deviation=0, prev_num_agents=[0, 0, 0, 0], prev_deadlocks=0):
+                          turns_to_deviation=0, prev_deadlocks=0, prev_num_agents=None):
         '''
-        Comp
+        Compute observations for the given prediction and return
+        a suitable feature matrix
         '''
-        # Compute cumulative weights for the given path
+        # Adjust weights and positions based on which kind of path
+        # we are analyzing (shortest or deviation)
         path_weights = np.zeros((self.max_depth,))
         path = prediction.path
         positions = [node[:-1] for node in path]
@@ -230,14 +256,15 @@ class CustomObservation(ObservationBuilder):
             weights = self._shortest_cum_weights[handle]
             positions = packed_positions[handle].tolist()[:len(path)]
             positions_weights = packed_weights[handle]
+            path_weights[:weights.shape[0]] = weights
         else:
             weights = np.array(
                 self.compute_cumulative_weights(
                     handle, prediction.edges, turns_to_deviation
                 )
             )
-            positions_weights = weights
-        path_weights[:weights.shape[0]] = weights
+            path_weights[:weights.shape[0]] = weights
+            positions_weights = path_weights
 
         # Compute features
         num_agents, agent_distances, malfunctions = self.agents_in_path(
@@ -271,11 +298,11 @@ class CustomObservation(ObservationBuilder):
         ]
         return np.cumsum(weights)
 
-    def agents_in_path(self, handle, path, cum_weights, prev_num_agents=[0, 0, 0, 0]):
+    def agents_in_path(self, handle, path, cum_weights, prev_num_agents=None):
         '''
         Return three arrays:
         - Number of agents identified in the subpath from the root up to
-          each node in the path (in both directions)
+          each node in the path (in both directions and both malfunctioning or not)
         - Minimum distances from an agent to other agent's
           in each edge of the path (in both directions)
         - Maximum turns that an agent has to wait because it is malfunctioning,
@@ -286,7 +313,8 @@ class CustomObservation(ObservationBuilder):
         - Other direction, otherwise
         '''
         num_agents = np.zeros((self.max_depth, 4))
-        num_agents[:] = np.array(prev_num_agents)
+        if prev_num_agents is not None:
+            num_agents[:] = np.array(prev_num_agents)
         distances = np.full((self.max_depth, 2), np.inf)
         malfunctions = np.zeros((self.max_depth, 2))
 
@@ -310,12 +338,14 @@ class CustomObservation(ObservationBuilder):
                     index = utils.get_index(path, other_node)
                     if index is not None:
                         # Initialize distances
-                        distance = (
-                            cum_weights[index] +
-                            self.speed_data[handle].remaining
-                        )
-                        turns_to_reach_other_agent = (
-                            next_node_distance *
+                        distance = cum_weights[index]
+                        if cum_weights[index] < self.speed_data[handle].times:
+                            distance = (
+                                self.speed_data[handle].remaining -
+                                self.speed_data[handle].times
+                            )
+                        turns_to_reach_other_agent = abs(
+                            (next_node_distance - (self.speed_data[agent].remaining / self.speed_data[agent].times)) *
                             self.speed_data[handle].times
                         )
 
@@ -324,6 +354,7 @@ class CustomObservation(ObservationBuilder):
                         more_than_one_choice = len(next_nodes) > 1
                         last_node_in_path = len(path) <= index + 1
                         different_one_choice = (
+                            not last_node_in_path and
                             len(next_nodes) > 0 and
                             next_nodes[0] != path[index + 1]
                         )
@@ -336,13 +367,19 @@ class CustomObservation(ObservationBuilder):
                         # Update number of agents
                         num_agents[index:len(path), direction] += 1
 
-                        # Update distances
+                        # Update distances s.t. we always keep the greatest one (if distance is negative),
+                        # otherwise the minimum one (if distance is positive)
                         distance += turns_to_reach_other_agent
-                        if distances[index, direction] > distance:
+                        if ((distances[index, direction] == np.inf) or
+                            (distance >= 0 and distances[index, direction] > distance) or
+                                (distance <= 0 and distances[index, direction] < distance) or
+                                (distance >= 0 and distances[index, direction] < 0)):
                             distances[index, direction] = distance
 
                         # Update malfunctions
                         malfunction = self.env.agents[agent].malfunction_data['malfunction']
+                        if malfunction > 0:
+                            num_agents[index:len(path), direction + 2] += 1
                         if malfunctions[index, direction] < malfunction:
                             malfunctions[index, direction] = malfunction
                         break
@@ -460,7 +497,7 @@ class CustomObservation(ObservationBuilder):
         # For each agent different than myself
         for agent in self.other_agents[handle]:
             deadlock_found = False
-            agent_path = packed_positions[agent]
+            agent_path = packed_positions[agent].tolist()
             # For each node in the other agent's path
             for i in range(len(agent_path) - 1):
                 # Avoid non-informative pair of nodes
@@ -478,14 +515,15 @@ class CustomObservation(ObservationBuilder):
                         )
                         deadlock_found = from_dest_to_source and intersecting_turns
                         if deadlock_found:
-                            space = self.railway_encoding.graph.get_edge_data(
-                                source, dest
-                            )["weight"]
+                            space = (
+                                cum_weights[j + 1] - cum_weights[j]
+                            ) / self.speed_data[handle].times
 
-                            init_space = space
                             '''
-                            # print(
-                            #    f'Handle {handle} -> Deadlock Edge: {source}-{dest} Space: {space} \n My Turns {cum_weights[j],cum_weights[j+1]} \n Oth Turns {packed_weights[agent, i],packed_weights[agent, i+1]}')
+                            print()
+                            print(
+                                f'Handle {handle} -> Deadlock Edge: {source}-{dest} Space: {space} \n My Turns {cum_weights[j],cum_weights[j+1]} \n Oth Turns {packed_weights[agent, i],packed_weights[agent, i+1]}')
+                            print()
                             '''
 
                             # Both agents in same edge: reduce space by how much they
@@ -514,12 +552,6 @@ class CustomObservation(ObservationBuilder):
                                     abs(cum_weights[j])
                                 ) / self.speed_data[agent].times
 
-                            '''
-                            if space < 0:
-                                print(init_space, space, self.last_nodes[handle][1], cum_weights[j],
-                                      packed_weights[agent, i])
-                            '''
-
                             # Compute the distance in turns from my agent to
                             # the possible identified deadlock
                             crash_turn = np.ceil(
@@ -547,29 +579,15 @@ class CustomObservation(ObservationBuilder):
 
         return deadlocks, crash_turns
 
-    def normalize_distance(self, distances):
-        finite_distances = distances[
-            np.isfinite(distances)
-        ]
-        try:
-            max_distance = finite_distances.max()
-            min_distance = finite_distances.min()
-            if max_distance != min_distance:
-                distances = (
-                    (distances - min_distance) /
-                    (max_distance - min_distance)
-                )
-            else:
-                distances = distances / max_distance
-        except:
-            pass
-        distances[distances == np.inf] = 2
-        return distances
-
     def normalize(self, observation):
+        '''
+        Normalize the given observations by performing min-max scaling
+        over individual features
+        '''
         normalized_observation = observation.copy()
         num_agents = normalized_observation[:, :, 0:4]
-        agent_distances = normalized_observation[:, :, 4:8]
+        agent_distances = normalized_observation[:, :, 4:6]
+        malfunctions = normalized_observation[:, :, 6:8]
         target_distances = normalized_observation[:, :, 8]
         c_nodes = normalized_observation[:, :, 9]
         deadlocks = normalized_observation[:, :, 10]
@@ -581,34 +599,61 @@ class CustomObservation(ObservationBuilder):
             if self.env.agents[i].status in (RailAgentStatus.DONE, RailAgentStatus.DONE_REMOVED)
         ])
         remaining_agents = len(self.agent_handles) - done_agents
-        num_agents /= remaining_agents
+        num_agents = utils.min_max_scaling(
+            num_agents, self.LOWER, self.UPPER, self.UNDER, self.OVER,
+            known_min=0, known_max=remaining_agents
+        )
+
+        # Normalize malfunctions
+        max_malfunctions = self.env.malfunction_generator.get_process_data().max_duration
+        malfunctions = utils.min_max_scaling(
+            malfunctions, self.LOWER, self.UPPER, self.UNDER, self.OVER,
+            known_min=0, known_max=max_malfunctions
+        )
 
         # Normalize common nodes
-        c_nodes /= self.max_depth
+        c_nodes = utils.min_max_scaling(
+            c_nodes, self.LOWER, self.UPPER, self.UNDER, self.OVER,
+            known_min=0, known_max=self.max_depth
+        )
 
         # Normalize deadlocks
-        deadlocks /= remaining_agents
+        deadlocks = utils.min_max_scaling(
+            deadlocks, self.LOWER, self.UPPER, self.UNDER, self.OVER,
+            known_min=0, known_max=remaining_agents
+        )
 
         # Normalize distances
-        agent_distances = self.normalize_distance(agent_distances)
-        target_distances = self.normalize_distance(target_distances)
-        deadlock_distances = self.normalize_distance(deadlock_distances)
+        agent_distances = utils.min_max_scaling(
+            agent_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER
+        )
+        target_distances = utils.min_max_scaling(
+            target_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER
+        )
+        deadlock_distances = utils.min_max_scaling(
+            deadlock_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER
+        )
 
         # Build the normalized observation
         normalized_observation[:, :, 0:4] = num_agents
-        normalized_observation[:, :, 4:8] = agent_distances
+        normalized_observation[:, :, 4:6] = agent_distances
+        normalized_observation[:, :, 6:8] = malfunctions
         normalized_observation[:, :, 8] = target_distances
         normalized_observation[:, :, 9] = c_nodes
         normalized_observation[:, :, 10] = deadlocks
         normalized_observation[:, :, 11] = deadlock_distances
-        normalized_observation[normalized_observation == -np.inf] = -2
 
-        # Check if the output is in range [-2, 2]
+        # Sanity check
+        normalized_observation[normalized_observation == -np.inf] = self.UNDER
+        normalized_observation[normalized_observation == np.inf] = self.OVER
+
+        # Check if the output is in range [UNDER, OVER]
         if not np.logical_and(
-            normalized_observation >= -2,
-            normalized_observation <= 2
+            normalized_observation >= self.UNDER,
+            normalized_observation <= self.OVER
         ).all():
-            print(observation)
-            print(normalized_observation)
+            print()
+            print("OBSERVATION VALORI MERDA")
+            print()
 
         return normalized_observation

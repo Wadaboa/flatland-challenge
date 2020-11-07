@@ -16,6 +16,32 @@ def reciprocal_sum(a, b):
     return (1 / a) + (1 / b)
 
 
+def min_max_scaling(values, lower, upper, under, over, known_min=None, known_max=None):
+    '''
+    Perform min-max scaling over the given array
+    (`under` is substituted for -np.inf and `over` for np.inf)
+    '''
+    finite_values = values[np.isfinite(values)]
+    min_value, max_value = known_min, known_max
+    try:
+        if min_value is None:
+            min_value = finite_values.min()
+        if max_value is None:
+            max_value = finite_values.max()
+        if min_value != max_value:
+            values = lower + (
+                ((values - min_value) * (upper - lower)) /
+                (max_value - min_value)
+            )
+        elif min_value != 0:
+            values = values / min_value
+    except:
+        pass
+    values[values == -np.inf] = under
+    values[values == np.inf] = over
+    return values
+
+
 def fix_random(seed):
     '''
     Fix all the possible sources of randomness
