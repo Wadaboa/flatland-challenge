@@ -20,7 +20,7 @@ from models import DDDQNPolicy
 import utils
 
 
-RANDOM_SEED = 1
+RANDOM_SEED = 14
 
 
 def set_num_threads(num_threads):
@@ -86,6 +86,7 @@ def create_rail_env(args, observation_builder, env=""):
         ))
 
     # Initialize agents speeds
+    speed_map = None
     if args.variable_speed:
         speed_map = {
             1.: 0.25,
@@ -93,14 +94,14 @@ def create_rail_env(args, observation_builder, env=""):
             1. / 3.: 0.25,
             1. / 4.: 0.25
         }
-        schedule_generator = sparse_schedule_generator(speed_map)
+    schedule_generator = sparse_schedule_generator(speed_map, seed=RANDOM_SEED)
 
     # Build the environment
     return RailEnv(
         width=args.width,
         height=args.height,
         rail_generator=rail_generator,
-        schedule_generator=schedule_generator if args.variable_speed else None,
+        schedule_generator=schedule_generator,
         number_of_agents=args.num_trains,
         obs_builder_object=observation_builder,
         malfunction_generator=malfunctions,
@@ -127,16 +128,6 @@ def train_agents(args):
     # Setup the environments
     train_env = create_rail_env(args, observation_builder, env=args.train_env)
     val_env = create_rail_env(args, observation_builder, env=args.val_env)
-
-    # Setup renderer
-    if args.render:
-        env_renderer = RenderTool(
-            train_env,
-            agent_render_variant=AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX,
-            show_debug=True,
-            screen_height=600,
-            screen_width=800
-        )
 
     # Set state size and action size
     state_size = (args.max_depth ** 2) * observation_builder.FEATURES
@@ -206,7 +197,13 @@ def train_agents(args):
             )
         reset_timer.end()
         if args.render:
-            env_renderer.set_new_rail()
+            env_renderer = RenderTool(
+                train_env,
+                agent_render_variant=AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX,
+                show_debug=True,
+                screen_height=1080,
+                screen_width=1920
+            )
 
         # Initialize data structures for training info
         score, steps = 0, 0
@@ -241,9 +238,10 @@ def train_agents(args):
             step_timer.end()
 
             # Render an episode at some interval
-            if args.render and episode % args.checkpoint_interval == 0:
+            # if args.render and episode % args.checkpoint_interval == 0:
+            if args.render:
                 env_renderer.render_env(
-                    show=True, show_observations=False, show_predictions=True
+                    show=True, show_observations=False, show_predictions=True, show_rowcols=True
                 )
 
             # Update replay buffer and train agent
@@ -289,6 +287,8 @@ def train_agents(args):
             completion * (1.0 - train_smoothing)
         )
 
+        if args.render:
+            env_renderer.close_window()
         # Save model and replay buffer at checkpoint
         if episode % args.checkpoint_interval == 0:
             torch.save(
@@ -300,8 +300,6 @@ def train_agents(args):
                     './replay_buffers/' + training_id +
                     '-' + str(episode) + '.pkl'
                 )
-            if args.render:
-                env_renderer.close_window()
 
         # Print final episode info
         print(
@@ -425,7 +423,6 @@ def eval_policy(args, env, policy):
                 regenerate_rail=True, regenerate_schedule=True,
                 random_seed=utils.get_seed(env)
             )
-        obs, info = env.reset(regenerate_rail=True, regenerate_schedule=True)
 
         # Do an episode
         for step in range(args.max_moves - 1):
@@ -455,7 +452,7 @@ def eval_policy(args, env, policy):
     print(
         "\t✅ Validation: score {:.3f} done {:.1f}%".format(
             np.mean(scores), np.mean(completions) * 100.0
-        )
+        ), end=" "
     )
     return scores, completions, steps
 

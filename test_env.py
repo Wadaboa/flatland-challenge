@@ -202,10 +202,9 @@ def main():
             env,
             agent_render_variant=AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX,
             show_debug=True,
-            screen_height=600,
-            screen_width=800
+            screen_height=1080,
+            screen_width=1920
         )
-        env_renderer.render_env(show=True)
 
     # Initialize the agents policy
     policy = RandomPolicy()
@@ -263,7 +262,7 @@ def main():
         next_obs, all_rewards, done, info = env.step(action_dict)
         if args.enable_renderer:
             env_renderer.render_env(
-                show=True, show_observations=False, show_predictions=True
+                show=True, show_observations=False, show_predictions=True, show_rowcols=True
             )
         time.sleep(args.sleep)
 
