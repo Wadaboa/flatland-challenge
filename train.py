@@ -1,6 +1,7 @@
 import os
 import random
 import sys
+from tqdm import tqdm
 from argparse import ArgumentParser
 from datetime import datetime
 
@@ -18,6 +19,7 @@ from predictions import ShortestPathPredictor
 from observations import CustomObservation
 from models import DDDQNPolicy
 import utils
+import env_utils
 
 
 RANDOM_SEED = 14
@@ -193,10 +195,10 @@ def train_agents(args):
         else:
             obs, info = train_env.reset(
                 regenerate_rail=True, regenerate_schedule=True,
-                random_seed=utils.get_seed(train_env)
+                random_seed=env_utils.get_seed(train_env)
             )
         reset_timer.end()
-        if args.render:
+        if args.render_every and episode % args.render_every == 0:
             env_renderer = RenderTool(
                 train_env,
                 agent_render_variant=AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX,
@@ -215,10 +217,12 @@ def train_agents(args):
         action_dict = dict()
 
         # Do an episode
-        for step in range(args.max_moves - 1):
+        for step in range(args.max_moves + 1):
             # Inference step
             inference_timer.start()
             for agent in train_env.get_agent_handles():
+                if info['malfunction'][agent] > 0:
+                    info['action_required'][agent] = False
                 if info['action_required'][agent]:
                     action = policy.act(obs[agent], eps=args.eps_start)
                     update_values[agent] = True
@@ -226,7 +230,7 @@ def train_agents(args):
                     actions_taken.append(action)
                 else:
                     # An action is not required if the train hasn't joined the railway network,
-                    # if it already reached its target, or if is currently malfunctioning.
+                    # if it already reached its target, or if it's currently malfunctioning
                     action = 0
                     update_values[agent] = False
                 action_dict.update({agent: action})
@@ -238,8 +242,7 @@ def train_agents(args):
             step_timer.end()
 
             # Render an episode at some interval
-            # if args.render and episode % args.checkpoint_interval == 0:
-            if args.render:
+            if args.render_every and episode % args.render_every == 0:
                 env_renderer.render_env(
                     show=True, show_observations=False, show_predictions=True, show_rowcols=True
                 )
@@ -266,6 +269,10 @@ def train_agents(args):
             if done['__all__']:
                 break
 
+        # Close window
+        if args.render_every and episode % args.render_every == 0:
+            env_renderer.close_window()
+
         # Epsilon decay
         args.eps_start = max(args.eps_end, args.eps_decay * args.eps_start)
 
@@ -287,8 +294,6 @@ def train_agents(args):
             completion * (1.0 - train_smoothing)
         )
 
-        if args.render:
-            env_renderer.close_window()
         # Save model and replay buffer at checkpoint
         if episode % args.checkpoint_interval == 0:
             torch.save(
@@ -377,7 +382,9 @@ def train_agents(args):
         # Log training info to tensorboard
         tensorboard_log(writer, "training/steps", steps, episode)
         tensorboard_log(writer, "training/epsilon", args.eps_start, episode)
-        tensorboard_log(writer, "training/loss", policy.loss, episode)
+        tensorboard_log(
+            writer, "training/loss", policy.loss.data.item(), episode
+        )
         tensorboard_log(writer, "training/score", normalized_score, episode)
         tensorboard_log(writer, "training/completion", completion, episode)
         tensorboard_log(
@@ -391,13 +398,11 @@ def train_agents(args):
         )
 
         # Log training time info to tensorboard
-        tensorboard_log(writer, "utils.Timer/reset",
-                        reset_timer.get(), episode)
-        tensorboard_log(writer, "utils.Timer/step", step_timer.get(), episode)
-        tensorboard_log(writer, "utils.Timer/learn",
-                        learn_timer.get(), episode)
+        tensorboard_log(writer, "timer/reset", reset_timer.get(), episode)
+        tensorboard_log(writer, "timer/step", step_timer.get(), episode)
+        tensorboard_log(writer, "timer/learn", learn_timer.get(), episode)
         tensorboard_log(
-            writer, "utils.Timer/total", training_timer.get_current(), episode
+            writer, "timer/total", training_timer.get_current(), episode
         )
 
         # Close tensorboard
@@ -413,7 +418,8 @@ def eval_policy(args, env, policy):
     scores, completions, steps = [], [], []
 
     # Do the specified number of episodes
-    for episode in range(args.n_val_episodes):
+    print("\nValidation round...")
+    for episode in tqdm(range(args.n_val_episodes)):
         score = 0.0
         final_step = 0
         if args.fix_random:
@@ -421,7 +427,7 @@ def eval_policy(args, env, policy):
         else:
             obs, info = env.reset(
                 regenerate_rail=True, regenerate_schedule=True,
-                random_seed=utils.get_seed(env)
+                random_seed=env_utils.get_seed(env)
             )
 
         # Do an episode
@@ -450,7 +456,7 @@ def eval_policy(args, env, policy):
 
     # Print validation results
     print(
-        "\t✅ Validation: score {:.3f} done {:.1f}%".format(
+        "✅ Validation: score {:.3f} done {:.1f}%".format(
             np.mean(scores), np.mean(completions) * 100.0
         ), end=" "
     )
@@ -603,8 +609,8 @@ def parse_args():
         help="number of threads PyTorch can use", type=int
     )
     parser.add_argument(
-        "--render", action='store_true',
-        help="render 1 episode in 100"
+        "--render_every", action='store', default=0,
+        help="how often to render an episode", type=int
     )
     parser.add_argument(
         "--fix_random", action='store_true',

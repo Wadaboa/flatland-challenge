@@ -163,6 +163,8 @@ class DDDQNPolicy(Policy):
             self.tau = parameters.tau
             self.gamma = parameters.gamma
             self.buffer_min_size = parameters.buffer_min_size
+            self.loss = torch.tensor(0.0)
+            self.time_step = 0
 
         # Device
         if parameters.use_gpu and torch.cuda.is_available():
@@ -181,10 +183,7 @@ class DDDQNPolicy(Policy):
             self.optimizer = optim.Adam(
                 self.qnetwork_local.parameters(), lr=self.learning_rate)
             self.memory = ReplayBuffer(
-                action_size, self.buffer_size, self.batch_size, self.device)
-
-            self.t_step = 0
-            self.loss = 0.0
+                action_size, self.batch_size, self.buffer_size, self.device)
 
     def act(self, state, eps=0.):
         state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
@@ -205,9 +204,9 @@ class DDDQNPolicy(Policy):
         # Save experience in replay memory
         self.memory.add(state, action, reward, next_state, done)
 
-        # Learn every UPDATE_EVERY time steps.
-        self.t_step = (self.t_step + 1) % self.update_every
-        if self.t_step == 0:
+        # Learn every `update_every` time steps
+        self.time_step = (self.time_step + 1) % self.update_every
+        if self.time_step == 0:
             # If enough samples are available in memory, get random subset and learn
             if len(self.memory) > self.buffer_min_size and len(self.memory) >= self.batch_size:
                 self._learn()
@@ -219,11 +218,9 @@ class DDDQNPolicy(Policy):
         # Get expected Q values from local model
         q_expected = self.qnetwork_local(
             states
-        ).gather(1, actions.unsqueeze(-1))
+        ).gather(1, actions.unsqueeze(-1)).squeeze()
 
         if self.double_dqn:
-            # Double DQN
-
             # Take the maximum probabilities of actions for each sample in the mini-batch
             # and return a matrix of shape (1, batch-size), where
             # each element represents the best action itself
@@ -232,12 +229,11 @@ class DDDQNPolicy(Policy):
             # Get expected Q values from target model
             q_targets_next = self.qnetwork_target(
                 next_states
-            ).detach().gather(1, q_best_action.unsqueeze(-1))
+            ).detach().gather(1, q_best_action.unsqueeze(-1)).squeeze()
         else:
-            # DQN
             q_targets_next = self.qnetwork_target(
                 next_states
-            ).detach().max(1)[0].unsqueeze(-1)
+            ).detach().max(1)[0]
 
         # Compute Q targets for current states
         q_targets = rewards + (self.gamma * q_targets_next * (1 - dones))
@@ -254,11 +250,12 @@ class DDDQNPolicy(Policy):
         self._soft_update(self.qnetwork_local, self.qnetwork_target, self.tau)
 
     def _soft_update(self, local_model, target_model, tau):
-        # Soft update model parameters.
-        # θ_target = τ*θ_local + (1 - τ)*θ_target
+        # Soft update model parameters
+        # θ_target = τ * θ_local + (1 - τ) * θ_target
         for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
             target_param.data.copy_(
-                tau * local_param.data + (1.0 - tau) * target_param.data)
+                tau * local_param.data + (1.0 - tau) * target_param.data
+            )
 
     def save(self, filename):
         torch.save(self.qnetwork_local.state_dict(), filename + ".local")
@@ -267,10 +264,12 @@ class DDDQNPolicy(Policy):
     def load(self, filename):
         if os.path.exists(filename + ".local"):
             self.qnetwork_local.load_state_dict(
-                torch.load(filename + ".local"))
+                torch.load(filename + ".local")
+            )
         if os.path.exists(filename + ".target"):
             self.qnetwork_target.load_state_dict(
-                torch.load(filename + ".target"))
+                torch.load(filename + ".target")
+            )
 
     def save_replay_buffer(self, filename):
         memory = self.memory.memory
@@ -286,58 +285,53 @@ class DDDQNPolicy(Policy):
         self._learn()
 
 
-Experience = namedtuple("Experience", field_names=[
-                        "state", "action", "reward", "next_state", "done"])
+Experience = namedtuple(
+    "Experience", field_names=[
+        "state", "action", "reward", "next_state", "done"
+    ]
+)
 
 
 class ReplayBuffer:
     """Fixed-size buffer to store experience tuples."""
 
-    def __init__(self, action_size, buffer_size, batch_size, device):
-        """Initialize a ReplayBuffer object.
-
-        Params
-        ======
-            action_size (int): dimension of each action
-            buffer_size (int): maximum size of buffer
-            batch_size (int): size of each training batch
-        """
+    def __init__(self, action_size, batch_size, buffer_size, device):
+        '''
+        Initialize a ReplayBuffer object.
+        '''
         self.action_size = action_size
-        self.memory = deque(maxlen=buffer_size)
         self.batch_size = batch_size
+        self.memory = deque(maxlen=buffer_size)
         self.device = device
 
     def add(self, state, action, reward, next_state, done):
-        """Add a new experience to memory."""
-        # e = Experience(np.expand_dims(state, 0), action, reward,
-        #               np.expand_dims(next_state, 0), done)
-        e = Experience(state, action, reward, next_state, done)
-        self.memory.append(e)
+        '''
+        Add a new experience to memory
+        '''
+        self.memory.append(
+            Experience(state, action, reward, next_state, done)
+        )
 
     def sample(self):
-        """Randomly sample a batch of experiences from memory."""
-        experiences = random.sample(self.memory, k=self.batch_size)
-        states = torch.from_numpy(self.__v_stack_impr([e.state for e in experiences if e is not None])) \
-            .float().to(self.device)
-        actions = torch.from_numpy(self.__v_stack_impr([e.action for e in experiences if e is not None])) \
-            .long().to(self.device)
-        rewards = torch.from_numpy(self.__v_stack_impr([e.reward for e in experiences if e is not None])) \
-            .float().to(self.device)
-        next_states = torch.from_numpy(self.__v_stack_impr([e.next_state for e in experiences if e is not None])) \
-            .float().to(self.device)
-        dones = torch.from_numpy(self.__v_stack_impr([e.done for e in experiences if e is not None]).astype(np.uint8)) \
-            .float().to(self.device)
-
+        '''
+        Randomly sample a batch of experiences from memory
+        '''
+        states, actions, rewards, next_states, dones = zip(
+            *random.sample(self.memory, k=self.batch_size)
+        )
+        states = torch.tensor(states, dtype=torch.float32, device=self.device)
+        actions = torch.tensor(actions, dtype=torch.int64, device=self.device)
+        rewards = torch.tensor(
+            rewards, dtype=torch.float32, device=self.device
+        )
+        next_states = torch.tensor(
+            next_states, dtype=torch.float32, device=self.device
+        )
+        dones = torch.tensor(dones, dtype=torch.uint8, device=self.device)
         return states, actions, rewards, next_states, dones
 
     def __len__(self):
-        """Return the current size of internal memory."""
+        '''
+        Return the current size of internal memory
+        '''
         return len(self.memory)
-
-    def __v_stack_impr(self, states):
-        #sub_dim = len(states[0][0]) if isinstance(states[0], Iterable) else 1
-        #np_states = np.reshape(np.array(states), (len(states), sub_dim))
-        np_states = np.array(states)
-        # print("BUFFER:")
-        # print(np_states)
-        return np_states

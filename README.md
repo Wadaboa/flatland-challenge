@@ -47,3 +47,9 @@ env \
 ```
 
 These commands will install the latest `TK` version and bind its sources to the Python build. In this example, `Python 3.8.1` was used, along with `flatland-rl 2.1.10` (since the latest `flatland-rl 2.2.2` has a bug with SVG rendering).
+
+## Tensorboard
+
+```bash
+tensorboard --logdir="./runs" --port 6006
+```

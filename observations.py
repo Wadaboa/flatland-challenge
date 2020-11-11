@@ -648,12 +648,9 @@ class CustomObservation(ObservationBuilder):
         normalized_observation[normalized_observation == np.inf] = self.OVER
 
         # Check if the output is in range [UNDER, OVER]
-        if not np.logical_and(
+        assert np.logical_and(
             normalized_observation >= self.UNDER,
             normalized_observation <= self.OVER
-        ).all():
-            print()
-            print("OBSERVATION VALORI MERDA")
-            print()
+        ).all()
 
         return normalized_observation

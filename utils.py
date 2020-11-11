@@ -5,14 +5,19 @@ from timeit import default_timer
 import numpy as np
 import torch
 
-from flatland.envs.persistence import RailEnvPersister
-
 
 def get_index(arr, elem):
+    '''
+    Return the index of the first occurrence of `elem` in `arr`,
+    if `elem` is present in `arr`, otherwise return None
+    '''
     return arr.index(elem) if elem in arr else None
 
 
 def reciprocal_sum(a, b):
+    '''
+    Compute the reciprocal sum of the given inputs
+    '''
     return (1 / a) + (1 / b)
 
 
@@ -52,35 +57,6 @@ def fix_random(seed):
     torch.cuda.manual_seed(seed)
     torch.backends.cudnn.benchmark = False
     torch.backends.cudnn.deterministic = True
-
-
-def create_save_env(path, width, height, num_trains, max_cities, max_rails_between_cities, max_rails_in_cities, grid=False, seed=0):
-    rail_generator = sparse_rail_generator(
-        max_num_cities=max_cities,
-        seed=seed,
-        grid_mode=grid,
-        max_rails_between_cities=max_rails_between_cities,
-        max_rails_in_city=max_rails_in_cities,
-    )
-    env = RailEnv(
-        width=width,
-        height=height,
-        rail_generator=rail_generator,
-        number_of_agents=num_trains
-    )
-    save_env(path, env)
-
-
-def save_env(path, env):
-    filename = os.path.join(
-        path,
-        f"{env.width}x{env.height}-{env.random_seed}.pkl"
-    )
-    RailEnvPersister.save(env, filename)
-
-
-def get_seed(env, seed=None):
-    return env._seed(seed)[0]
 
 
 class Timer():
