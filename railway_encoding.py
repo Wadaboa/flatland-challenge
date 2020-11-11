@@ -186,6 +186,24 @@ class CellOrientationGraph():
                 nodes.append(node)
         return nodes
 
+    def is_node(self, node, unpacked=False):
+        '''
+        Return true if the given node is present in the packed or
+        unpacked graph
+        '''
+        graph = self._unpacked_graph if unpacked else self.graph
+        return node in graph.nodes
+
+    def get_successors(self, node, unpacked=False):
+        '''
+        Return the successors of the given node in the packed or
+        unpacked graph
+        '''
+        graph = self._unpacked_graph if unpacked else self.graph
+        if node not in graph.nodes:
+            return []
+        return list(graph.successors(node))
+
     def next_node(self, cell):
         '''
         Return the closest node in the packed graph

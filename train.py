@@ -1,6 +1,4 @@
 import os
-import random
-import sys
 from tqdm import tqdm
 from argparse import ArgumentParser
 from datetime import datetime
@@ -17,7 +15,7 @@ from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
 from predictions import ShortestPathPredictor
 from observations import CustomObservation
-from models import DDDQNPolicy
+from policies import DDDQNPolicy
 import utils
 import env_utils
 
@@ -206,12 +204,16 @@ def train_agents(args):
                 screen_height=1080,
                 screen_width=1920
             )
+        # Compute agents with same source
+        agents_with_same_start = env_utils.get_agents_same_start(train_env)
 
         # Initialize data structures for training info
         score, steps = 0, 0
         actions_taken = []
         agent_prev_obs = dict(obs)
-        agent_prev_action = [2] * args.num_trains
+        agent_prev_action = [
+            RailEnvActions.MOVE_FORWARD.value
+        ] * args.num_trains
         update_values = [False] * args.num_trains
         action_count = [0] * action_size
         action_dict = dict()
@@ -220,9 +222,15 @@ def train_agents(args):
         for step in range(args.max_moves + 1):
             # Inference step
             inference_timer.start()
+
+            # Prioritize enter of faster agent in the environment
+            for position in agents_with_same_start:
+                if len(agents_with_same_start[position]) > 0:
+                    del agents_with_same_start[position][0]
+                    for agent in agents_with_same_start[position]:
+                        info['action_required'][agent] = False
+
             for agent in train_env.get_agent_handles():
-                if info['malfunction'][agent] > 0:
-                    info['action_required'][agent] = False
                 if info['action_required'][agent]:
                     action = policy.act(obs[agent], eps=args.eps_start)
                     update_values[agent] = True
@@ -230,8 +238,9 @@ def train_agents(args):
                     actions_taken.append(action)
                 else:
                     # An action is not required if the train hasn't joined the railway network,
-                    # if it already reached its target, or if it's currently malfunctioning
-                    action = 0
+                    # if it already reached its target, or if it's currently malfunctioning,
+                    # or if it's in deadlock or if it's in the middle of traversing a cell
+                    action = RailEnvActions.DO_NOTHING.value
                     update_values[agent] = False
                 action_dict.update({agent: action})
             inference_timer.end()
@@ -266,7 +275,7 @@ def train_agents(args):
 
             # Break if every agent arrived
             steps = step
-            if done['__all__']:
+            if done['__all__'] or env_utils.check_if_all_blocked(train_env):
                 break
 
         # Close window
@@ -326,7 +335,7 @@ def train_agents(args):
         )
 
         # Evaluate policy and log results at some interval
-        if episode % args.checkpoint_interval == 0 and args.n_val_episodes > 0:
+        if episode > 0 and episode % args.checkpoint_interval == 0 and args.n_val_episodes > 0:
             scores, completions, val_steps = eval_policy(
                 args, val_env, policy
             )
@@ -430,12 +439,22 @@ def eval_policy(args, env, policy):
                 random_seed=env_utils.get_seed(env)
             )
 
+        # Compute agents with same source
+        agents_with_same_start = env_utils.get_agents_same_start(env)
         # Do an episode
         for step in range(args.max_moves - 1):
+            # Prioritize enter of faster agent in the environment
+            for position in agents_with_same_start:
+                if len(agents_with_same_start[position]) > 0:
+                    del agents_with_same_start[position][0]
+                    for agent in agents_with_same_start[position]:
+                        info['action_required'][agent] = False
             # Perform a step
             for agent in env.get_agent_handles():
                 if info['action_required'][agent]:
                     action = policy.act(obs[agent], eps=0.0)
+                else:
+                    action = RailEnvActions.DO_NOTHING.value
                 action_dict.update({agent: action})
             obs, all_rewards, done, info = env.step(action_dict)
 
@@ -483,11 +502,11 @@ def parse_args():
         help="number of trains to spawn", type=int
     )
     parser.add_argument(
-        "--width", action='store', default=16,
+        "--width", action='store', default=48,
         help="environment width", type=int
     )
     parser.add_argument(
-        "--height", action='store', default=16,
+        "--height", action='store', default=27,
         help="environment height", type=int
     )
     parser.add_argument(
@@ -495,11 +514,11 @@ def parse_args():
         help="enable malfunctions"
     )
     parser.add_argument(
-        "--malfunction_rate", action='store', default=1 / 10000,
+        "--malfunction_rate", action='store', default=0.2,
         help="malfunction rate", type=float
     )
     parser.add_argument(
-        "--malfunction_min_duration", action='store', default=20,
+        "--malfunction_min_duration", action='store', default=15,
         help="malfunction minimum duration", type=int
     )
     parser.add_argument(
@@ -515,7 +534,7 @@ def parse_args():
         help="predictor maximum depth", type=int
     )
     parser.add_argument(
-        "--max_cities", action='store', default=3,
+        "--max_cities", action='store', default=5,
         help="maximum number of cities where agents can start or end", type=int
     )
     parser.add_argument(
@@ -523,11 +542,11 @@ def parse_args():
         help="type of city distribution"
     )
     parser.add_argument(
-        "--max_rails_between_cities", action='store', default=4,
+        "--max_rails_between_cities", action='store', default=2,
         help="maximum number of tracks allowed between cities", type=int
     )
     parser.add_argument(
-        "--max_rails_in_cities", action='store', default=4,
+        "--max_rails_in_cities", action='store', default=3,
         help="maximum number of parallel tracks within a city", type=int
     )
     parser.add_argument(

@@ -84,9 +84,7 @@ class ShortestPathPredictor(PredictionBuilder):
             )
             if not self._shortest_paths[handle]:
                 if position == node:
-                    node = list(
-                        self.railway_encoding.graph.successors(node)
-                    )[0]
+                    node = self.railway_encoding.get_successors(node)[0]
                 return np.inf, [position, node]
 
             chosen_path = self._shortest_paths[handle][0]

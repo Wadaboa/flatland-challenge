@@ -132,4 +132,5 @@ checkpoints/
 runs/
 .vscode/
 tmp/
+output/
 wandb/

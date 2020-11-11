@@ -6,7 +6,7 @@ from datetime import datetime
 import numpy as np
 from tabulate import tabulate
 
-from flatland.envs.rail_env import RailEnv
+from flatland.envs.rail_env import RailEnv, RailEnvActions
 from flatland.envs.rail_generators import rail_from_file, sparse_rail_generator
 from flatland.envs.malfunction_generators import MalfunctionParameters, ParamMalfunctionGen
 from flatland.envs.schedule_generators import sparse_schedule_generator
@@ -17,9 +17,10 @@ from observations import CustomObservation
 from predictions import ShortestPathPredictor
 from policies import RandomPolicy
 import utils
+import env_utils
 
 
-RANDOM_SEED = 42
+RANDOM_SEED = 1
 
 
 def parse_args():
@@ -68,8 +69,8 @@ def parse_args():
         help="maximum number of moves in an episode", type=int
     )
     parser.add_argument(
-        "--sleep", action='store', default=2,
-        help="seconds to sleep between moves", type=int
+        "--sleep", action='store', default=0.5,
+        help="seconds to sleep between moves", type=float
     )
     parser.add_argument(
         "--save_frames", action='store_true', default=True,
@@ -173,6 +174,7 @@ def main():
         ))
 
     # Initialize agents speeds
+    speed_map = None
     if args.variable_speed:
         speed_map = {
             1.: 0.25,
@@ -180,21 +182,21 @@ def main():
             1. / 3.: 0.25,
             1. / 4.: 0.25
         }
-        schedule_generator = sparse_schedule_generator(speed_map)
+    schedule_generator = sparse_schedule_generator(speed_map)
 
     # Build the environment
     env = RailEnv(
         width=args.width,
         height=args.height,
         rail_generator=rail_generator,
-        schedule_generator=schedule_generator if args.variable_speed else None,
+        schedule_generator=schedule_generator,
         number_of_agents=args.num_trains,
         obs_builder_object=observation_builder,
         malfunction_generator=malfunctions,
         remove_agents_at_target=True,
         random_seed=RANDOM_SEED
     )
-    observations, _ = env.reset(random_seed=RANDOM_SEED)
+    observations, info = env.reset(random_seed=RANDOM_SEED)
 
     # Initiate the renderer
     if args.enable_renderer:
@@ -231,11 +233,7 @@ def main():
     print()
 
     # Compute agents with same source
-    agents_with_same_start = set()
-    for handle_one, agent_one in enumerate(env.agents):
-        for handle_two, agent_two in enumerate(env.agents):
-            if handle_one != handle_two and agent_one.initial_position == agent_two.initial_position:
-                agents_with_same_start.add(handle_one)
+    agents_with_same_start = env_utils.get_agents_same_start(env)
 
     # Create frames directory
     now = datetime.now()
@@ -247,16 +245,26 @@ def main():
     # Initialize the action dictionary
     action_dict = dict()
     for handle in range(env.get_num_agents()):
-        action_dict[handle] = 1
+        action_dict[handle] = RailEnvActions.MOVE_FORWARD.value
 
     score = 0.0
     for step in range(args.max_moves):
         print(f"Iteration {step}")
 
+        # Prioritize enter of faster agent in the environment
+        for position in agents_with_same_start:
+            if len(agents_with_same_start[position]) > 0:
+                del agents_with_same_start[position][0]
+                for agent in agents_with_same_start[position]:
+                    info['action_required'][agent] = False
+
         # Choose an action for each agent in the environment
-        for a in range(env.get_num_agents()):
-            action = policy.act(observations[a])
-            action_dict.update({a: action})
+        for handle in range(env.get_num_agents()):
+            if info['action_required'][handle]:
+                action = policy.act(observations[handle])
+            else:
+                action = RailEnvActions.DO_NOTHING.value
+            action_dict.update({handle: action})
 
         # Perform the computed action
         next_obs, all_rewards, done, info = env.step(action_dict)
@@ -285,7 +293,7 @@ def main():
 
         # Save observations and check if every agent is arrived
         observations = next_obs.copy()
-        if done['__all__']:
+        if done['__all__'] or env_utils.check_if_all_blocked(env):
             break
 
         # Print statistics

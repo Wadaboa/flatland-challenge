@@ -18,32 +18,32 @@ from railway_encoding import CellOrientationGraph
 '''
 Observation:
     - Structure:
-        * Tensor of shape (max_depth, max_depth, features), where max_depth 
+        * Tensor of shape (max_depth, max_depth, features), where max_depth
           is the maximum number of nodes in the packed graph to consider and
           features is the total amount of features for each node
         * The observation contains the features of the nodes in the shortest path
           as the first row and the features of the nodes in the deviation paths
           (which are exactly max_depth - 1) as the following rows
     - Features:
-        1. Number of agents (going in my direction) identified in the subpath 
+        1. Number of agents (going in my direction) identified in the subpath
            from the root up to each node in the path
-        2. Number of agents (going in a direction different from mine) identified 
+        2. Number of agents (going in a direction different from mine) identified
            in the subpath from the root up to each node in the path
-        3. Number of malfunctioning agents (going in my direction) identified in the subpath 
+        3. Number of malfunctioning agents (going in my direction) identified in the subpath
            from the root up to each node in the path
-        4. Number of malfunctioning agents (going in a direction different from mine) identified 
+        4. Number of malfunctioning agents (going in a direction different from mine) identified
            in the subpath from the root up to each node in the path
-        5. Minimum distances from an agent to other agent's (going in my direction) 
+        5. Minimum distances from an agent to other agent's (going in my direction)
            in each edge of the path
-        6. Minimum distances from an agent to other agent's (going in a direction 
+        6. Minimum distances from an agent to other agent's (going in a direction
            different than mine) in each edge of the path
         7. Maximum number of malfunctioning turns of other agents (going in my direction),
            in each edge of the path
-        8. Maximum number of malfunctioning turns of other agents (going in a direction 
+        8. Maximum number of malfunctioning turns of other agents (going in a direction
            different from mine), in each edge of the path
         9. Distances from the target, from each node in the path
         10. Number of agents using the node to reach their target in the shortest path
-        11. Number of agents in deadlock in the previous path, assuming that all the 
+        11. Number of agents in deadlock in the previous path, assuming that all the
             other agents follow their shortest path
         12. How many turns before a possible deadlock
 '''
@@ -56,10 +56,10 @@ Todo:
         * Add malfunction turns to cumulative weights
         * Check normalization correctness
         * Handle observation not present at all
-        * Store agents in deadlock and substitute their shortest paths 
+        * Store agents in deadlock and substitute their shortest paths
           as if they cannot reach their target (i.e. store current and next node)
-        * Add function to check for current deadlocks (agents one in front of another or cycles)
-        * The first agents to enter the rail are the fastest ones (not the ones with minimum handles)
+        * Add check for deadlock with agents on nodes
+        * Change score if episode is closed by all agents being in deadlock
 '''
 
 # SpeedData:
@@ -172,7 +172,7 @@ class CustomObservation(ObservationBuilder):
         # Update last visited node and last positions
         agent_position = tuple(shortest_path[0])
         if self.last_positions[handle] != agent_position:
-            if agent_position in self.railway_encoding.graph.nodes:
+            if self.railway_encoding.is_node(agent_position):
                 self.last_nodes[handle] = (agent_position, 0)
             else:
                 self.last_nodes[handle] = (
@@ -331,7 +331,7 @@ class CustomObservation(ObservationBuilder):
                 nodes = self.railway_encoding.get_nodes((node[0], node[1]))
                 # Check the next nodes of the next node in order to see
                 # the other agent's entry direction
-                next_nodes = list(self.railway_encoding.graph.successors(node))
+                next_nodes = self.railway_encoding.get_successors(node)
 
                 # Check if one of the next nodes of the other agent are in my path
                 for other_node in nodes:
@@ -614,7 +614,7 @@ class CustomObservation(ObservationBuilder):
         # Normalize common nodes
         c_nodes = utils.min_max_scaling(
             c_nodes, self.LOWER, self.UPPER, self.UNDER, self.OVER,
-            known_min=0, known_max=self.max_depth
+            known_min=0, known_max=remaining_agents
         )
 
         # Normalize deadlocks
@@ -648,9 +648,12 @@ class CustomObservation(ObservationBuilder):
         normalized_observation[normalized_observation == np.inf] = self.OVER
 
         # Check if the output is in range [UNDER, OVER]
-        assert np.logical_and(
+        if not np.logical_and(
             normalized_observation >= self.UNDER,
             normalized_observation <= self.OVER
-        ).all()
+        ).all():
+            print(observation)
+            print()
+            print(normalized_observation)
 
         return normalized_observation

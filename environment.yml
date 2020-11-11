@@ -12,7 +12,9 @@ dependencies:
   - pycairo==1.20.0
   - autopep8==1.5.4
   - tabulate==0.8.7
+  - tqdm==4.51.0
   - pip:
       - flatland-rl==2.2.2
       - tensorboard==2.3.0
       - tensorboardx==2.1
+      - pyglet==1.5.9
