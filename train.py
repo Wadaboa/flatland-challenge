@@ -131,7 +131,7 @@ def train_agents(args):
 
     # Set state size and action size
     state_size = (args.max_depth ** 2) * observation_builder.FEATURES
-    action_size = 5
+    action_size = 3
 
     # Smoothed values used as target for hyperparameter tuning
     smoothed_normalized_score = -1.0
@@ -142,7 +142,7 @@ def train_agents(args):
     val_smoothing = 0.9
 
     # Initialize the agents policy
-    policy = DDDQNPolicy(state_size, action_size, args)
+    policy = DDDQNPolicy(state_size, action_size, parameters=args)
 
     # Handle replay buffer
     if args.restore_replay_buffer:
@@ -210,10 +210,8 @@ def train_agents(args):
         # Initialize data structures for training info
         score, steps = 0, 0
         actions_taken = []
-        agent_prev_obs = dict(obs)
-        agent_prev_action = [
-            RailEnvActions.MOVE_FORWARD.value
-        ] * args.num_trains
+        legal_moves = {handle: observation_builder.get_legal_moves(handle)
+                       for handle in range(args.num_trains)}
         update_values = [False] * args.num_trains
         action_count = [0] * action_size
         action_dict = dict()
@@ -258,19 +256,21 @@ def train_agents(args):
 
             # Update replay buffer and train agent
             for agent in train_env.get_agent_handles():
+                next_legal_moves = observation_builder.railway_encoding.get_legal_moves(
+                    agent
+                )
                 # Only learn from timesteps where something happened
                 if update_values[agent] or done['__all__']:
                     learn_timer.start()
                     policy.step(
-                        agent_prev_obs[agent], agent_prev_action[agent],
-                        all_rewards[agent], obs[agent], done[agent]
+                        obs[agent], legal_moves[agent], action_dict[agent],
+                        all_rewards[agent], next_obs[agent], next_legal_moves, done[agent]
                     )
                     learn_timer.end()
-                    agent_prev_obs[agent] = obs[agent].copy()
-                    agent_prev_action[agent] = action_dict[agent]
 
                 # Update observation and score
-                obs[agent] = next_obs[agent]
+                obs[agent] = next_obs[agent].copy()
+                legal_moves[agent] = next_legal_moves
                 score += all_rewards[agent]
 
             # Break if every agent arrived
@@ -305,10 +305,8 @@ def train_agents(args):
 
         # Save model and replay buffer at checkpoint
         if episode % args.checkpoint_interval == 0:
-            torch.save(
-                policy.qnetwork_local, './checkpoints/' +
-                training_id + '-' + str(episode) + '.pth'
-            )
+            policy.save('./checkpoints/' +
+                        training_id + '-' + str(episode))
             if args.save_replay_buffer:
                 policy.save_replay_buffer(
                     './replay_buffers/' + training_id +
@@ -417,6 +415,13 @@ def train_agents(args):
         # Close tensorboard
         writer.close()
 
+    print(f'\t Ended training - Saving current model\n')
+    policy.save('./checkpoints/' + training_id + '-latest')
+    if args.save_replay_buffer:
+        policy.save_replay_buffer(
+            './replay_buffers/' + training_id + '-latest' + '.pkl'
+        )
+
 
 def eval_policy(args, env, policy):
     '''
@@ -498,7 +503,7 @@ def parse_args():
         help="path to the validation environment file", type=str
     )
     parser.add_argument(
-        "--num_trains", action='store', default=1,
+        "--num_trains", action='store', default=4,
         help="number of trains to spawn", type=int
     )
     parser.add_argument(

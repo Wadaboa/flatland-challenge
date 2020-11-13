@@ -60,6 +60,11 @@ Todo:
           as if they cannot reach their target (i.e. store current and next node)
         * Add check for deadlock with agents on nodes
         * Change score if episode is closed by all agents being in deadlock
+        * Insert prior bias to the network
+        * Initialize weights of the network
+        * Call Model only on real decision
+        * Create mapping choice -> action
+        * Check hyperparameter network
 '''
 
 # SpeedData:
@@ -222,7 +227,8 @@ class CustomObservation(ObservationBuilder):
                 dev_feats = self._fill_path_values(
                     handle, deviation_prediction, packed_positions, packed_weights,
                     turns_to_deviation=self._shortest_cum_weights[handle, i],
-                    prev_deadlocks=prev_deadlocks, prev_num_agents=prev_num_agents_values
+                    prev_deadlocks=prev_deadlocks, prev_num_agents=prev_num_agents_values,
+                    deviation=True
                 )
                 self.observations[handle][i + 1, :, :] = dev_feats
 
@@ -242,7 +248,7 @@ class CustomObservation(ObservationBuilder):
         return self.observations[handle]
 
     def _fill_path_values(self, handle, prediction, packed_positions, packed_weights,
-                          turns_to_deviation=0, prev_deadlocks=0, prev_num_agents=None):
+                          turns_to_deviation=0, prev_deadlocks=0, prev_num_agents=None, deviation=False):
         '''
         Compute observations for the given prediction and return
         a suitable feature matrix
@@ -252,7 +258,7 @@ class CustomObservation(ObservationBuilder):
         path_weights = np.zeros((self.max_depth,))
         path = prediction.path
         positions = [node[:-1] for node in path]
-        if turns_to_deviation == 0:
+        if deviation == False:
             weights = self._shortest_cum_weights[handle]
             positions = packed_positions[handle].tolist()[:len(path)]
             positions_weights = packed_weights[handle]
@@ -655,5 +661,6 @@ class CustomObservation(ObservationBuilder):
             print(observation)
             print()
             print(normalized_observation)
+            print(f'Done Agent: {done_agents} Remaining: {remaining_agents}')
 
         return normalized_observation

@@ -2,13 +2,14 @@
 '''
 
 import itertools
+from pickle import FALSE
 
 import numpy as np
 import networkx as nx
 import matplotlib.pyplot as plt
 
 from flatland.core.grid.grid4 import Grid4TransitionsEnum
-from flatland.core.grid.grid4_utils import mirror, get_new_position
+from flatland.core.grid.grid4_utils import get_new_position
 from flatland.envs.rail_env import RailEnvActions, RailAgentStatus
 
 import env_utils
@@ -276,6 +277,45 @@ class CellOrientationGraph():
                 agent.direction
             )
         return position
+
+    def _map_action_to_choice(actions):
+        legal_moves = [False, False, True]
+        if RailEnvActions.MOVE_FORWARD in actions:
+            if len(actions) > 1:
+                legal_moves[1] = True
+            legal_moves[0] = True
+        if RailEnvActions.MOVE_LEFT in actions:
+            legal_moves[0] = True
+        if RailEnvActions.MOVE_RIGHT in actions:
+            legal_moves[1] = True
+        return legal_moves
+
+    def get_legal_moves(self, handle):
+        '''
+        Compute and return all the legal moves that the given agent can perform.
+        It returns a boolean array of 3 elements:
+        0 - Legal Choice Left
+        1 - Legal Choice Right
+        2 - Stop Moving
+        '''
+        actions = []
+        position = self.get_agent_cell(handle)
+        if self.agents[handle].status in (RailAgentStatus.DONE, RailAgentStatus.DONE_REMOVED):
+            return [False] * 3
+        next_nodes = self.get_successors(position, unpacked=True)
+        agents_positions = [
+            self.get_agent_cell(agent)[:-1] for agent in range(len(self.agents))
+            if (
+                handle != agent and
+                self.agents[agent].status not in
+                (RailAgentStatus.DONE_REMOVED, RailAgentStatus.READY_TO_DEPART)
+            )
+        ]
+        for node in next_nodes:
+            if node[:-1] not in agents_positions:
+                actions.append(self._unpacked_graph.get_edge_data(
+                    position, node)['action'])
+        return self._map_action_to_choice(actions)
 
     def shortest_paths(self, handle):
         '''

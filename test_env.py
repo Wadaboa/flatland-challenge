@@ -15,7 +15,7 @@ from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
 from observations import CustomObservation
 from predictions import ShortestPathPredictor
-from policies import RandomPolicy
+from policies import RandomPolicy, DDDQNPolicy
 import utils
 import env_utils
 
@@ -99,6 +99,10 @@ def parse_args():
     parser.add_argument(
         "--variable_speed", action='store_true', default=False,
         help="enable variable speed"
+    )
+    parser.add_argument(
+        "--model", action='store', default="",
+        help="path to model for the policy", type=str
     )
     return parser.parse_args()
 
@@ -209,7 +213,11 @@ def main():
         )
 
     # Initialize the agents policy
-    policy = RandomPolicy()
+    # policy = RandomPolicy()
+    state_size = (args.max_depth ** 2) * observation_builder.FEATURES
+    action_size = 5
+    policy = DDDQNPolicy(state_size, action_size, evaluation_mode=True)
+    policy.load(args.model)
 
     # Print agents tasks
     _tasks_table = []
@@ -280,15 +288,8 @@ def main():
                 "{:s}/{:04d}.png".format(frames_dir, step)
             )
 
-        # Update replay buffer and train agent
+        # Update agents score
         for handle in range(env.get_num_agents()):
-            policy.step((
-                observations[handle],
-                action_dict[handle],
-                all_rewards[handle],
-                next_obs[handle],
-                done[handle]
-            ))
             score += all_rewards[handle]
 
         # Save observations and check if every agent is arrived

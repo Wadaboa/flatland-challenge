@@ -1,12 +1,16 @@
 import random
+import pickle
+
 from collections import namedtuple, deque
 
 import torch
 import numpy as np
+from torch._C import dtype
 
 Experience = namedtuple(
     "Experience", field_names=[
-        "state", "action", "reward", "next_state", "done"
+        "state", "legal_moves", "action",
+        "reward", "next_state", "next_legal_moves", "done"
     ]
 )
 
@@ -23,22 +27,25 @@ class ReplayBuffer:
         self.memory = deque(maxlen=buffer_size)
         self.device = device
 
-    def add(self, state, action, reward, next_state, done):
+    def add(self, state, legal_moves, action, reward, next_state, next_legal_moves, done):
         '''
         Add a new experience to memory
         '''
         self.memory.append(
-            Experience(state, action, reward, next_state, done)
+            Experience(state, legal_moves, action, reward, next_state,
+                       next_legal_moves, done)
         )
 
     def sample(self):
         '''
         Randomly sample a batch of experiences from memory
         '''
-        states, actions, rewards, next_states, dones = zip(
+        states, legal_moves, actions, rewards, next_states, next_legal_moves, dones = zip(
             *random.sample(self.memory, k=self.batch_size)
         )
         states = torch.tensor(states, dtype=torch.float32, device=self.device)
+        legal_moves = torch.tensor(
+            legal_moves, dtype=torch.bool, device=self.device)
         actions = torch.tensor(actions, dtype=torch.int64, device=self.device)
         rewards = torch.tensor(
             rewards, dtype=torch.float32, device=self.device
@@ -46,8 +53,19 @@ class ReplayBuffer:
         next_states = torch.tensor(
             next_states, dtype=torch.float32, device=self.device
         )
+        next_legal_moves = torch.tensor(
+            next_legal_moves, dtype=torch.bool, device=self.device
+        )
         dones = torch.tensor(dones, dtype=torch.uint8, device=self.device)
-        return states, actions, rewards, next_states, dones
+        return states, legal_moves, actions, rewards, next_states, next_legal_moves, dones
+
+    def save(self, filename):
+        with open(filename, 'wb') as f:
+            pickle.dump(list(self.memory), f)
+
+    def load(self, filename):
+        with open(filename, 'rb') as f:
+            self.memory = pickle.load(f)
 
     def __len__(self):
         '''
