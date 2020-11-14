@@ -62,9 +62,8 @@ Todo:
         * Change score if episode is closed by all agents being in deadlock
         * Insert prior bias to the network
         * Initialize weights of the network
-        * Call Model only on real decision
-        * Create mapping choice -> action
         * Check hyperparameter network
+        * Change reward based on choices
 '''
 
 # SpeedData:

@@ -115,27 +115,27 @@ class DDDQNPolicy(Policy):
             self.memory = ReplayBuffer(
                 action_size, self.batch_size, self.buffer_size, self.device)
 
-    def act(self, state, legal_moves, eps=0.):
+    def act(self, state, legal_choices, eps=0.):
         state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
-        legal_moves = torch.from_numpy(
-            legal_moves
+        legal_choices = torch.tensor(
+            legal_choices
         ).bool().unsqueeze(0).to(self.device)
         self.qnetwork_local.eval()
         with torch.no_grad():
-            action_values = self.qnetwork_local(state, legal_moves)
+            choice_values = self.qnetwork_local(state, legal_choices)
 
         # Epsilon-greedy action selection
         if random.random() > eps:
-            return np.argmax(action_values.cpu().data.numpy())
+            return np.argmax(choice_values.cpu().data.numpy())
         else:
             return random.choice(np.arange(self.action_size))
 
-    def step(self, state, legal_moves, action, reward, next_state, next_legal_moves, done):
+    def step(self, state, legal_choices, action, reward, next_state, next_legal_choices, done):
         assert not self.evaluation_mode, "Policy has been initialized for evaluation only."
 
         # Save experience in replay memory
-        self.memory.add(state, legal_moves, action, reward,
-                        next_state, next_legal_moves, done)
+        self.memory.add(state, legal_choices, action, reward,
+                        next_state, next_legal_choices, done)
 
         # Learn every `update_every` time steps
         self.time_step = (self.time_step + 1) % self.update_every
@@ -147,11 +147,11 @@ class DDDQNPolicy(Policy):
 
     def _learn(self):
         experiences = self.memory.sample()
-        states, legal_moves, actions, rewards, next_states, next_legal_moves, dones = experiences
+        states, legal_choices, actions, rewards, next_states, next_legal_choices, dones = experiences
 
         # Get expected Q values from local model
         q_expected = self.qnetwork_local(
-            states, legal_moves
+            states, legal_choices
         ).gather(1, actions.unsqueeze(-1)).squeeze()
 
         if self.double_dqn:
@@ -159,15 +159,15 @@ class DDDQNPolicy(Policy):
             # and return a matrix of shape (1, batch-size), where
             # each element represents the best action itself
             q_best_action = self.qnetwork_local(
-                next_states, next_legal_moves).detach().max(1)[1]
+                next_states, next_legal_choices).detach().max(1)[1]
 
             # Get expected Q values from target model
             q_targets_next = self.qnetwork_target(
-                next_states, next_legal_moves
+                next_states, next_legal_choices
             ).detach().gather(1, q_best_action.unsqueeze(-1)).squeeze()
         else:
             q_targets_next = self.qnetwork_target(
-                next_states, next_legal_moves
+                next_states, next_legal_choices
             ).detach().max(1)[0]
 
         # Compute Q targets for current states

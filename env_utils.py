@@ -1,11 +1,20 @@
 import os
+from enum import IntEnum
+
 from flatland.envs.agent_utils import RailAgentStatus
 from flatland.core.grid.grid4_utils import get_new_position
 from flatland.envs.rail_env import RailEnvActions
 from flatland.envs.persistence import RailEnvPersister
 from flatland.envs.rail_env import RailEnv
 from flatland.envs.rail_generators import sparse_rail_generator
+
 import utils
+
+
+class RailEnvChoices(IntEnum):
+    CHOICE_LEFT = 0
+    CHOICE_RIGHT = 1
+    STOP = 2
 
 
 def agent_action(original_dir, final_dir):

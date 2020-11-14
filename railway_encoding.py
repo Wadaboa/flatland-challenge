@@ -2,7 +2,6 @@
 '''
 
 import itertools
-from pickle import FALSE
 
 import numpy as np
 import networkx as nx
@@ -133,43 +132,70 @@ class CellOrientationGraph():
         for node in nodes:
             self._remove_node(node)
 
-    def _set_nodes_attribute(self, positions, name, value, default=None):
+    def _set_nodes_attribute(self, name, positions=None, value=None, default=None):
         '''
         Set the attribute "name" to the nodes given in the set "positions",
         to be "value" (could be a single value or a dictionary indexed by "positions").
         If the "value" argument is a dictionary, you can give a default value to be set
         to the nodes which are not present in the set "positions"
         '''
-        attributes = {}
         if default is not None:
             nx.set_node_attributes(self.graph, default, name)
-        for pos in positions:
-            nodes = self.get_nodes(pos)
-            for node in nodes:
-                val = value
-                if isinstance(value, dict):
-                    val = value[pos]
-                attributes[node] = {name:  val}
-        nx.set_node_attributes(self.graph, attributes)
+        attributes = {}
+        if positions is not None and value is not None:
+            for pos in positions:
+                nodes = self.get_nodes(pos)
+                for node in nodes:
+                    val = value
+                    if isinstance(value, dict):
+                        val = value[pos]
+                    attributes[node] = {name:  val}
+            nx.set_node_attributes(self.graph, attributes)
 
     def _set_nodes_attributes(self):
         '''
         Set default attributes for each and every node in the packed graph
         '''
         self._set_nodes_attribute(
-            self._dead_ends, 'is_dead_end', True, default=False
+            'is_dead_end', positions=self._dead_ends, value=True, default=False
         )
         self._set_nodes_attribute(
-            set(self._targets.keys()), 'is_target', True, default=False
+            'is_target', positions=set(self._targets.keys()), value=True, default=False
         )
         self._set_nodes_attribute(
-            set(self._targets.keys()), 'target_handles', self._targets
+            'target_handles', positions=set(self._targets.keys()), value=self._targets
         )
+        fork_positions, join_positions = self._compute_decision_types()
+        self._set_nodes_attribute(
+            'is_fork', positions=fork_positions, value=True, default=False
+        )
+        self._set_nodes_attribute(
+            'is_join', positions=join_positions, value=True, default=False
+        )
+
+    def _compute_decision_types(self):
+        '''
+        Set decision types (at fork and/or at join) for each node in the packed graph
+        '''
+        fork_positions, join_positions = set(), set()
+        for node in self.graph.nodes:
+            if not self.graph.nodes[node]['is_dead_end']:
+                other_nodes = set(self.get_nodes(node)) - {node}
+                # If diamond crossing and/or fork set join for other nodes
+                if len(other_nodes) == 3 or len(self.get_successors(node)) > 1:
+                    for other_node in other_nodes:
+                        join_positions.add(other_node)
+                # Set fork for current node
+                if len(self.get_successors(node)) > 1:
+                    fork_positions.add(node)
+        return fork_positions, join_positions
 
     def is_straight_rail(self, cell):
         '''
         Check if the given cell is a straight rail
         '''
+        if len(cell) > 2:
+            cell = cell[:-1]
         return cell in self._straight_rails
 
     def get_nodes(self, position, unpacked=False):
@@ -278,31 +304,63 @@ class CellOrientationGraph():
             )
         return position
 
-    def _map_action_to_choice(actions):
-        legal_moves = [False, False, True]
-        if RailEnvActions.MOVE_FORWARD in actions:
-            if len(actions) > 1:
-                legal_moves[1] = True
-            legal_moves[0] = True
-        if RailEnvActions.MOVE_LEFT in actions:
-            legal_moves[0] = True
-        if RailEnvActions.MOVE_RIGHT in actions:
-            legal_moves[1] = True
-        return legal_moves
+    def map_choice_to_action(self, choice, legal_actions):
+        '''
+        Map the given RailEnvChoices action to a RailEnvActions action
+        '''
+        # If CHOICE_LEFT, then priorities are MOVE_LEFT, MOVE_FORWARD, MOVE_RIGHT
+        if choice == env_utils.RailEnvChoices.CHOICE_LEFT.value:
+            if RailEnvActions.MOVE_LEFT.value in legal_actions:
+                return RailEnvActions.MOVE_LEFT.value
+            elif RailEnvActions.MOVE_FORWARD.value in legal_actions:
+                return RailEnvActions.MOVE_FORWARD.value
+            elif RailEnvActions.MOVE_RIGHT.value in legal_actions:
+                return RailEnvActions.MOVE_RIGHT.value
+        # If CHOICE_RIGHT, then priorities are MOVE_RIGHT, MOVE_FORWARD
+        elif choice == env_utils.RailEnvChoices.CHOICE_RIGHT.value:
+            if RailEnvActions.MOVE_RIGHT.value in legal_actions:
+                return RailEnvActions.MOVE_RIGHT.value
+            elif RailEnvActions.MOVE_FORWARD.value in legal_actions:
+                return RailEnvActions.MOVE_FORWARD.value
+        # If STOP, then the priority is STOP_MOVING
+        elif choice == env_utils.RailEnvChoices.STOP.value:
+            return RailEnvActions.STOP_MOVING.value
+        # Otherwise, last resort is DO_NOTHING
+        return RailEnvActions.DO_NOTHING.value
 
-    def get_legal_moves(self, handle):
+    def get_legal_choices(self, handle, actions):
         '''
-        Compute and return all the legal moves that the given agent can perform.
-        It returns a boolean array of 3 elements:
-        0 - Legal Choice Left
-        1 - Legal Choice Right
-        2 - Stop Moving
+        Map the given RailEnvActions actions to a list of RailEnvChoices
         '''
-        actions = []
-        position = self.get_agent_cell(handle)
-        if self.agents[handle].status in (RailAgentStatus.DONE, RailAgentStatus.DONE_REMOVED):
-            return [False] * 3
-        next_nodes = self.get_successors(position, unpacked=True)
+        legal_moves = {
+            env_utils.RailEnvChoices.CHOICE_LEFT: False,
+            env_utils.RailEnvChoices.CHOICE_RIGHT: False,
+            env_utils.RailEnvChoices.STOP: self.is_before_join(handle)
+        }
+        if RailEnvActions.MOVE_FORWARD in actions:
+            # If RailEnvActions.MOVE_LEFT or RailEnvActions.MOVE_RIGHT in legal actions
+            if len(actions) > 1:
+                legal_moves[env_utils.RailEnvChoices.CHOICE_RIGHT] = True
+            legal_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
+        if RailEnvActions.MOVE_LEFT in actions:
+            legal_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
+        if RailEnvActions.MOVE_RIGHT in actions:
+            # If only RailEnvActions.MOVE_RIGHT in legal actions
+            if len(actions) == 1:
+                legal_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
+            else:
+                legal_moves[env_utils.RailEnvChoices.CHOICE_RIGHT] = True
+        return list(legal_moves.values())
+
+    def get_legal_actions(self, handle):
+        '''
+        Compute and return all the active legal actions that the given agent can perform
+        (an active action is MOVE_*), by removing actions that lead into an occupied cell
+        '''
+        actions = self.get_actions(handle)
+        next_positions = [
+            self.position_by_action(handle, action)[:-1] for action in actions
+        ]
         agents_positions = [
             self.get_agent_cell(agent)[:-1] for agent in range(len(self.agents))
             if (
@@ -311,11 +369,61 @@ class CellOrientationGraph():
                 (RailAgentStatus.DONE_REMOVED, RailAgentStatus.READY_TO_DEPART)
             )
         ]
-        for node in next_nodes:
-            if node[:-1] not in agents_positions:
-                actions.append(self._unpacked_graph.get_edge_data(
-                    position, node)['action'])
-        return self._map_action_to_choice(actions)
+        for i, pos in enumerate(next_positions):
+            if pos is not None and pos in agents_positions:
+                del actions[i]
+        return actions
+
+    def is_at_fork(self, handle):
+        '''
+        Returns True iff the agent is at a fork
+        '''
+        position = self.get_agent_cell(handle)
+        if position in self.graph.nodes:
+            return self.graph.nodes[position]['is_fork']
+        return False
+
+    def is_before_join(self, handle):
+        '''
+        Returns True iff the agent is before a join
+        '''
+        position = self.get_agent_cell(handle)
+        successors = self.get_successors(position, unpacked=True)
+        for succ in successors:
+            if succ in self.graph.nodes:
+                return self.graph.nodes[succ]['is_join']
+        return False
+
+    def is_real_decision(self, handle):
+        '''
+        Returns True iff the agent has to make a decision
+        '''
+        return self.is_at_fork(handle) or self.is_before_join(handle)
+
+    def get_actions(self, handle):
+        '''
+        Return all the possible active actions that an agent can perform
+        (an active action is MOVE_*)
+        '''
+        position = self.get_agent_cell(handle)
+        successors = self.get_successors(position, unpacked=True)
+        actions = []
+        for succ in successors:
+            actions.append(
+                self._unpacked_graph.get_edge_data(position, succ)['action']
+            )
+        return actions
+
+    def position_by_action(self, handle, action):
+        '''
+        Return the next node that the agent will occupy if it performs the given action
+        '''
+        position = self.get_agent_cell(handle)
+        successors = self.get_successors(position, unpacked=True)
+        for succ in successors:
+            if self._unpacked_graph.get_edge_data(position, succ)['action'] == action:
+                return succ
+        return None
 
     def shortest_paths(self, handle):
         '''

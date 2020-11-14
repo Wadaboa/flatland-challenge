@@ -46,16 +46,16 @@ def tensorboard_log(writer, name, x, y):
         writer.add_histogram(name, np.array(x), y)
 
 
-def format_action_probabilities(action_probabilities):
+def format_choices_probabilities(choices_probabilities):
     '''
-    Helper function to pretty print action probabilities
+    Helper function to pretty print choices probabilities
     '''
-    action_probabilities = np.round(action_probabilities, 3)
-    actions = ["↻", "←", "↑", "→", "◼"]
+    choices_probabilities = np.round(choices_probabilities, 3)
+    choices = ["←", "→", "◼"]
 
     buffer = ""
-    for action, action_prob in zip(actions, action_probabilities):
-        buffer += action + " " + "{:.3f}".format(action_prob) + " "
+    for choice, choice_prob in zip(choices, choices_probabilities):
+        buffer += choice + " " + "{:.3f}".format(choice_prob) + " "
 
     return buffer
 
@@ -131,7 +131,7 @@ def train_agents(args):
 
     # Set state size and action size
     state_size = (args.max_depth ** 2) * observation_builder.FEATURES
-    action_size = 3
+    choice_size = 3
 
     # Smoothed values used as target for hyperparameter tuning
     smoothed_normalized_score = -1.0
@@ -142,7 +142,7 @@ def train_agents(args):
     val_smoothing = 0.9
 
     # Initialize the agents policy
-    policy = DDDQNPolicy(state_size, action_size, parameters=args)
+    policy = DDDQNPolicy(state_size, choice_size, parameters=args)
 
     # Handle replay buffer
     if args.restore_replay_buffer:
@@ -209,12 +209,22 @@ def train_agents(args):
 
         # Initialize data structures for training info
         score, steps = 0, 0
-        actions_taken = []
-        legal_moves = {handle: observation_builder.get_legal_moves(handle)
-                       for handle in range(args.num_trains)}
+        choices_taken = []
+        legal_actions = {
+            handle: observation_builder.railway_encoding.get_legal_actions(
+                handle)
+            for handle in range(args.num_trains)
+        }
+        legal_choices = {
+            handle: observation_builder.railway_encoding.get_legal_choices(
+                handle, legal_actions[handle]
+            )
+            for handle in range(args.num_trains)
+        }
         update_values = [False] * args.num_trains
-        action_count = [0] * action_size
+        choices_count = [0] * choice_size
         action_dict = dict()
+        choice_dict = dict()
 
         # Do an episode
         for step in range(args.max_moves + 1):
@@ -229,17 +239,36 @@ def train_agents(args):
                         info['action_required'][agent] = False
 
             for agent in train_env.get_agent_handles():
+                update_values[agent] = False
                 if info['action_required'][agent]:
-                    action = policy.act(obs[agent], eps=args.eps_start)
-                    update_values[agent] = True
-                    action_count[action] += 1
-                    actions_taken.append(action)
+                    if observation_builder.railway_encoding.is_real_decision(agent):
+                        legal_actions[agent] = observation_builder.railway_encoding.get_legal_actions(
+                            agent
+                        )
+                        legal_choices[agent] = observation_builder.railway_encoding.get_legal_choices(
+                            agent, legal_actions[agent]
+                        )
+                        choice = policy.act(
+                            obs[agent], legal_choices[agent], eps=args.eps_start
+                        )
+                        action = observation_builder.railway_encoding.map_choice_to_action(
+                            choice, legal_choices[agent]
+                        )
+                        update_values[agent] = True
+                        choices_count[choice] += 1
+                        choices_taken.append(choice)
+                        choice_dict.update({agent: choice})
+                    else:
+                        actions = observation_builder.railway_encoding.get_actions(
+                            agent
+                        )
+                        assert len(actions) == 1
+                        action = actions[0]
                 else:
                     # An action is not required if the train hasn't joined the railway network,
                     # if it already reached its target, or if it's currently malfunctioning,
                     # or if it's in deadlock or if it's in the middle of traversing a cell
                     action = RailEnvActions.DO_NOTHING.value
-                    update_values[agent] = False
                 action_dict.update({agent: action})
             inference_timer.end()
 
@@ -256,21 +285,23 @@ def train_agents(args):
 
             # Update replay buffer and train agent
             for agent in train_env.get_agent_handles():
-                next_legal_moves = observation_builder.railway_encoding.get_legal_moves(
-                    agent
-                )
                 # Only learn from timesteps where something happened
                 if update_values[agent] or done['__all__']:
+                    legal_actions[agent] = observation_builder.railway_encoding.get_legal_actions(
+                        agent
+                    )
+                    next_legal_choices = observation_builder.railway_encoding.get_legal_choices(
+                        agent, legal_actions[agent]
+                    )
                     learn_timer.start()
                     policy.step(
-                        obs[agent], legal_moves[agent], action_dict[agent],
-                        all_rewards[agent], next_obs[agent], next_legal_moves, done[agent]
+                        obs[agent], legal_choices[agent], choice_dict[agent],
+                        all_rewards[agent], next_obs[agent], next_legal_choices, done[agent]
                     )
                     learn_timer.end()
 
                 # Update observation and score
                 obs[agent] = next_obs[agent].copy()
-                legal_moves[agent] = next_legal_moves
                 score += all_rewards[agent]
 
             # Break if every agent arrived
@@ -293,7 +324,7 @@ def train_agents(args):
         normalized_score = (
             score / (args.max_moves * train_env.get_num_agents())
         )
-        action_probs = action_count / np.sum(action_count)
+        choices_probs = choices_count / np.sum(choices_count)
         smoothed_normalized_score = (
             smoothed_normalized_score * train_smoothing +
             normalized_score * (1.0 - train_smoothing)
@@ -321,14 +352,14 @@ def train_agents(args):
             '\t 💯 Done: {:.2f}%'
             ' Avg: {:.2f}%'
             '\t 🎲 Epsilon: {:.3f} '
-            '\t 🔀 Action probabilities: {}'.format(
+            '\t 🔀 Choices probabilities: {}'.format(
                 episode,
                 normalized_score,
                 smoothed_normalized_score,
                 100 * completion,
                 100 * smoothed_completion,
                 args.eps_start,
-                format_action_probabilities(action_probs)
+                format_choices_probabilities(choices_probs)
             ), end=" "
         )
 
@@ -368,22 +399,16 @@ def train_agents(args):
 
         # Log training actions info to tensorboard
         tensorboard_log(
-            writer, "actions/distribution", np.array(actions_taken), episode
+            writer, "choices/distribution", np.array(choices_taken), episode
         )
         tensorboard_log(
-            writer, "actions/nothing", action_probs[RailEnvActions.DO_NOTHING], episode
+            writer, "choices/left", choices_probs[env_utils.RailEnvChoices.CHOICE_LEFT], episode
         )
         tensorboard_log(
-            writer, "actions/left", action_probs[RailEnvActions.MOVE_LEFT], episode
+            writer, "choices/right", choices_probs[env_utils.RailEnvChoices.CHOICE_RIGHT], episode
         )
         tensorboard_log(
-            writer, "actions/forward", action_probs[RailEnvActions.MOVE_FORWARD], episode
-        )
-        tensorboard_log(
-            writer, "actions/right", action_probs[RailEnvActions.MOVE_RIGHT], episode
-        )
-        tensorboard_log(
-            writer, "actions/stop", action_probs[RailEnvActions.STOP_MOVING], episode
+            writer, "choices/stop", choices_probs[env_utils.RailEnvChoices.STOP], episode
         )
 
         # Log training info to tensorboard
