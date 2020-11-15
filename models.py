@@ -6,22 +6,22 @@ import torch.nn.functional as F
 from torch.nn.functional import softmax
 
 
-def masked_softmax(vec, mask, dim=1):
+def masked_softmax(vec, mask, temperature=1):
     '''
     Softmax only on valid outputs
     '''
-    exps = torch.exp(vec)
+    exps = torch.exp(vec / temperature)
     masked_exps = exps * mask.float()
-    masked_sums = masked_exps.sum(dim, keepdim=True)
+    masked_sums = masked_exps.sum(dim=1, keepdim=True)
     result = masked_exps.clone()
     indexes = masked_sums.nonzero()[:, 0]
     result[indexes] = (result[indexes] / masked_sums[indexes])
     return result
 
-
 ######################################################################
 ############################## DDDQN #################################
 ######################################################################
+
 
 class DDDQNetwork(nn.Module):
     def __init__(self, state_size, action_size, hidsize1=128, hidsize2=128):

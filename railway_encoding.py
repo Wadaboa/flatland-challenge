@@ -144,7 +144,9 @@ class CellOrientationGraph():
         attributes = {}
         if positions is not None and value is not None:
             for pos in positions:
-                nodes = self.get_nodes(pos)
+                nodes = [pos]
+                if len(pos) == 2:
+                    nodes = self.get_nodes(pos)
                 for node in nodes:
                     val = value
                     if isinstance(value, dict):
@@ -182,11 +184,12 @@ class CellOrientationGraph():
             if not self.graph.nodes[node]['is_dead_end']:
                 other_nodes = set(self.get_nodes(node)) - {node}
                 # If diamond crossing and/or fork set join for other nodes
-                if len(other_nodes) == 3 or len(self.get_successors(node)) > 1:
+                num_successors = len(self.get_successors(node))
+                if len(other_nodes) == 3 or num_successors > 1:
                     for other_node in other_nodes:
                         join_positions.add(other_node)
                 # Set fork for current node
-                if len(self.get_successors(node)) > 1:
+                if num_successors > 1:
                     fork_positions.add(node)
         return fork_positions, join_positions
 

@@ -201,7 +201,7 @@ class DDDQNPolicy(Policy):
             self.qnetwork_local.load_state_dict(
                 torch.load(filename + ".local")
             )
-        if os.path.exists(filename + ".target"):
+        if not self.evaluation_mode and os.path.exists(filename + ".target"):
             self.qnetwork_target.load_state_dict(
                 torch.load(filename + ".target")
             )
@@ -215,3 +215,65 @@ class DDDQNPolicy(Policy):
     def test(self):
         self.act(np.array([[0] * self.state_size]))
         self._learn()
+
+
+class ActionSelection:
+
+    def select(actions, legal_actions):
+        pass
+
+
+class EpsilonGreedyActionSelection(ActionSelection):
+
+    def __init__(self, epsilon, epsilon_decay, epsilon_end):
+        self.epsilon = epsilon
+        self.epsilon_decay = epsilon_decay
+        self.epsilon_end = epsilon_end
+
+    def select(self, actions, legal_actions):
+        # Epsilon-greedy action selection
+        if random.random() > self.epsilon:
+            return np.argmax(actions)
+        else:
+            return random.choice(np.indices(actions)[legal_actions])
+        self.decay()
+
+    def decay(self):
+        # Epsilon decay
+        self.epsilon = max(self.epsilon_end, self.epsilon_decay * self.epsilon)
+
+
+class RandomActionSelection(EpsilonGreedyActionSelection):
+
+    def __init__(self):
+        super.__init__(epsilon=1, epsilon_decay=1, epsilon_end=1)
+
+
+class GreedyActionSelection(EpsilonGreedyActionSelection):
+
+    def __init__(self):
+        super.__init__(epsilon=0, epsilon_decay=0, epsilon_end=0)
+
+
+def BoltzmannActionSelection(CategoricalActionSelection):
+
+    def __init__(self, temperature, temperature_decay, temperature_end):
+        self.temperature = temperature
+        self.temperature_decay = temperature_decay
+        self.temperature_end = temperature_end
+
+    def decay(self):
+        self.temperature = max(
+            self.temperature_end,
+            self.temperature_decay * self.temperature
+        )
+
+
+class CategoricalActionSelection(ActionSelection):
+
+    def __init__(self):
+        super.__init__(self, temperature=1,
+                       temperature_decay=1, temperature_end=1)
+
+    def select(actions, legal_actions):
+        return random.choice(np.indices(actions)[legal_actions], p=actions[legal_actions])

@@ -20,7 +20,7 @@ import utils
 import env_utils
 
 
-RANDOM_SEED = 1
+RANDOM_SEED = 53
 
 
 def parse_args():
@@ -69,7 +69,7 @@ def parse_args():
         help="maximum number of moves in an episode", type=int
     )
     parser.add_argument(
-        "--sleep", action='store', default=0.5,
+        "--sleep", action='store', default=0.3,
         help="seconds to sleep between moves", type=float
     )
     parser.add_argument(
@@ -213,11 +213,13 @@ def main():
         )
 
     # Initialize the agents policy
-    # policy = RandomPolicy()
     state_size = (args.max_depth ** 2) * observation_builder.FEATURES
-    action_size = 5
-    policy = DDDQNPolicy(state_size, action_size, evaluation_mode=True)
-    policy.load(args.model)
+    choice_size = 3
+    if args.model != "":
+        policy = DDDQNPolicy(state_size, choice_size, evaluation_mode=True)
+        policy.load(args.model)
+    else:
+        policy = RandomPolicy()
 
     # Print agents tasks
     _tasks_table = []
@@ -269,7 +271,27 @@ def main():
         # Choose an action for each agent in the environment
         for handle in range(env.get_num_agents()):
             if info['action_required'][handle]:
-                action = policy.act(observations[handle])
+                if observation_builder.railway_encoding.is_real_decision(handle):
+                    legal_actions = observation_builder.railway_encoding.get_legal_actions(
+                        handle
+                    )
+                    legal_choices = observation_builder.railway_encoding.get_legal_choices(
+                        handle, legal_actions
+                    )
+                    choice = policy.act(
+                        observations[handle], legal_choices
+                    )
+                    action = observation_builder.railway_encoding.map_choice_to_action(
+                        choice, legal_choices
+                    )
+                    print(
+                        f'Handle: {handle} - Choice {choice} - Action {action}')
+                else:
+                    actions = observation_builder.railway_encoding.get_actions(
+                        handle
+                    )
+                    assert len(actions) == 1
+                    action = actions[0]
             else:
                 action = RailEnvActions.DO_NOTHING.value
             action_dict.update({handle: action})

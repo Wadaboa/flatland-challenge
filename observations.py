@@ -48,24 +48,6 @@ Observation:
         12. How many turns before a possible deadlock
 '''
 
-'''
-Todo:
-    - Observation:
-        * Test deadlock distance with variable speeds
-        * Test malfunctions observations
-        * Add malfunction turns to cumulative weights
-        * Check normalization correctness
-        * Handle observation not present at all
-        * Store agents in deadlock and substitute their shortest paths
-          as if they cannot reach their target (i.e. store current and next node)
-        * Add check for deadlock with agents on nodes
-        * Change score if episode is closed by all agents being in deadlock
-        * Insert prior bias to the network
-        * Initialize weights of the network
-        * Check hyperparameter network
-        * Change reward based on choices
-'''
-
 # SpeedData:
 # - `times` represents the total number of turns required for an agent to complete a cell
 # - `remaining` represents the remaining number of steps required for an agent to complete the current cell
