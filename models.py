@@ -6,45 +6,59 @@ import torch.nn.functional as F
 from torch.nn.functional import softmax
 
 
-def masked_softmax(vec, mask, temperature=1):
+def get_linear(input_size, output_size, hidden_sizes):
     '''
-    Softmax only on valid outputs
+    Returns a PyTorch Sequential object containing FC layers with
+    ReLU activation functions, by following the given input/hidden/output sizes
     '''
-    exps = torch.exp(vec / temperature)
-    masked_exps = exps * mask.float()
-    masked_sums = masked_exps.sum(dim=1, keepdim=True)
-    result = masked_exps.clone()
-    indexes = masked_sums.nonzero()[:, 0]
-    result[indexes] = (result[indexes] / masked_sums[indexes])
-    return result
+    assert len(hidden_sizes) >= 1
+    fc = [nn.Linear(input_size, hidden_sizes[0]), nn.ReLU()]
+    for i in enumerate(1, len(hidden_sizes)):
+        fc.extend([
+            nn.Linear(hidden_sizes[i - 1], hidden_sizes[i])
+            nn.ReLU()
+        ])
+    fc.extend([nn.Linear(hidden_sizes[-1], output_size)])
+    return nn.Sequential(fc)
+
 
 ######################################################################
-############################## DDDQN #################################
+################################# DQN ################################
 ######################################################################
 
 
-class DDDQNetwork(nn.Module):
-    def __init__(self, state_size, action_size, hidsize1=128, hidsize2=128):
-        super(DDDQNetwork, self).__init__()
+class DQN(nn.Module):
+    '''
+    Deep Q-Network
+    '''
 
-        self.fc1_val = nn.Linear(state_size, hidsize1)
-        self.fc2_val = nn.Linear(hidsize1, hidsize2)
-        self.fc3_val = nn.Linear(hidsize2, 1)
+    def __init__(self, state_size, action_size, hidden_sizes=[128, 128]):
+        super(DQN, self).__init__()
+        self.fc = get_linear(state_size, action_size, hidden_sizes)
 
-        self.fc1_adv = nn.Linear(state_size, hidsize1)
-        self.fc2_adv = nn.Linear(hidsize1, hidsize2)
-        self.fc3_adv = nn.Linear(hidsize2, action_size)
+    def forward(self, state):
+        state = torch.flatten(state, start_dim=1)
+        return self.fc(state)
 
-    def forward(self, x, legal_choices):
-        x = torch.flatten(x, start_dim=1)
-        val = F.relu(self.fc1_val(x))
-        val = F.relu(self.fc2_val(val))
-        val = self.fc3_val(val)
 
-        # advantage calculation
-        adv = F.relu(self.fc1_adv(x))
-        adv = F.relu(self.fc2_adv(adv))
-        adv = self.fc3_adv(adv)
+######################################################################
+########################### Dueling DQN ##############################
+######################################################################
 
-        out = val + adv - adv.mean()
-        return masked_softmax(out, legal_choices)
+class DuelingDQN(nn.Module):
+    '''
+    Dueling DQN
+    '''
+
+    def __init__(self, state_size, action_size, hidden_sizes=[128, 128], aggregation="mean"):
+        super(DuelingDQN, self).__init__()
+        self.aggregation = aggregation
+        self.fc_val = get_linear(state_size, 1, hidden_sizes)
+        self.fc_adv = get_linear(state_size, action_size, hidden_sizes)
+
+    def forward(self, state):
+        state = torch.flatten(state, start_dim=1)
+        val = self.fc_val(state)
+        adv = self.fc_adv(state)
+        agg = adv.mean() if self.aggregation == "mean" else adv.max()
+        return val + adv - agg

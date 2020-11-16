@@ -4,26 +4,26 @@ import random
 import pickle
 
 import numpy as np
-
 import torch
 import torch.optim as optim
-import torch.nn.functional as F
 
 from flatland.envs.rail_env import RailEnvActions
-from models import DDDQNetwork
+from models import DQN, DuelingDQN
 from replay_buffers import ReplayBuffer
+
+import model_utils
 
 
 class Policy:
 
-    def __init__(self, state_size=None, action_size=None):
+    def __init__(self, state_size=None, choice_size=None):
         self.state_size = state_size
-        self.action_size = action_size
+        self.choice_size = choice_size
 
-    def act(self, state, *args):
+    def act(self, state, legal_choices=None):
         raise NotImplementedError()
 
-    def step(self, memories):
+    def step(self, experience):
         raise NotImplementedError()
 
     def save(self, filename):
@@ -35,17 +35,17 @@ class Policy:
 
 class RandomPolicy(Policy):
 
-    def __init__(self, state_size=None, action_size=None):
-        super(RandomPolicy, self).__init__(state_size, action_size)
+    def __init__(self, state_size=None, choice_size=None):
+        super(RandomPolicy, self).__init__(state_size, choice_size)
 
-    def act(self, state):
+    def act(self, state, legal_choices=None):
         return np.random.choice([
             RailEnvActions.MOVE_FORWARD,
             RailEnvActions.MOVE_LEFT,
             RailEnvActions.MOVE_RIGHT
         ])
 
-    def step(self, memories):
+    def step(self, experience):
         return None
 
     def save(self, filename):
@@ -55,87 +55,92 @@ class RandomPolicy(Policy):
         return None
 
 
-class ShortestPathPolicy(Policy):
+class DQNPolicy(Policy):
+    '''
+    DQN abstract policy
+    '''
 
-    def __init__(self, state_size=None, action_size=None):
-        super(RandomPolicy, self).__init__(state_size, action_size)
+    PARAMETERS = {
+        "buffer_size": int(1e5),
+        "min_buffer_size": 0,
+        "batch_size": 128,
+        "update_every": 8,
+        "learning_rate": 0.5e-4,
+        "tau": 1e-3,
+        "discount": 0.99,
+        "hidden_sizes": [128, 128],
+        "dueling": True,
+        "double": True,
+        "softmax_bellman": True
+        "loss": "huber"
+    }
 
-    def act(self, state):
-        print(state)
-        return state[4]
+    def __init__(self, state_size, choice_size, choice_selector, training=False):
+        '''
+        Initialize DQNPolicy object
+        '''
+        super(DQNPolicy, self).__init__(state_size, choice_size)
+        assert (
+            isinstance(choice_selector, ActionSelector),
+            "The choice selection object must be an instance of ActionSelector"
+        )
 
-    def step(self, memories):
-        return None
-
-    def save(self, filename):
-        return None
-
-    def load(self, filename):
-        return None
-
-
-class DDDQNPolicy(Policy):
-    """Dueling Double DQN policy"""
-
-    def __init__(self, state_size, action_size, evaluation_mode=False, parameters=None):
-        self.evaluation_mode = evaluation_mode
-
+        # Parameters
         self.state_size = state_size
-        self.action_size = action_size
-        self.double_dqn = True
-        self.hidsize = 128
-
+        self.choice_size = choice_size
+        self.choice_selector = choice_selector
+        self.training = training
         self.device = torch.device("cpu")
-
-        if not evaluation_mode:
-            self.hidsize = parameters.hidden_size
-            self.buffer_size = parameters.buffer_size
-            self.batch_size = parameters.batch_size
-            self.update_every = parameters.update_every
-            self.learning_rate = parameters.learning_rate
-            self.tau = parameters.tau
-            self.gamma = parameters.gamma
-            self.buffer_min_size = parameters.buffer_min_size
-            self.loss = torch.tensor(0.0)
-            self.time_step = 0
-
-            # Device
-            if parameters.use_gpu and torch.cuda.is_available():
-                self.device = torch.device("cuda:0")
-                print("🐇 Using GPU")
+        if torch.cuda.is_available():
+            self.device = torch.device("cuda:0")
+            print("🐇 Using GPU")
 
         # Q-Network
-        self.qnetwork_local = DDDQNetwork(
-            state_size, action_size, hidsize1=self.hidsize, hidsize2=self.hidsize).to(self.device)
+        net = DuelingDQN if self.PARAMETERS["dueling"] else DQN
+        self.qnetwork_local = net(
+            self.state_size, self.choice_size, hidden_sizes=self.PARAMETERS["hidden_sizes"]
+        ).to(self.device)
 
-        if not evaluation_mode:
+        # Training parameters
+        if training:
+            self.time_step = 0
             self.qnetwork_target = copy.deepcopy(self.qnetwork_local)
             self.optimizer = optim.Adam(
-                self.qnetwork_local.parameters(), lr=self.learning_rate)
+                self.qnetwork_local.parameters(), lr=self.learning_rate
+            )
+            self.criterion = (
+                nn.SmoothL1Loss() if self.PARAMETERS["dueling"] == "huber"
+                else nn.MSELoss()
+            )
+            self.loss = torch.tensor(0.0)
             self.memory = ReplayBuffer(
-                action_size, self.batch_size, self.buffer_size, self.device)
+                self.choice_size, self.batch_size, self.buffer_size, self.device
+            )
 
-    def act(self, state, legal_choices, eps=0.):
+    def act(self, state, legal_choices):
+        '''
+        Perform action selection based on the Q-values returned by the network
+        '''
         state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
-        legal_choices = torch.tensor(
-            legal_choices
-        ).bool().unsqueeze(0).to(self.device)
         self.qnetwork_local.eval()
         with torch.no_grad():
-            choice_values = self.qnetwork_local(state, legal_choices)
+            choice_values = self.qnetwork_local(state)
+        return (
+            self.choice_selector.select(choice_values, legal_choices) if training
+            else np.argmax(choice_values.detach().cpu().numpy())
+        )
 
-        # Epsilon-greedy action selection
-        if random.random() > eps:
-            return np.argmax(choice_values.cpu().data.numpy())
-        else:
-            return random.choice(np.arange(self.action_size))
-
-    def step(self, state, legal_choices, action, reward, next_state, next_legal_choices, done):
-        assert not self.evaluation_mode, "Policy has been initialized for evaluation only."
+    def step(self, experience):
+        '''
+        Add an experience to memory and eventually perform a training step
+        '''
+        assert (
+            self.training,
+            "Policy has been initialized for evaluation only"
+        )
 
         # Save experience in replay memory
-        self.memory.add(state, legal_choices, action, reward,
-                        next_state, next_legal_choices, done)
+        self.memory.add(experience)
 
         # Learn every `update_every` time steps
         self.time_step = (self.time_step + 1) % self.update_every
@@ -146,37 +151,26 @@ class DDDQNPolicy(Policy):
                 self._learn()
 
     def _learn(self):
+        '''
+        Perform a learning step
+        '''
+        # Sample a batch of experiences
         experiences = self.memory.sample()
-        states, legal_choices, actions, rewards, next_states, next_legal_choices, dones = experiences
+        states, legal_choices, choices, rewards, next_states, next_legal_choices, dones = experiences
 
-        # Get expected Q values from local model
-        q_expected = self.qnetwork_local(
-            states, legal_choices
-        ).gather(1, actions.unsqueeze(-1)).squeeze()
+        # Get expected Q-values from local model
+        q_expected = self.qnetwork_local(states).gather(1, choices)
 
-        if self.double_dqn:
-            # Take the maximum probabilities of actions for each sample in the mini-batch
-            # and return a matrix of shape (1, batch-size), where
-            # each element represents the best action itself
-            q_best_action = self.qnetwork_local(
-                next_states, next_legal_choices).detach().max(1)[1]
+        # Get expected Q-values from target model
+        q_targets_next = torch.from_numpy(
+            self._get_q_targets_next(next_legal_choices)
+        ).to(self.device)
 
-            # Get expected Q values from target model
-            q_targets_next = self.qnetwork_target(
-                next_states, next_legal_choices
-            ).detach().gather(1, q_best_action.unsqueeze(-1)).squeeze()
-        else:
-            q_targets_next = self.qnetwork_target(
-                next_states, next_legal_choices
-            ).detach().max(1)[0]
-
-        # Compute Q targets for current states
+        # Compute Q-targets for current states
         q_targets = rewards + (self.gamma * q_targets_next * (1 - dones))
 
-        # Compute loss
-        self.loss = F.mse_loss(q_expected, q_targets)
-
-        # Minimize the loss
+        # Compute and minimize the loss
+        self.loss = self.criterion(q_expected, q_targets)
         self.optimizer.zero_grad()
         self.loss.backward()
         self.optimizer.step()
@@ -184,96 +178,84 @@ class DDDQNPolicy(Policy):
         # Update target network
         self._soft_update(self.qnetwork_local, self.qnetwork_target, self.tau)
 
+    def _get_q_targets_next(self, next_legal_choices):
+        '''
+        Get expected Q-values from target network
+        '''
+
+        def _double_dqn():
+            q_locals_next = self.qnetwork_local(
+                next_states
+            ).detach().cpu().numpy()
+            q_targets_next = self.qnetwork_target(
+                next_states
+            ).detach().cpu().numpy()
+
+            # Softmax Bellman
+            if self.PARAMETERS["softmax_bellman"]:
+                return np.sum(
+                    q_targets_next * model_utils.masked_softmax(
+                        q_targets_next, next_legal_choices
+                    ), axis=1, keepdims=True
+                )
+
+            # Standard Bellman
+            best_choices = model_utils.masked_argmax(
+                q_targets_next, next_legal_choices
+            )
+            return q_targets_next[best_choices]
+
+        def _dqn():
+            q_targets_next = self.qnetwork_target(
+                next_states
+            ).detach().cpu().numpy()
+
+            # Standard or softmax Bellman
+            return (
+                model_utils.masked_max(q_targets_next, next_legal_choices) if not self.PARAMETERS["softmax_bellman"]
+                else np.sum(model_utils.masked_softmax(q_targets_next, next_legal_choices) * q_targets_next, axis=1, keepdims=True)
+            )
+
+        return _double_dqn() if self.PARAMETERS["double"] else _dqn()
+
     def _soft_update(self, local_model, target_model, tau):
-        # Soft update model parameters
-        # θ_target = τ * θ_local + (1 - τ) * θ_target
+        '''
+        Soft update model parameters: θ_target = τ * θ_local + (1 - τ) * θ_target
+        '''
         for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
             target_param.data.copy_(
                 tau * local_param.data + (1.0 - tau) * target_param.data
             )
 
     def save(self, filename):
+        '''
+        Save both local and targets networks parameters
+        '''
         torch.save(self.qnetwork_local.state_dict(), filename + ".local")
         torch.save(self.qnetwork_target.state_dict(), filename + ".target")
 
     def load(self, filename):
+        '''
+        Load only the local network if evaluating,
+        otherwise load both local and target networks
+        '''
         if os.path.exists(filename + ".local"):
             self.qnetwork_local.load_state_dict(
                 torch.load(filename + ".local")
             )
-        if not self.evaluation_mode and os.path.exists(filename + ".target"):
-            self.qnetwork_target.load_state_dict(
-                torch.load(filename + ".target")
-            )
+            if self.training and os.path.exists(filename + ".target"):
+                self.qnetwork_target.load_state_dict(
+                    torch.load(filename + ".target")
+                )
 
     def save_replay_buffer(self, filename):
+        '''
+        Save the current replay buffer
+        '''
         self.memory.save(filename)
 
     def load_replay_buffer(self, filename):
+        '''
+        Load a stored representation of the replay buffer
+        '''
         self.memory.load(filename)
-
-    def test(self):
-        self.act(np.array([[0] * self.state_size]))
-        self._learn()
-
-
-class ActionSelection:
-
-    def select(actions, legal_actions):
-        pass
-
-
-class EpsilonGreedyActionSelection(ActionSelection):
-
-    def __init__(self, epsilon, epsilon_decay, epsilon_end):
-        self.epsilon = epsilon
-        self.epsilon_decay = epsilon_decay
-        self.epsilon_end = epsilon_end
-
-    def select(self, actions, legal_actions):
-        # Epsilon-greedy action selection
-        if random.random() > self.epsilon:
-            return np.argmax(actions)
-        else:
-            return random.choice(np.indices(actions)[legal_actions])
-        self.decay()
-
-    def decay(self):
-        # Epsilon decay
-        self.epsilon = max(self.epsilon_end, self.epsilon_decay * self.epsilon)
-
-
-class RandomActionSelection(EpsilonGreedyActionSelection):
-
-    def __init__(self):
-        super.__init__(epsilon=1, epsilon_decay=1, epsilon_end=1)
-
-
-class GreedyActionSelection(EpsilonGreedyActionSelection):
-
-    def __init__(self):
-        super.__init__(epsilon=0, epsilon_decay=0, epsilon_end=0)
-
-
-def BoltzmannActionSelection(CategoricalActionSelection):
-
-    def __init__(self, temperature, temperature_decay, temperature_end):
-        self.temperature = temperature
-        self.temperature_decay = temperature_decay
-        self.temperature_end = temperature_end
-
-    def decay(self):
-        self.temperature = max(
-            self.temperature_end,
-            self.temperature_decay * self.temperature
-        )
-
-
-class CategoricalActionSelection(ActionSelection):
-
-    def __init__(self):
-        super.__init__(self, temperature=1,
-                       temperature_decay=1, temperature_end=1)
-
-    def select(actions, legal_actions):
-        return random.choice(np.indices(actions)[legal_actions], p=actions[legal_actions])

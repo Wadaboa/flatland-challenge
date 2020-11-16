@@ -3,68 +3,84 @@ import pickle
 
 from collections import namedtuple, deque
 
-import torch
 import numpy as np
-from torch._C import dtype
+import torch
+
 
 Experience = namedtuple(
     "Experience", field_names=[
-        "state", "legal_choices", "action",
+        "state", "legal_choices", "choice",
         "reward", "next_state", "next_legal_choices", "done"
     ]
 )
 
 
 class ReplayBuffer:
-    """Fixed-size buffer to store experience tuples."""
+    '''
+    Fixed-size buffer to store experience tuples
+    '''
 
-    def __init__(self, action_size, batch_size, buffer_size, device):
+    def __init__(self, choice_size, batch_size, buffer_size, device):
         '''
-        Initialize a ReplayBuffer object.
+        Initialize a ReplayBuffer object
         '''
-        self.action_size = action_size
+        self.choice_size = choice_size
         self.batch_size = batch_size
         self.memory = deque(maxlen=buffer_size)
         self.device = device
 
-    def add(self, state, legal_choices, action, reward, next_state, next_legal_choices, done):
+    def add(self, experience):
         '''
         Add a new experience to memory
         '''
+        state, legal_choices, choice, reward, next_state, next_legal_choices, done = experience
         self.memory.append(
-            Experience(state, legal_choices, action, reward, next_state,
-                       next_legal_choices, done)
+            Experience(
+                state, legal_choices, choice, reward,
+                next_state, next_legal_choices, done
+            )
         )
 
     def sample(self):
         '''
-        Randomly sample a batch of experiences from memory
+        Randomly sample a batch of experiences from memory.
+        Each returned tensor has shape (batch_size, *)
         '''
-        states, legal_choices, actions, rewards, next_states, next_legal_choices, dones = zip(
+        states, legal_choices, choices, rewards, next_states, next_legal_choices, dones = zip(
             *random.sample(self.memory, k=self.batch_size)
         )
         states = torch.tensor(states, dtype=torch.float32, device=self.device)
         legal_choices = torch.tensor(
             legal_choices, dtype=torch.bool, device=self.device
         )
-        actions = torch.tensor(actions, dtype=torch.int64, device=self.device)
+        choices = torch.tensor(
+            choices, dtype=torch.int64, device=self.device
+        ).reshape((self.batch_size, -1))
         rewards = torch.tensor(
             rewards, dtype=torch.float32, device=self.device
-        )
+        ).reshape((self.batch_size, -1))
         next_states = torch.tensor(
             next_states, dtype=torch.float32, device=self.device
         )
         next_legal_choices = torch.tensor(
             next_legal_choices, dtype=torch.bool, device=self.device
         )
-        dones = torch.tensor(dones, dtype=torch.uint8, device=self.device)
-        return states, legal_choices, actions, rewards, next_states, next_legal_choices, dones
+        dones = torch.tensor(
+            dones, dtype=torch.uint8, device=self.device
+        ).reshape((self.batch_size, -1))
+        return states, legal_choices, choices, rewards, next_states, next_legal_choices, dones
 
     def save(self, filename):
+        '''
+        Save the current replay buffer to a pickle file
+        '''
         with open(filename, 'wb') as f:
             pickle.dump(list(self.memory), f)
 
     def load(self, filename):
+        '''
+        Load the current replay buffer from the given pickle file
+        '''
         with open(filename, 'rb') as f:
             self.memory = pickle.load(f)
 
