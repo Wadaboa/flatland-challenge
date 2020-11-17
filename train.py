@@ -164,7 +164,7 @@ def train_agents(args):
             print(e)
             exit(1)
     print("\n💾 Replay buffer status: {}/{} experiences".format(
-        len(policy.memory.memory), args.buffer_size
+        len(policy.memory.memory), policy.PARAMETERS["buffer_size"]
     ))
 
     # Set tensorboard writer
@@ -436,7 +436,7 @@ def train_agents(args):
             writer, "training/smoothed_completion", smoothed_completion, episode
         )
         tensorboard_log(
-            writer, "training/buffer_size", len(policy.memory), episode
+            writer, "training/buffer_size", len(policy.memory.memory), episode
         )
 
         # Log training time info to tensorboard
@@ -620,48 +620,12 @@ def parse_args():
         help="exploration decay", type=float
     )
     parser.add_argument(
-        "--buffer_size", action='store', default=int(1e5),
-        help="replay buffer size", type=int
-    )
-    parser.add_argument(
-        "--buffer_min_size", action='store', default=0,
-        help="minimum buffer size to start training", type=int
-    )
-    parser.add_argument(
         "--restore_replay_buffer", action='store', default="",
         help="replay buffer to restore", type=str
     )
     parser.add_argument(
         "--save_replay_buffer", action='store_true',
         help="save replay buffer at each evaluation interval"
-    )
-    parser.add_argument(
-        "--batch_size", action='store', default=128,
-        help="minibatch size", type=int
-    )
-    parser.add_argument(
-        "--gamma", action='store', default=0.99,
-        help="discount factor", type=float
-    )
-    parser.add_argument(
-        "--tau", action='store', default=1e-3,
-        help="soft update of target parameters", type=float
-    )
-    parser.add_argument(
-        "--learning_rate", action='store', default=0.5e-4,
-        help="learning rate", type=float
-    )
-    parser.add_argument(
-        "--hidden_size", default=128,
-        help="hidden size (2 fc layers)", type=int
-    )
-    parser.add_argument(
-        "--update_every", action='store', default=8,
-        help="how often to update the network", type=int
-    )
-    parser.add_argument(
-        "--use_gpu", action='store_true',
-        help="use GPU if available"
     )
     parser.add_argument(
         "--num_threads", action='store', default=1,
