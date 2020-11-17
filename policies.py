@@ -74,7 +74,7 @@ class DQNPolicy(Policy):
         "hidden_sizes": [128, 128],
         "dueling": True,
         "double": True,
-        "softmax_bellman": True,
+        "softmax_bellman": False,
         "loss": "huber"
     }
 

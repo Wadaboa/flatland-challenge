@@ -374,7 +374,7 @@ def train_agents(args):
         # Evaluate policy and log results at some interval
         if episode > 0 and episode % args.checkpoint_interval == 0 and args.n_val_episodes > 0:
             scores, completions, val_steps = eval_policy(
-                args, val_env, policy
+                args, observation_builder.railway_encoding, val_env, policy
             )
 
             # Save final validation scores
@@ -458,7 +458,7 @@ def train_agents(args):
         )
 
 
-def eval_policy(args, env, policy):
+def eval_policy(args, railway_encoding, env, policy):
     '''
     Perform a validation round with the given policy
     in the specified environment
@@ -492,7 +492,22 @@ def eval_policy(args, env, policy):
             # Perform a step
             for agent in env.get_agent_handles():
                 if info['action_required'][agent]:
-                    action = policy.act(obs[agent], eps=0.0)
+                    if railway_encoding.is_real_decision(agent):
+                        legal_actions = railway_encoding.get_legal_actions(
+                            agent
+                        )
+                        legal_choices = railway_encoding.get_legal_choices(
+                            agent, legal_actions
+                        )
+                        choice = policy.act(obs[agent], legal_choices)
+                        action = railway_encoding.map_choice_to_action(
+                            choice, legal_choices)
+                    else:
+                        actions = railway_encoding.get_actions(
+                            agent
+                        )
+                        assert len(actions) == 1
+                        action = actions[0]
                 else:
                     action = RailEnvActions.DO_NOTHING.value
                 action_dict.update({agent: action})
@@ -538,7 +553,7 @@ def parse_args():
         help="path to the validation environment file", type=str
     )
     parser.add_argument(
-        "--num_trains", action='store', default=4,
+        "--num_trains", action='store', default=1,
         help="number of trains to spawn", type=int
     )
     parser.add_argument(

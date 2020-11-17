@@ -13,6 +13,7 @@
 
 * [ ] Add check for deadlock with agents on nodes
 * [ ] Change score if episode is closed by all agents being in deadlock
+* [ ] Add file logger to train.py
 
 ## Model
 
