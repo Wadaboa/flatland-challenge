@@ -1,6 +1,8 @@
 import random
 
 import numpy as np
+import numpy.ma as ma
+from torch._C import dtype
 
 import model_utils
 
@@ -14,7 +16,8 @@ class ActionSelector:
 class EpsilonGreedyActionSelector(ActionSelector):
 
     def __init__(self, epsilon, epsilon_decay, epsilon_end):
-        self.epsilon = epsilon
+        self.epsion_start = epsilon
+        self.epsilon = self.epsion_start
         self.epsilon_decay = epsilon_decay
         self.epsilon_end = epsilon_end
 
@@ -24,12 +27,15 @@ class EpsilonGreedyActionSelector(ActionSelector):
             else legal_actions
         )
         if random.random() > self.epsilon:
-            return np.argmax(actions)
+            return model_utils.masked_argmax(actions, legal_actions, dim=0)
         else:
-            return random.choice(np.indices(actions)[legal_actions])
+            return random.choice(np.arange(actions.size)[legal_actions])
 
     def decay(self):
         self.epsilon = max(self.epsilon_end, self.epsilon_decay * self.epsilon)
+
+    def reset(self):
+        self.epsilon = self.epsion_start
 
 
 class RandomActionSelector(EpsilonGreedyActionSelector):
@@ -44,15 +50,14 @@ class GreedyActionSelector(EpsilonGreedyActionSelector):
         super.__init__(epsilon=0, epsilon_decay=0, epsilon_end=0)
 
 
-def BoltzmannActionSelector(ActionSelector):
+class BoltzmannActionSelector(ActionSelector):
 
     def __init__(self, temperature, temperature_decay, temperature_end):
-
         self.temperature = temperature
         self.temperature_decay = temperature_decay
         self.temperature_end = temperature_end
 
-    def select(actions, legal_actions=None):
+    def select(self, actions, legal_actions=None):
         legal_actions = (
             np.ones_like(actions, dtype=bool) if legal_actions is None
             else legal_actions
@@ -60,7 +65,7 @@ def BoltzmannActionSelector(ActionSelector):
         dist = model_utils.masked_softmax(
             actions, legal_actions, dim=0, temperature=self.temperature
         )
-        return random.choice(np.indices(actions)[legal_actions], p=dist[legal_actions])
+        return random.choice(np.arange(actions.size)[legal_actions], p=dist[legal_actions])
 
     def decay(self):
         self.temperature = max(

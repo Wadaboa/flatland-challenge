@@ -13,9 +13,10 @@ from flatland.envs.malfunction_generators import ParamMalfunctionGen, Malfunctio
 from flatland.envs.schedule_generators import sparse_schedule_generator
 from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
+from action_selectors import EpsilonGreedyActionSelector
 from predictions import ShortestPathPredictor
 from observations import CustomObservation
-from policies import DDDQNPolicy
+from policies import DQNPolicy
 import utils
 import env_utils
 
@@ -79,11 +80,13 @@ def create_rail_env(args, observation_builder, env=""):
     # Initialize malfunctions
     malfunctions = None
     if args.malfunction:
-        malfunctions = ParamMalfunctionGen(MalfunctionParameters(
-            malfunction_rate=args.malfunction_rate,
-            min_duration=args.malfunction_min_duration,
-            max_duration=args.malfunction_max_duration
-        ))
+        malfunctions = ParamMalfunctionGen(
+            MalfunctionParameters(
+                malfunction_rate=args.malfunction_rate,
+                min_duration=args.malfunction_min_duration,
+                max_duration=args.malfunction_max_duration
+            )
+        )
 
     # Initialize agents speeds
     speed_map = None
@@ -142,7 +145,10 @@ def train_agents(args):
     val_smoothing = 0.9
 
     # Initialize the agents policy
-    policy = DDDQNPolicy(state_size, choice_size, parameters=args)
+    choice_selector = EpsilonGreedyActionSelector(
+        epsilon=args.eps_start, epsilon_decay=args.eps_decay, epsilon_end=args.eps_end)
+    policy = DQNPolicy(state_size, choice_size,
+                       choice_selector, training=True)
 
     # Handle replay buffer
     if args.restore_replay_buffer:
@@ -248,9 +254,7 @@ def train_agents(args):
                         legal_choices[agent] = observation_builder.railway_encoding.get_legal_choices(
                             agent, legal_actions[agent]
                         )
-                        choice = policy.act(
-                            obs[agent], legal_choices[agent], eps=args.eps_start
-                        )
+                        choice = policy.act(obs[agent], legal_choices[agent])
                         action = observation_builder.railway_encoding.map_choice_to_action(
                             choice, legal_choices[agent]
                         )
@@ -294,10 +298,9 @@ def train_agents(args):
                         agent, legal_actions[agent]
                     )
                     learn_timer.start()
-                    policy.step(
-                        obs[agent], legal_choices[agent], choice_dict[agent],
-                        all_rewards[agent], next_obs[agent], next_legal_choices, done[agent]
-                    )
+                    experience = (obs[agent], legal_choices[agent], choice_dict[agent],
+                                  all_rewards[agent], next_obs[agent], next_legal_choices, done[agent])
+                    policy.step(experience)
                     learn_timer.end()
 
                 # Update observation and score
@@ -314,7 +317,7 @@ def train_agents(args):
             env_renderer.close_window()
 
         # Epsilon decay
-        args.eps_start = max(args.eps_end, args.eps_decay * args.eps_start)
+        choice_selector.decay()
 
         # Save final scores
         tasks_finished = sum(
@@ -358,7 +361,7 @@ def train_agents(args):
                 smoothed_normalized_score,
                 100 * completion,
                 100 * smoothed_completion,
-                args.eps_start,
+                choice_selector.epsilon,
                 format_choices_probabilities(choices_probs)
             ), end=" "
         )
@@ -413,7 +416,8 @@ def train_agents(args):
 
         # Log training info to tensorboard
         tensorboard_log(writer, "training/steps", steps, episode)
-        tensorboard_log(writer, "training/epsilon", args.eps_start, episode)
+        tensorboard_log(writer, "training/epsilon",
+                        choice_selector.epsilon, episode)
         tensorboard_log(
             writer, "training/loss", policy.loss.data.item(), episode
         )

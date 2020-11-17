@@ -30,9 +30,16 @@ def masked_argmax(vec, mask, dim=1, fill_value=np.nan):
     '''
     Argmax only on valid outputs
     '''
-    num_rows = vec.shape[0]
+
     masked_argmax_arr = ma.masked_array(
         vec, mask=np.invert(mask), fill_value=fill_value
     ).argmax(axis=dim, fill_value=fill_value)
-    masked_argmax_arr[masked_argmax_arr.mask] = fill_value
-    return masked_argmax_arr.data.reshape(num_rows, 1)
+
+    if dim > 0:
+        num_rows = vec.shape[0]
+        masked_argmax_arr = masked_argmax_arr.reshape(num_rows, 1)
+        
+        # masked_argmax_arr is a simple numpy array of indexes doesn't have a .mask property
+        # masked_argmax_arr[masked_argmax_arr.mask] = fill_value
+
+    return masked_argmax_arr
