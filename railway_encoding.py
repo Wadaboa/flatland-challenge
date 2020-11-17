@@ -372,9 +372,18 @@ class CellOrientationGraph():
                 (RailAgentStatus.DONE_REMOVED, RailAgentStatus.READY_TO_DEPART)
             )
         ]
+
+        # Store illegal actions
+        to_delete = []
         for i, pos in enumerate(next_positions):
             if pos is not None and pos in agents_positions:
-                del actions[i]
+                to_delete.append(i)
+
+        # Delete illegal actions in reverse order,
+        # so as to avoid changing indexes
+        for i in sorted(to_delete, reverse=True):
+            del actions[i]
+
         return actions
 
     def is_at_fork(self, handle):
