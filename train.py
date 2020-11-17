@@ -164,7 +164,7 @@ def train_agents(args):
             print(e)
             exit(1)
     print("\n💾 Replay buffer status: {}/{} experiences".format(
-        len(policy.memory.memory), policy.PARAMETERS["buffer_size"]
+        len(policy.memory), policy.PARAMETERS["buffer_size"]
     ))
 
     # Set tensorboard writer
@@ -436,7 +436,7 @@ def train_agents(args):
             writer, "training/smoothed_completion", smoothed_completion, episode
         )
         tensorboard_log(
-            writer, "training/buffer_size", len(policy.memory.memory), episode
+            writer, "training/buffer_size", len(policy.memory), episode
         )
 
         # Log training time info to tensorboard
