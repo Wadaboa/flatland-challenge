@@ -7,14 +7,18 @@ import numpy as np
 import torch
 import torch.optim as optim
 
-from flatland.envs.rail_env import RailEnvActions
 from models import DQN, DuelingDQN
 from replay_buffers import ReplayBuffer
 
+import env_utils
 import model_utils
+import action_selection
 
 
 class Policy:
+    '''
+    Policy abstract class
+    '''
 
     def __init__(self, state_size=None, choice_size=None):
         self.state_size = state_size
@@ -34,16 +38,17 @@ class Policy:
 
 
 class RandomPolicy(Policy):
+    '''
+    Policy which chooses random moves
+    '''
 
     def __init__(self, state_size=None, choice_size=None):
+        self.action_selector = action_selection.RandomActionSelector()
         super(RandomPolicy, self).__init__(state_size, choice_size)
 
     def act(self, state, legal_choices=None):
-        return np.random.choice([
-            RailEnvActions.MOVE_FORWARD,
-            RailEnvActions.MOVE_LEFT,
-            RailEnvActions.MOVE_RIGHT
-        ])
+        choices = np.array(env_utils.RailEnvChoices.values())
+        return self.action_selector.select(choices, legal_choices)
 
     def step(self, experience):
         return None

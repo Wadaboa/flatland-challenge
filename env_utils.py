@@ -12,9 +12,30 @@ import utils
 
 
 class RailEnvChoices(IntEnum):
+
     CHOICE_LEFT = 0
     CHOICE_RIGHT = 1
     STOP = 2
+
+    @staticmethod
+    def value_of(value):
+        '''
+        Return an instance of RailEnvChoices from the given choice type int
+        '''
+        for _, choice_type in RailEnvChoices.__members__.items():
+            if choice_type.value == value.capitalize():
+                return choice_type
+        return None
+
+    @staticmethod
+    def values():
+        '''
+        Return a list of every possible RailEnvChoices
+        '''
+        return [
+            choice_type
+            for _, choice_type in RailEnvChoices.__members__.items()
+        ]
 
 
 def agent_action(original_dir, final_dir):
@@ -69,13 +90,9 @@ def get_seed(env, seed=None):
 
 
 def check_if_all_blocked(env):
-    """
-    Checks whether all the agents are blocked (full deadlock situation).
-    In that case it is pointless to keep running inference as no agent will be able to move.
-    :param env: current environment
-    :return:
-    """
-
+    '''
+    Checks whether all the agents are blocked (full deadlock situation)
+    '''
     # First build a map of agents in each position
     location_has_agent = {}
     for agent in env.agents:
@@ -95,28 +112,36 @@ def check_if_all_blocked(env):
             continue
 
         possible_transitions = env.rail.get_transitions(
-            *agent_virtual_position, agent.direction)
+            *agent_virtual_position, agent.direction
+        )
         orientation = agent.direction
 
         for branch_direction in [(orientation + i) % 4 for i in range(-1, 3)]:
             if possible_transitions[branch_direction]:
                 new_position = get_new_position(
-                    agent_virtual_position, branch_direction)
+                    agent_virtual_position, branch_direction
+                )
 
                 if new_position not in location_has_agent:
                     return False
 
-    # No agent can move at all: full deadlock!
+    # Full deadlock
     return True
 
 
 def get_agents_same_start(env):
+    '''
+    Return a dictionary indexed by agents starting positions,
+    and having a list of handles as values, s.t. agents with
+    the same starting position are ordered by decreasing speed
+    '''
     agents_with_same_start = dict()
     for handle_one, agent_one in enumerate(env.agents):
         for handle_two, agent_two in enumerate(env.agents):
             if handle_one != handle_two and agent_one.initial_position == agent_two.initial_position:
                 agents_with_same_start.setdefault(
-                    agent_one.initial_position, set()).update({handle_one, handle_two})
+                    agent_one.initial_position, set()
+                ).update({handle_one, handle_two})
 
     for position in agents_with_same_start:
         agents_with_same_start[position] = sorted(

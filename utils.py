@@ -17,7 +17,7 @@ def is_close(a, b, rtol=1e-03):
     '''
     Return if a is relatively close to the value of b
     '''
-    return abs(a-b) <= rtol
+    return abs(a - b) <= rtol
 
 
 def reciprocal_sum(a, b):
