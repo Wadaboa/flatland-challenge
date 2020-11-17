@@ -24,4 +24,10 @@
 
 ## Policy
 
-* [ ] Finish ActionPolicy development
+* [ ] Finish and check ActionPolicy development
+* [ ] Review _get_q_targets_next
+
+## Replay Buffer
+
+* [ ] Try Prioritized Experience Replay
+* [ ] Stop storing legal_choices into the Buffer - we never use them

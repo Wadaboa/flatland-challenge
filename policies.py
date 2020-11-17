@@ -1,18 +1,16 @@
 import os
 import copy
-import random
-import pickle
 
 import numpy as np
 import torch
 import torch.optim as optim
+import torch.nn as nn
 
 from models import DQN, DuelingDQN
 from replay_buffers import ReplayBuffer
-
 import env_utils
 import model_utils
-import action_selection
+from action_selectors import ActionSelector
 
 
 class Policy:
@@ -43,7 +41,7 @@ class RandomPolicy(Policy):
     '''
 
     def __init__(self, state_size=None, choice_size=None):
-        self.action_selector = action_selection.RandomActionSelector()
+        self.action_selector = action_selectors.RandomActionSelector()
         super(RandomPolicy, self).__init__(state_size, choice_size)
 
     def act(self, state, legal_choices=None):
@@ -76,7 +74,7 @@ class DQNPolicy(Policy):
         "hidden_sizes": [128, 128],
         "dueling": True,
         "double": True,
-        "softmax_bellman": True
+        "softmax_bellman": True,
         "loss": "huber"
     }
 
@@ -111,7 +109,7 @@ class DQNPolicy(Policy):
             self.time_step = 0
             self.qnetwork_target = copy.deepcopy(self.qnetwork_local)
             self.optimizer = optim.Adam(
-                self.qnetwork_local.parameters(), lr=self.learning_rate
+                self.qnetwork_local.parameters(), lr=self.PARAMETERS["learning_rate"]
             )
             self.criterion = (
                 nn.SmoothL1Loss() if self.PARAMETERS["dueling"] == "huber"
@@ -119,7 +117,7 @@ class DQNPolicy(Policy):
             )
             self.loss = torch.tensor(0.0)
             self.memory = ReplayBuffer(
-                self.choice_size, self.batch_size, self.buffer_size, self.device
+                self.choice_size, self.PARAMETERS["batch_size"], self.PARAMETERS["buffer_size"], self.device
             )
 
     def act(self, state, legal_choices):
@@ -129,29 +127,33 @@ class DQNPolicy(Policy):
         state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
         self.qnetwork_local.eval()
         with torch.no_grad():
-            choice_values = self.qnetwork_local(state)
+            choice_values = self.qnetwork_local(
+                state
+            ).squeeze().detach().cpu().numpy()
+
+        legal_choices = np.full(
+            choice_values.shape, legal_choices, dtype=bool
+        )
         return (
-            self.choice_selector.select(choice_values, legal_choices) if training
-            else np.argmax(choice_values.detach().cpu().numpy())
+            self.choice_selector.select(choice_values, legal_choices) if self.training
+            else model_utils.masked_argmax(choice_values, legal_choices, dim=0)
         )
 
     def step(self, experience):
         '''
         Add an experience to memory and eventually perform a training step
         '''
-        assert (
-            self.training,
-            "Policy has been initialized for evaluation only"
-        )
+        assert self.training, "Policy has been initialized for evaluation only"
 
         # Save experience in replay memory
         self.memory.add(experience)
 
         # Learn every `update_every` time steps
-        self.time_step = (self.time_step + 1) % self.update_every
+        self.time_step = (self.time_step + 1) % self.PARAMETERS["update_every"]
         if self.time_step == 0:
             # If enough samples are available in memory, get random subset and learn
-            if len(self.memory) > self.buffer_min_size and len(self.memory) >= self.batch_size:
+            if (len(self.memory) > self.PARAMETERS["min_buffer_size"] and
+                    len(self.memory) >= self.PARAMETERS["batch_size"]):
                 self.qnetwork_local.train()
                 self._learn()
 
@@ -168,11 +170,15 @@ class DQNPolicy(Policy):
 
         # Get expected Q-values from target model
         q_targets_next = torch.from_numpy(
-            self._get_q_targets_next(next_legal_choices)
+            self._get_q_targets_next(next_states, next_legal_choices)
         ).to(self.device)
 
         # Compute Q-targets for current states
-        q_targets = rewards + (self.gamma * q_targets_next * (1 - dones))
+        q_targets = (
+            rewards + (
+                self.PARAMETERS["discount"] * q_targets_next * (1 - dones)
+            )
+        )
 
         # Compute and minimize the loss
         self.loss = self.criterion(q_expected, q_targets)
@@ -181,9 +187,11 @@ class DQNPolicy(Policy):
         self.optimizer.step()
 
         # Update target network
-        self._soft_update(self.qnetwork_local, self.qnetwork_target, self.tau)
+        self._soft_update(self.qnetwork_local, self.qnetwork_target)
 
-    def _get_q_targets_next(self, next_legal_choices):
+    # TODO: To Review I don't like the fact that next_legal_choices must be moved to cpu
+    # to be converted into a numpy array to compute model_utils.masked_softmax
+    def _get_q_targets_next(self, next_states, next_legal_choices):
         '''
         Get expected Q-values from target network
         '''
@@ -195,18 +203,19 @@ class DQNPolicy(Policy):
             q_targets_next = self.qnetwork_target(
                 next_states
             ).detach().cpu().numpy()
+            np_next_legal_choices = next_legal_choices.cpu().numpy()
 
             # Softmax Bellman
             if self.PARAMETERS["softmax_bellman"]:
                 return np.sum(
                     q_targets_next * model_utils.masked_softmax(
-                        q_targets_next, next_legal_choices
+                        q_locals_next, np_next_legal_choices
                     ), axis=1, keepdims=True
                 )
 
             # Standard Bellman
             best_choices = model_utils.masked_argmax(
-                q_targets_next, next_legal_choices
+                q_targets_next, np_next_legal_choices
             )
             return q_targets_next[best_choices]
 
@@ -223,13 +232,14 @@ class DQNPolicy(Policy):
 
         return _double_dqn() if self.PARAMETERS["double"] else _dqn()
 
-    def _soft_update(self, local_model, target_model, tau):
+    def _soft_update(self, local_model, target_model):
         '''
         Soft update model parameters: θ_target = τ * θ_local + (1 - τ) * θ_target
         '''
         for target_param, local_param in zip(target_model.parameters(), local_model.parameters()):
             target_param.data.copy_(
-                tau * local_param.data + (1.0 - tau) * target_param.data
+                self.PARAMETERS["tau"] * local_param.data +
+                (1.0 - self.PARAMETERS["tau"]) * target_param.data
             )
 
     def save(self, filename):

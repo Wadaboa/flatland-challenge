@@ -13,13 +13,13 @@ def get_linear(input_size, output_size, hidden_sizes):
     '''
     assert len(hidden_sizes) >= 1
     fc = [nn.Linear(input_size, hidden_sizes[0]), nn.ReLU()]
-    for i in enumerate(1, len(hidden_sizes)):
+    for i in range(1, len(hidden_sizes)):
         fc.extend([
-            nn.Linear(hidden_sizes[i - 1], hidden_sizes[i])
+            nn.Linear(hidden_sizes[i - 1], hidden_sizes[i]),
             nn.ReLU()
         ])
     fc.extend([nn.Linear(hidden_sizes[-1], output_size)])
-    return nn.Sequential(fc)
+    return nn.Sequential(*fc)
 
 
 ######################################################################
