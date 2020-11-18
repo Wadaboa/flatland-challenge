@@ -30,6 +30,7 @@ class EpsilonGreedyActionSelector(ActionSelector):
             np.ones_like(actions, dtype=bool) if legal_actions is None
             else legal_actions
         )
+        #print(model_utils.masked_argmax(actions, legal_actions, dim=0))
         if random.random() > self.epsilon:
             return model_utils.masked_argmax(actions, legal_actions, dim=0)
         else:
