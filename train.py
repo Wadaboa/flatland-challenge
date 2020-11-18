@@ -268,6 +268,8 @@ def train_agents(args):
                         actions = observation_builder.railway_encoding.get_actions(
                             agent
                         )
+                        if len(actions) != 1:
+                            print(f"Rotte actions: {actions}")
                         assert len(actions) == 1
                         action = actions[0]
                 else:
@@ -410,13 +412,13 @@ def train_agents(args):
             writer, "choices/distribution", np.array(choices_taken), episode
         )
         tensorboard_log(
-            writer, "choices/left", choices_probs[env_utils.RailEnvChoices.CHOICE_LEFT], episode
+            writer, "choices/left", choices_probs[env_utils.RailEnvChoices.CHOICE_LEFT.value], episode
         )
         tensorboard_log(
-            writer, "choices/right", choices_probs[env_utils.RailEnvChoices.CHOICE_RIGHT], episode
+            writer, "choices/right", choices_probs[env_utils.RailEnvChoices.CHOICE_RIGHT.value], episode
         )
         tensorboard_log(
-            writer, "choices/stop", choices_probs[env_utils.RailEnvChoices.STOP], episode
+            writer, "choices/stop", choices_probs[env_utils.RailEnvChoices.STOP.value], episode
         )
 
         # Log training info to tensorboard
@@ -481,6 +483,7 @@ def eval_policy(args, railway_encoding, env, policy):
 
         # Compute agents with same source
         agents_with_same_start = env_utils.get_agents_same_start(env)
+
         # Do an episode
         for step in range(args.max_moves - 1):
             # Prioritize enter of faster agent in the environment
@@ -489,6 +492,7 @@ def eval_policy(args, railway_encoding, env, policy):
                     del agents_with_same_start[position][0]
                     for agent in agents_with_same_start[position]:
                         info['action_required'][agent] = False
+
             # Perform a step
             for agent in env.get_agent_handles():
                 if info['action_required'][agent]:
@@ -506,6 +510,8 @@ def eval_policy(args, railway_encoding, env, policy):
                         actions = railway_encoding.get_actions(
                             agent
                         )
+                        if len(actions) != 1:
+                            print(f"Rotte actions: {actions}")
                         assert len(actions) == 1
                         action = actions[0]
                 else:

@@ -83,10 +83,9 @@ class DQNPolicy(Policy):
         Initialize DQNPolicy object
         '''
         super(DQNPolicy, self).__init__(state_size, choice_size)
-        assert (
-            isinstance(choice_selector, ActionSelector),
-            "The choice selection object must be an instance of ActionSelector"
-        )
+        assert isinstance(
+            choice_selector, ActionSelector
+        ), "The choice selection object must be an instance of ActionSelector"
 
         # Parameters
         self.state_size = state_size
@@ -117,7 +116,8 @@ class DQNPolicy(Policy):
             )
             self.loss = torch.tensor(0.0)
             self.memory = ReplayBuffer(
-                self.choice_size, self.PARAMETERS["batch_size"], self.PARAMETERS["buffer_size"], self.device
+                self.choice_size, self.PARAMETERS["batch_size"],
+                self.PARAMETERS["buffer_size"], self.device
             )
 
     def act(self, state, legal_choices):
@@ -170,7 +170,9 @@ class DQNPolicy(Policy):
 
         # Get expected Q-values from target model
         q_targets_next = torch.from_numpy(
-            self._get_q_targets_next(next_states, next_legal_choices)
+            self._get_q_targets_next(
+                next_states, next_legal_choices.cpu().numpy()
+            )
         ).to(self.device)
 
         # Compute Q-targets for current states
@@ -189,8 +191,6 @@ class DQNPolicy(Policy):
         # Update target network
         self._soft_update(self.qnetwork_local, self.qnetwork_target)
 
-    # TODO: To Review I don't like the fact that next_legal_choices must be moved to cpu
-    # to be converted into a numpy array to compute model_utils.masked_softmax
     def _get_q_targets_next(self, next_states, next_legal_choices):
         '''
         Get expected Q-values from target network
@@ -203,21 +203,20 @@ class DQNPolicy(Policy):
             q_targets_next = self.qnetwork_target(
                 next_states
             ).detach().cpu().numpy()
-            np_next_legal_choices = next_legal_choices.cpu().numpy()
 
             # Softmax Bellman
             if self.PARAMETERS["softmax_bellman"]:
                 return np.sum(
                     q_targets_next * model_utils.masked_softmax(
-                        q_locals_next, np_next_legal_choices
+                        q_locals_next, next_legal_choices
                     ), axis=1, keepdims=True
                 )
 
             # Standard Bellman
             best_choices = model_utils.masked_argmax(
-                q_targets_next, np_next_legal_choices
+                q_targets_next, next_legal_choices
             )
-            return q_targets_next[best_choices]
+            return np.take_along_axis(q_targets_next, best_choices, axis=1)
 
         def _dqn():
             q_targets_next = self.qnetwork_target(
