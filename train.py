@@ -1,4 +1,5 @@
 import os
+from numpy.lib.function_base import average
 from tqdm import tqdm
 from argparse import ArgumentParser
 from datetime import datetime
@@ -65,7 +66,7 @@ def format_choices_probabilities(choices_probabilities):
 
     buffer = ""
     for choice, choice_prob in zip(choices, choices_probabilities):
-        buffer += choice + " " + "{:.3f}".format(choice_prob) + " "
+        buffer += choice + " " + "{:^4.2%}".format(choice_prob) + " "
 
     return buffer
 
@@ -150,6 +151,8 @@ def train_agents(args):
     # Set state size and action size
     state_size = (args.max_depth ** 2) * observation_builder.FEATURES
     choice_size = 3
+    avg_score = 0.0
+    avg_completition = 0.0
 
     # Initialize the agents policy
     policy = DQNPolicy(
@@ -181,14 +184,14 @@ def train_agents(args):
     # Print initial training info
     training_timer = utils.Timer()
     training_timer.start()
-    print("\n🚉 Training {} trains on {}x{} grid for {} episodes, evaluating on {} episodes every {} episodes. Training id '{}'.\n".format(
+    print("\n🚉 Starting Training \t Training {} trains on {}x{} grid for {} episodes \tEvaluating on {} episodes every {} episodes".format(
         args.num_trains,
         args.width, args.height,
         args.n_train_episodes,
         args.n_val_episodes,
-        args.checkpoint,
-        training_id
+        args.checkpoint
     ))
+    print("\n🧠 Model with Training-Id '{}\n".format(training_id))
 
     # Do the specified number of episodes
     for episode in range(args.n_train_episodes):
@@ -337,6 +340,9 @@ def train_agents(args):
         normalized_score = (
             score / (args.max_moves * train_env.get_num_agents())
         )
+        avg_completition = (episode * avg_completition +
+                            completion)/(episode + 1)
+        avg_score = (episode * avg_score + normalized_score)/(episode + 1)
         choices_probs = choices_count / np.sum(choices_count)
 
         # Save model and replay buffer at checkpoint
@@ -350,16 +356,22 @@ def train_agents(args):
                     '-' + str(episode) + '.pkl'
                 )
 
-        # Print final episode info
+        # Print episode info
         print(
-            '\r🚂 Episode {}'
-            '\t 🏆 Score: {:.3f}'
-            '\t 💯 Done: {:.2f}%'
-            '\t 🎲 Epsilon: {:.3f} '
-            '\t 🔀 Choices probabilities: {}'.format(
+            '\r🚂 Episode {:4n}'
+            '\t 🏆 Score: {:<+4.3f}'
+            ' Avg: {:>+4.3f}'
+            '\t 💯 Done: {:<7.2%}'
+            ' Avg: {:>7.2%}'
+            '\t 🦶 Steps {:3n}'
+            '\t 🎲 Epsilon: {:4.3f} '
+            '\t 🔀 Choices probabilities: {:^}'.format(
                 episode,
                 normalized_score,
-                100 * completion,
+                avg_score,
+                completion,
+                avg_completition,
+                steps,
                 policy.choice_selector.epsilon,
                 format_choices_probabilities(choices_probs)
             ), end="\n"
@@ -418,7 +430,18 @@ def train_agents(args):
             "timer/total", training_timer.get_current(), episode
         )
 
-    print(f'\tTraining ended... Saving current model\n')
+    print("\n\r🏁 Training Ended \tTrained {} trains on {}x{} grid for {} episodes \t Evaluated on {} episodes every {} episodes".format(
+        args.num_trains,
+        args.width, args.height,
+        args.n_train_episodes,
+        args.n_val_episodes,
+        args.checkpoint
+    ))
+    print("\n💾 Replay buffer status: {}/{} experiences".format(
+        len(policy.memory), policy.PARAMETERS["buffer_size"]
+    ))
+
+    print("\n🧠 Saving model with Training-Id '{}".format(training_id))
     policy.save('./checkpoints/' + training_id + '-latest')
     if args.save_replay_buffer:
         policy.save_replay_buffer(
@@ -438,7 +461,8 @@ def eval_policy(args, env, policy, val_seeds):
     scores, completions, steps = [], [], []
 
     # Do the specified number of episodes
-    for episode, seed in tqdm(enumerate(val_seeds), desc="Validation"):
+    print('\nStarting Validation:')
+    for episode, seed in enumerate(val_seeds):
         score = 0.0
         final_step = 0
         obs, info = env.reset(
@@ -511,18 +535,33 @@ def eval_policy(args, env, policy, val_seeds):
             env_renderer.close_window()
 
         # Save final scores
-        scores.append(score / (args.max_moves * env.get_num_agents()))
+        normalized_score = (
+            score / (args.max_moves * env.get_num_agents())
+        )
+        scores.append(normalized_score)
         tasks_finished = sum(done[idx] for idx in env.get_agent_handles())
-        done_fraction = tasks_finished / max(1, env.get_num_agents())
-        completions.append(done_fraction)
+        completion = tasks_finished / env.get_num_agents()
+        completions.append(completion)
         steps.append(final_step)
+
+        print(
+            '\r🚂 Validation {:3n}'
+            '\t 🏆 Score: {:+4.3f}'
+            '\t 💯 Done: {:7.2%}'
+            '\t 🦶 Steps: {:4n}'.format(
+                episode,
+                normalized_score,
+                completion,
+                final_step
+            ), end="\n"
+        )
 
         # Log validation metrics to tensorboard
         tensorboard_log(
             "validation/env_scores", score, episode,
         )
         tensorboard_log(
-            "validation/env_completions", done_fraction, episode,
+            "validation/env_completions", completion, episode,
         )
         tensorboard_log(
             "validation/env_steps", final_step, episode
@@ -530,9 +569,14 @@ def eval_policy(args, env, policy, val_seeds):
 
     # Print validation results
     print(
-        "✅ Validation: score {:.3f} done {:.1f}%".format(
-            np.mean(scores), np.mean(completions) * 100.0
-        ), end="\n"
+        '\r✅ Validation End'
+        '\t 🏆 Avg Score: {:+1.3f}'
+        '\t 💯 Avg Done: {:7.1%}%'
+        '\t 🦶 Avg Steps: {:5.2f}'.format(
+            np.mean(scores),
+            np.mean(completions),
+            np.mean(steps)
+        ), end="\n\n"
     )
     return scores, completions, steps
 
