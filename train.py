@@ -37,9 +37,12 @@ def tensorboard_log(writer, name, x, y):
     '''
     Log the given x/y values to tensorboard
     '''
-    if type(x) in (int, float, str):
+    if not isinstance(x, np.ndarray) and not isinstance(x, list):
         writer.add_scalar(name, x, y)
     else:
+        if ((isinstance(x, list) and len(x) == 0) or
+                (isinstance(x, np.ndarray) and x.size == 0)):
+            return
         writer.add_scalar(f"{name}_min", np.min(x), y)
         writer.add_scalar(f"{name}_max", np.max(x), y)
         writer.add_scalar(f"{name}_mean", np.mean(x), y)
@@ -187,7 +190,7 @@ def train_agents(args):
     ))
 
     # Do the specified number of episodes
-    for episode in range(args.n_train_episodes + 1):
+    for episode in range(args.n_train_episodes):
         # Initialize timers
         step_timer = utils.Timer()
         reset_timer = utils.Timer()
@@ -204,6 +207,7 @@ def train_agents(args):
                 random_seed=env_utils.get_seed(train_env)
             )
         reset_timer.end()
+        rail = train_env.obs_builder.railway_encoding
         if args.render_every and episode % args.render_every == 0:
             env_renderer = RenderTool(
                 train_env,
@@ -212,6 +216,7 @@ def train_agents(args):
                 screen_height=1080,
                 screen_width=1920
             )
+
         # Compute agents with same source
         agents_with_same_start = env_utils.get_agents_same_start(train_env)
 
@@ -219,12 +224,12 @@ def train_agents(args):
         score, steps = 0, 0
         choices_taken = []
         legal_actions = {
-            handle: observation_builder.railway_encoding.get_legal_actions(
+            handle: rail.get_legal_actions(
                 handle
             ) for handle in range(args.num_trains)
         }
         legal_choices = {
-            handle: observation_builder.railway_encoding.get_legal_choices(
+            handle: rail.get_legal_choices(
                 handle, legal_actions[handle]
             )
             for handle in range(args.num_trains)
@@ -233,9 +238,10 @@ def train_agents(args):
         choices_count = [0] * choice_size
         action_dict = dict()
         choice_dict = dict()
+        rewards = {handle: 0 for handle in range(args.num_trains)}
 
         # Do an episode
-        for step in range(args.max_moves + 1):
+        for step in range(args.max_moves):
             # Inference step
             inference_timer.start()
 
@@ -249,15 +255,13 @@ def train_agents(args):
             for agent in train_env.get_agent_handles():
                 update_values[agent] = False
                 if info['action_required'][agent]:
-                    if observation_builder.railway_encoding.is_real_decision(agent):
-                        legal_actions[agent] = observation_builder.railway_encoding.get_legal_actions(
-                            agent
-                        )
-                        legal_choices[agent] = observation_builder.railway_encoding.get_legal_choices(
+                    if rail.is_real_decision(agent):
+                        legal_actions[agent] = rail.get_legal_actions(agent)
+                        legal_choices[agent] = rail.get_legal_choices(
                             agent, legal_actions[agent]
                         )
                         choice = policy.act(obs[agent], legal_choices[agent])
-                        action = observation_builder.railway_encoding.map_choice_to_action(
+                        action = rail.map_choice_to_action(
                             choice, legal_choices[agent]
                         )
                         update_values[agent] = True
@@ -265,11 +269,7 @@ def train_agents(args):
                         choices_taken.append(choice)
                         choice_dict.update({agent: choice})
                     else:
-                        actions = observation_builder.railway_encoding.get_actions(
-                            agent
-                        )
-                        if len(actions) != 1:
-                            print(f"Rotte actions: {actions}")
+                        actions = rail.get_actions(agent)
                         assert len(actions) == 1
                         action = actions[0]
                 else:
@@ -293,20 +293,23 @@ def train_agents(args):
 
             # Update replay buffer and train agent
             for agent in train_env.get_agent_handles():
+
+                # Accumulate rewards for choices
+                rewards[agent] += all_rewards[agent]
+
                 # Only learn from timesteps where something happened
                 if update_values[agent] or done['__all__']:
-                    legal_actions[agent] = observation_builder.railway_encoding.get_legal_actions(
-                        agent
-                    )
-                    next_legal_choices = observation_builder.railway_encoding.get_legal_choices(
+                    legal_actions[agent] = rail.get_legal_actions(agent)
+                    next_legal_choices = rail.get_legal_choices(
                         agent, legal_actions[agent]
                     )
                     learn_timer.start()
                     experience = (
                         obs[agent], legal_choices[agent], choice_dict[agent],
-                        all_rewards[agent], next_obs[agent], next_legal_choices, done[agent]
+                        rewards[agent], next_obs[agent], next_legal_choices, done[agent]
                     )
                     policy.step(experience)
+                    rewards[agent] = 0
                     learn_timer.end()
 
                 # Update observation and score
@@ -460,7 +463,7 @@ def train_agents(args):
         )
 
 
-def eval_policy(args, railway_encoding, env, policy):
+def eval_policy(args, env, policy):
     '''
     Perform a validation round with the given policy
     in the specified environment
@@ -469,8 +472,7 @@ def eval_policy(args, railway_encoding, env, policy):
     scores, completions, steps = [], [], []
 
     # Do the specified number of episodes
-    print("\nValidation round...")
-    for episode in tqdm(range(args.n_val_episodes)):
+    for episode in tqdm(range(args.n_val_episodes), desc="Validation"):
         score = 0.0
         final_step = 0
         if args.fix_random:
@@ -485,7 +487,9 @@ def eval_policy(args, railway_encoding, env, policy):
         agents_with_same_start = env_utils.get_agents_same_start(env)
 
         # Do an episode
-        for step in range(args.max_moves - 1):
+        rail = env.obs_builder.railway_encoding
+        for step in range(args.max_moves):
+
             # Prioritize enter of faster agent in the environment
             for position in agents_with_same_start:
                 if len(agents_with_same_start[position]) > 0:
@@ -496,22 +500,17 @@ def eval_policy(args, railway_encoding, env, policy):
             # Perform a step
             for agent in env.get_agent_handles():
                 if info['action_required'][agent]:
-                    if railway_encoding.is_real_decision(agent):
-                        legal_actions = railway_encoding.get_legal_actions(
-                            agent
-                        )
-                        legal_choices = railway_encoding.get_legal_choices(
+                    if rail.is_real_decision(agent):
+                        legal_actions = rail.get_legal_actions(agent)
+                        legal_choices = rail.get_legal_choices(
                             agent, legal_actions
                         )
                         choice = policy.act(obs[agent], legal_choices)
-                        action = railway_encoding.map_choice_to_action(
-                            choice, legal_choices)
-                    else:
-                        actions = railway_encoding.get_actions(
-                            agent
+                        action = rail.map_choice_to_action(
+                            choice, legal_choices
                         )
-                        if len(actions) != 1:
-                            print(f"Rotte actions: {actions}")
+                    else:
+                        actions = rail.get_actions(agent)
                         assert len(actions) == 1
                         action = actions[0]
                 else:

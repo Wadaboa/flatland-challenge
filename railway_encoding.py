@@ -426,6 +426,15 @@ class CellOrientationGraph():
             )
         return actions
 
+    def no_successors_nodes(self, unpacked=False):
+        graph = self._unpacked_graph if unpacked else self.graph
+        no_succ = []
+        for node in graph.nodes:
+            succ = self.get_successors(node, unpacked=unpacked)
+            if len(succ) == 0:
+                no_succ.append(node)
+        return no_succ
+
     def position_by_action(self, handle, action):
         '''
         Return the next node that the agent will occupy if it performs the given action

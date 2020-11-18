@@ -20,13 +20,13 @@
 * [ ] Insert prior bias to the network
 * [ ] Initialize weights of the network
 * [ ] Check hyperparameter network
-* [ ] Change reward based on choices
+* [x] Change reward based on choices
 * [ ] Implement other Networks
 
 ## Policy
 
 * [ ] Finish and check ActionPolicy development
-* [ ] Review _get_q_targets_next
+* [x] Review _get_q_targets_next
 
 ## Replay Buffer
 
