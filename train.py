@@ -378,9 +378,7 @@ def train_agents(args):
 
         # Evaluate policy and log results at some interval
         if episode > 0 and episode % args.checkpoint_interval == 0 and args.n_val_episodes > 0:
-            scores, completions, val_steps = eval_policy(
-                args, observation_builder.railway_encoding, val_env, policy
-            )
+            scores, completions, val_steps = eval_policy(args, val_env, policy)
 
             # Save final validation scores
             smoothed_val_normalized_score = (
@@ -394,7 +392,8 @@ def train_agents(args):
 
             # Log validation metrics to tensorboard
             tensorboard_log(
-                writer, "validation/scores", scores, episode)
+                writer, "validation/scores", scores, episode
+            )
             tensorboard_log(
                 writer, "validation/completions", completions, episode
             )

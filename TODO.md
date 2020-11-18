@@ -17,7 +17,7 @@
 
 ## Model
 
-* [ ] Insert prior bias to the network
+* [ ] Insert prior bias into the network (to replicate standard action probabilities)
 * [ ] Initialize weights of the network
 * [ ] Check hyperparameter network
 * [x] Change reward based on choices
@@ -30,5 +30,8 @@
 
 ## Replay Buffer
 
-* [ ] Try Prioritized Experience Replay
-* [ ] Stop storing legal_choices into the Buffer - we never use them
+* [ ] Prioritized experience replay
+* [ ] Sample by giving more weight to the latest inserted experiences
+* [ ] Sample experiences of the same agent
+* [ ] Sample experiences in temporal order (and add a recurrent unit to the DQN)
+* [ ] Stop storing legal_choices into the buffer (we never use them)

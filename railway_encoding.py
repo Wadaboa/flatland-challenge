@@ -335,10 +335,17 @@ class CellOrientationGraph():
         '''
         Map the given RailEnvActions actions to a list of RailEnvChoices
         '''
+        done_agents = sum([
+            1 for agent in self.agents
+            if agent.status in (RailAgentStatus.DONE, RailAgentStatus.DONE_REMOVED)
+        ])
+        remaining_agents = len(self.agents) - done_agents
         legal_moves = {
             env_utils.RailEnvChoices.CHOICE_LEFT: False,
             env_utils.RailEnvChoices.CHOICE_RIGHT: False,
-            env_utils.RailEnvChoices.STOP: self.is_before_join(handle)
+            env_utils.RailEnvChoices.STOP: (
+                self.is_before_join(handle) and remaining_agents > 1
+            )
         }
         if RailEnvActions.MOVE_FORWARD in actions:
             # If RailEnvActions.MOVE_LEFT or RailEnvActions.MOVE_RIGHT in legal actions
