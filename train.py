@@ -21,7 +21,8 @@ import utils
 import env_utils
 
 
-RANDOM_SEED = 14
+RANDOM_SEED = 1
+WRITER = SummaryWriter()
 
 
 def set_num_threads(num_threads):
@@ -33,21 +34,26 @@ def set_num_threads(num_threads):
     os.environ["MKL_NUM_THREADS"] = str(num_threads)
 
 
-def tensorboard_log(writer, name, x, y):
+def tensorboard_log(name, x, y, plot=['min', 'max', 'mean', 'std', 'hist']):
     '''
     Log the given x/y values to tensorboard
     '''
     if not isinstance(x, np.ndarray) and not isinstance(x, list):
-        writer.add_scalar(name, x, y)
+        WRITER.add_scalar(name, x, y)
     else:
         if ((isinstance(x, list) and len(x) == 0) or
                 (isinstance(x, np.ndarray) and x.size == 0)):
             return
-        writer.add_scalar(f"{name}_min", np.min(x), y)
-        writer.add_scalar(f"{name}_max", np.max(x), y)
-        writer.add_scalar(f"{name}_mean", np.mean(x), y)
-        writer.add_scalar(f"{name}_std", np.std(x), y)
-        writer.add_histogram(name, np.array(x), y)
+        if 'min' in plot:
+            WRITER.add_scalar(f"{name}_min", np.min(x), y)
+        if 'max' in plot:
+            WRITER.add_scalar(f"{name}_max", np.max(x), y)
+        if 'mean' in plot:
+            WRITER.add_scalar(f"{name}_mean", np.mean(x), y)
+        if 'std' in plot:
+            WRITER.add_scalar(f"{name}_std", np.std(x), y)
+        if 'hist' in plot:
+            WRITER.add_histogram(name, np.array(x), y)
 
 
 def format_choices_probabilities(choices_probabilities):
@@ -135,17 +141,15 @@ def train_agents(args):
     train_env = create_rail_env(args, observation_builder, env=args.train_env)
     val_env = create_rail_env(args, observation_builder, env=args.val_env)
 
+    # Define "static" random seeds for evaluation purposes
+    val_seeds = [
+        env_utils.get_seed(val_env)
+        for e in range(args.n_val_episodes)
+    ]
+
     # Set state size and action size
     state_size = (args.max_depth ** 2) * observation_builder.FEATURES
     choice_size = 3
-
-    # Smoothed values used as target for hyperparameter tuning
-    smoothed_normalized_score = -1.0
-    smoothed_val_normalized_score = -1.0
-    smoothed_completion = 0.0
-    smoothed_val_completion = 0.0
-    train_smoothing = 0.99
-    val_smoothing = 0.9
 
     # Initialize the agents policy
     policy = DQNPolicy(
@@ -170,9 +174,6 @@ def train_agents(args):
         len(policy.memory), policy.PARAMETERS["buffer_size"]
     ))
 
-    # Set tensorboard writer
-    writer = SummaryWriter()
-
     # Set the unique ID for this training
     now = datetime.now()
     training_id = now.strftime('%Y%m%d-%H%M%S')
@@ -181,11 +182,11 @@ def train_agents(args):
     training_timer = utils.Timer()
     training_timer.start()
     print("\n🚉 Training {} trains on {}x{} grid for {} episodes, evaluating on {} episodes every {} episodes. Training id '{}'.\n".format(
-        train_env.get_num_agents(),
+        args.num_trains,
         args.width, args.height,
         args.n_train_episodes,
         args.n_val_episodes,
-        args.checkpoint_interval,
+        args.checkpoint,
         training_id
     ))
 
@@ -208,7 +209,7 @@ def train_agents(args):
             )
         reset_timer.end()
         rail = train_env.obs_builder.railway_encoding
-        if args.render_every and episode % args.render_every == 0:
+        if args.render_every and not args.render_val and episode % args.render_every == 0:
             env_renderer = RenderTool(
                 train_env,
                 agent_render_variant=AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX,
@@ -223,22 +224,13 @@ def train_agents(args):
         # Initialize data structures for training info
         score, steps = 0, 0
         choices_taken = []
-        legal_actions = {
-            handle: rail.get_legal_actions(
-                handle
-            ) for handle in range(args.num_trains)
-        }
-        legal_choices = {
-            handle: rail.get_legal_choices(
-                handle, legal_actions[handle]
-            )
-            for handle in range(args.num_trains)
-        }
+        legal_choices = {handle: [] for handle in range(args.num_trains)}
         update_values = [False] * args.num_trains
         choices_count = [0] * choice_size
         action_dict = dict()
         choice_dict = dict()
         rewards = {handle: 0 for handle in range(args.num_trains)}
+        arrived_agents = set()
 
         # Do an episode
         for step in range(args.max_moves):
@@ -256,14 +248,15 @@ def train_agents(args):
                 update_values[agent] = False
                 if info['action_required'][agent]:
                     if rail.is_real_decision(agent):
-                        legal_actions[agent] = rail.get_legal_actions(agent)
+                        legal_actions = rail.get_legal_actions(agent)
                         legal_choices[agent] = rail.get_legal_choices(
-                            agent, legal_actions[agent]
+                            agent, legal_actions
                         )
                         choice = policy.act(obs[agent], legal_choices[agent])
                         action = rail.map_choice_to_action(
-                            choice, legal_choices[agent]
+                            choice, legal_actions
                         )
+                        assert action != RailEnvActions.DO_NOTHING.value
                         update_values[agent] = True
                         choices_count[choice] += 1
                         choices_taken.append(choice)
@@ -286,7 +279,7 @@ def train_agents(args):
             step_timer.end()
 
             # Render an episode at some interval
-            if args.render_every and episode % args.render_every == 0:
+            if args.render_every and not args.render_val and episode % args.render_every == 0:
                 env_renderer.render_env(
                     show=True, show_observations=False, show_predictions=True, show_rowcols=True
                 )
@@ -294,14 +287,18 @@ def train_agents(args):
             # Update replay buffer and train agent
             for agent in train_env.get_agent_handles():
 
-                # Accumulate rewards for choices
-                rewards[agent] += all_rewards[agent]
+                # Accumulate rewards for choices if the agent is not arrived,
+                # otherwise return a positive reward equal to the maximum
+                # number of steps
+                if done[agent]:
+                    rewards[agent] = args.max_moves
+                else:
+                    rewards[agent] += all_rewards[agent]
 
                 # Only learn from timesteps where something happened
-                if update_values[agent] or done['__all__']:
-                    legal_actions[agent] = rail.get_legal_actions(agent)
+                if update_values[agent] or (done[agent] and agent not in arrived_agents):
                     next_legal_choices = rail.get_legal_choices(
-                        agent, legal_actions[agent]
+                        agent, rail.get_legal_actions(agent)
                     )
                     learn_timer.start()
                     experience = (
@@ -311,6 +308,10 @@ def train_agents(args):
                     policy.step(experience)
                     rewards[agent] = 0
                     learn_timer.end()
+
+                # Add agent to the list of arrived agents
+                if done[agent]:
+                    arrived_agents.add(agent)
 
                 # Update observation and score
                 obs[agent] = next_obs[agent].copy()
@@ -322,7 +323,7 @@ def train_agents(args):
                 break
 
         # Close window
-        if args.render_every and episode % args.render_every == 0:
+        if args.render_every and not args.render_val and episode % args.render_every == 0:
             env_renderer.close_window()
 
         # Epsilon decay
@@ -332,22 +333,14 @@ def train_agents(args):
         tasks_finished = sum(
             done[i] for i in train_env.get_agent_handles()
         )
-        completion = tasks_finished / max(1, train_env.get_num_agents())
+        completion = tasks_finished / train_env.get_num_agents()
         normalized_score = (
             score / (args.max_moves * train_env.get_num_agents())
         )
         choices_probs = choices_count / np.sum(choices_count)
-        smoothed_normalized_score = (
-            smoothed_normalized_score * train_smoothing +
-            normalized_score * (1.0 - train_smoothing)
-        )
-        smoothed_completion = (
-            smoothed_completion * train_smoothing +
-            completion * (1.0 - train_smoothing)
-        )
 
         # Save model and replay buffer at checkpoint
-        if episode % args.checkpoint_interval == 0:
+        if episode % args.checkpoint == 0:
             policy.save(
                 './checkpoints/' + training_id + '-' + str(episode)
             )
@@ -361,98 +354,69 @@ def train_agents(args):
         print(
             '\r🚂 Episode {}'
             '\t 🏆 Score: {:.3f}'
-            ' Avg: {:.3f}'
             '\t 💯 Done: {:.2f}%'
-            ' Avg: {:.2f}%'
             '\t 🎲 Epsilon: {:.3f} '
             '\t 🔀 Choices probabilities: {}'.format(
                 episode,
                 normalized_score,
-                smoothed_normalized_score,
                 100 * completion,
-                100 * smoothed_completion,
                 policy.choice_selector.epsilon,
                 format_choices_probabilities(choices_probs)
-            ), end=" "
+            ), end="\n"
         )
 
         # Evaluate policy and log results at some interval
-        if episode > 0 and episode % args.checkpoint_interval == 0 and args.n_val_episodes > 0:
-            scores, completions, val_steps = eval_policy(args, val_env, policy)
-
-            # Save final validation scores
-            smoothed_val_normalized_score = (
-                smoothed_val_normalized_score * val_smoothing +
-                np.mean(scores) * (1.0 - val_smoothing)
-            )
-            smoothed_val_completion = (
-                smoothed_val_completion * val_smoothing +
-                np.mean(completions) * (1.0 - val_smoothing)
+        if episode > 0 and episode % args.checkpoint == 0 and args.n_val_episodes > 0:
+            scores, completions, val_steps = eval_policy(
+                args, val_env, policy, val_seeds
             )
 
             # Log validation metrics to tensorboard
             tensorboard_log(
-                writer, "validation/scores", scores, episode
+                "validation/scores", scores, episode,
+                plot=['mean', 'std', 'hist']
             )
             tensorboard_log(
-                writer, "validation/completions", completions, episode
+                "validation/completions", completions, episode,
+                plot=['mean', 'std', 'hist']
             )
             tensorboard_log(
-                writer, "validation/steps", val_steps, episode
-            )
-            tensorboard_log(
-                writer, "validation/smoothed_score",
-                smoothed_val_normalized_score, episode
-            )
-            tensorboard_log(
-                writer, "validation/smoothed_completion",
-                smoothed_val_completion, episode
+                "validation/steps", val_steps, episode,
+                plot=['mean', 'std', 'hist']
             )
 
         # Log training actions info to tensorboard
         tensorboard_log(
-            writer, "choices/distribution", np.array(choices_taken), episode
+            "choices/left", choices_probs[env_utils.RailEnvChoices.CHOICE_LEFT.value], episode
         )
         tensorboard_log(
-            writer, "choices/left", choices_probs[env_utils.RailEnvChoices.CHOICE_LEFT.value], episode
+            "choices/right", choices_probs[env_utils.RailEnvChoices.CHOICE_RIGHT.value], episode
         )
         tensorboard_log(
-            writer, "choices/right", choices_probs[env_utils.RailEnvChoices.CHOICE_RIGHT.value], episode
-        )
-        tensorboard_log(
-            writer, "choices/stop", choices_probs[env_utils.RailEnvChoices.STOP.value], episode
+            "choices/stop", choices_probs[env_utils.RailEnvChoices.STOP.value], episode
         )
 
         # Log training info to tensorboard
-        tensorboard_log(writer, "training/steps", steps, episode)
+        tensorboard_log("training/steps", steps, episode)
         tensorboard_log(
-            writer, "training/epsilon", policy.choice_selector.epsilon, episode
+            "training/epsilon", policy.choice_selector.epsilon, episode
         )
         tensorboard_log(
-            writer, "training/loss", policy.loss.data.item(), episode
+            "training/loss", policy.loss.data.item(), episode
         )
-        tensorboard_log(writer, "training/score", normalized_score, episode)
-        tensorboard_log(writer, "training/completion", completion, episode)
+        tensorboard_log("training/score", normalized_score, episode)
+        tensorboard_log("training/completion", completion, episode)
         tensorboard_log(
-            writer, "training/smoothed_score", smoothed_normalized_score, episode
-        )
-        tensorboard_log(
-            writer, "training/smoothed_completion", smoothed_completion, episode
-        )
-        tensorboard_log(
-            writer, "training/buffer_size", len(policy.memory), episode
+            "training/buffer_size", len(policy.memory), episode
         )
 
         # Log training time info to tensorboard
-        tensorboard_log(writer, "timer/reset", reset_timer.get(), episode)
-        tensorboard_log(writer, "timer/step", step_timer.get(), episode)
-        tensorboard_log(writer, "timer/learn", learn_timer.get(), episode)
+        tensorboard_log("timer/reset", reset_timer.get(), episode)
+        tensorboard_log("timer/step", step_timer.get(), episode)
+        tensorboard_log("timer/learn", learn_timer.get(), episode)
         tensorboard_log(
-            writer, "timer/total", training_timer.get_current(), episode
+            "timer/total", training_timer.get_current(), episode
         )
-
-        # Close tensorboard
-        writer.close()
 
     print(f'\tTraining ended... Saving current model\n')
     policy.save('./checkpoints/' + training_id + '-latest')
@@ -461,8 +425,11 @@ def train_agents(args):
             './replay_buffers/' + training_id + '-latest' + '.pkl'
         )
 
+    # Close Tensorboard writer
+    WRITER.close()
 
-def eval_policy(args, env, policy):
+
+def eval_policy(args, env, policy, val_seeds):
     '''
     Perform a validation round with the given policy
     in the specified environment
@@ -471,15 +438,20 @@ def eval_policy(args, env, policy):
     scores, completions, steps = [], [], []
 
     # Do the specified number of episodes
-    for episode in tqdm(range(args.n_val_episodes), desc="Validation"):
+    for episode, seed in tqdm(enumerate(val_seeds), desc="Validation"):
         score = 0.0
         final_step = 0
-        if args.fix_random:
-            obs, info = env.reset(random_seed=RANDOM_SEED)
-        else:
-            obs, info = env.reset(
-                regenerate_rail=True, regenerate_schedule=True,
-                random_seed=env_utils.get_seed(env)
+        obs, info = env.reset(
+            regenerate_rail=True, regenerate_schedule=True,
+            random_seed=seed
+        )
+        if args.render_every and args.render_val and episode % args.render_every == 0:
+            env_renderer = RenderTool(
+                env,
+                agent_render_variant=AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX,
+                show_debug=True,
+                screen_height=1080,
+                screen_width=1920
             )
 
         # Compute agents with same source
@@ -515,7 +487,15 @@ def eval_policy(args, env, policy):
                 else:
                     action = RailEnvActions.DO_NOTHING.value
                 action_dict.update({agent: action})
+
+            # Perform a step in the environment
             obs, all_rewards, done, info = env.step(action_dict)
+
+            # Render an episode at some interval
+            if args.render_every and args.render_val and episode % args.render_every == 0:
+                env_renderer.render_env(
+                    show=True, show_observations=False, show_predictions=True, show_rowcols=True
+                )
 
             # Update rewards
             for agent in env.get_agent_handles():
@@ -526,17 +506,33 @@ def eval_policy(args, env, policy):
             if done['__all__']:
                 break
 
+        # Close window
+        if args.render_every and args.render_val and episode % args.render_every == 0:
+            env_renderer.close_window()
+
         # Save final scores
         scores.append(score / (args.max_moves * env.get_num_agents()))
         tasks_finished = sum(done[idx] for idx in env.get_agent_handles())
-        completions.append(tasks_finished / max(1, env.get_num_agents()))
+        done_fraction = tasks_finished / max(1, env.get_num_agents())
+        completions.append(done_fraction)
         steps.append(final_step)
+
+        # Log validation metrics to tensorboard
+        tensorboard_log(
+            "validation/env_scores", score, episode,
+        )
+        tensorboard_log(
+            "validation/env_completions", done_fraction, episode,
+        )
+        tensorboard_log(
+            "validation/env_steps", final_step, episode
+        )
 
     # Print validation results
     print(
         "✅ Validation: score {:.3f} done {:.1f}%".format(
             np.mean(scores), np.mean(completions) * 100.0
-        ), end=" "
+        ), end="\n"
     )
     return scores, completions, steps
 
@@ -623,7 +619,7 @@ def parse_args():
         help="number of evaluation episodes", type=int
     )
     parser.add_argument(
-        "--checkpoint_interval", action='store', default=100,
+        "--checkpoint", action='store', default=100,
         help="checkpoint interval", type=int
     )
     parser.add_argument(
@@ -653,6 +649,10 @@ def parse_args():
     parser.add_argument(
         "--render_every", action='store', default=0,
         help="how often to render an episode", type=int
+    )
+    parser.add_argument(
+        "--render_val", action='store_true',
+        help="render validation or training episodes"
     )
     parser.add_argument(
         "--fix_random", action='store_true',

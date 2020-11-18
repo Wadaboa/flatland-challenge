@@ -75,7 +75,8 @@ class DQNPolicy(Policy):
         "dueling": True,
         "double": True,
         "softmax_bellman": False,
-        "loss": "huber"
+        "loss": "huber",
+        "nonlinearity": "tanh"
     }
 
     def __init__(self, state_size, choice_size, choice_selector, training=False):
@@ -100,7 +101,8 @@ class DQNPolicy(Policy):
         # Q-Network
         net = DuelingDQN if self.PARAMETERS["dueling"] else DQN
         self.qnetwork_local = net(
-            self.state_size, self.choice_size, hidden_sizes=self.PARAMETERS["hidden_sizes"]
+            self.state_size, self.choice_size, hidden_sizes=self.PARAMETERS["hidden_sizes"],
+            nonlinearity=self.PARAMETERS["nonlinearity"]
         ).to(self.device)
 
         # Training parameters

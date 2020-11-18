@@ -307,23 +307,31 @@ class CellOrientationGraph():
             )
         return position
 
+    def is_done(self, handle):
+        '''
+        Returns True if an agent arrived at its target
+        '''
+        return self.agents[handle].status in (
+            RailAgentStatus.DONE, RailAgentStatus.DONE_REMOVED
+        )
+
     def map_choice_to_action(self, choice, legal_actions):
         '''
         Map the given RailEnvChoices action to a RailEnvActions action
         '''
         # If CHOICE_LEFT, then priorities are MOVE_LEFT, MOVE_FORWARD, MOVE_RIGHT
         if choice == env_utils.RailEnvChoices.CHOICE_LEFT.value:
-            if RailEnvActions.MOVE_LEFT.value in legal_actions:
+            if RailEnvActions.MOVE_LEFT in legal_actions:
                 return RailEnvActions.MOVE_LEFT.value
-            elif RailEnvActions.MOVE_FORWARD.value in legal_actions:
+            elif RailEnvActions.MOVE_FORWARD in legal_actions:
                 return RailEnvActions.MOVE_FORWARD.value
-            elif RailEnvActions.MOVE_RIGHT.value in legal_actions:
+            elif RailEnvActions.MOVE_RIGHT in legal_actions:
                 return RailEnvActions.MOVE_RIGHT.value
         # If CHOICE_RIGHT, then priorities are MOVE_RIGHT, MOVE_FORWARD
         elif choice == env_utils.RailEnvChoices.CHOICE_RIGHT.value:
-            if RailEnvActions.MOVE_RIGHT.value in legal_actions:
+            if RailEnvActions.MOVE_RIGHT in legal_actions:
                 return RailEnvActions.MOVE_RIGHT.value
-            elif RailEnvActions.MOVE_FORWARD.value in legal_actions:
+            elif RailEnvActions.MOVE_FORWARD in legal_actions:
                 return RailEnvActions.MOVE_FORWARD.value
         # If STOP, then the priority is STOP_MOVING
         elif choice == env_utils.RailEnvChoices.STOP.value:
@@ -335,16 +343,17 @@ class CellOrientationGraph():
         '''
         Map the given RailEnvActions actions to a list of RailEnvChoices
         '''
-        done_agents = sum([
-            1 for agent in self.agents
-            if agent.status in (RailAgentStatus.DONE, RailAgentStatus.DONE_REMOVED)
-        ])
-        remaining_agents = len(self.agents) - done_agents
+        # If the agent is arrived, only stop moving is possible
+        # (necessary because of flatland bug)
+        if self.is_done(handle):
+            return [False, False, True]
+
+        # If only one agent, stop moving is not legal
         legal_moves = {
             env_utils.RailEnvChoices.CHOICE_LEFT: False,
             env_utils.RailEnvChoices.CHOICE_RIGHT: False,
             env_utils.RailEnvChoices.STOP: (
-                self.is_before_join(handle) and remaining_agents > 1
+                self.is_before_join(handle) and not self.only_one_agent()
             )
         }
         if RailEnvActions.MOVE_FORWARD in actions:
@@ -413,11 +422,23 @@ class CellOrientationGraph():
                 return self.graph.nodes[succ]['is_join']
         return False
 
+    def only_one_agent(self):
+        '''
+        Returns True iff only one agent remains in the railway
+        '''
+        done_agents = sum([
+            self.is_done(agent) for agent in range(len(self.agents))
+        ])
+        remaining_agents = len(self.agents) - done_agents
+        return remaining_agents < 2
+
     def is_real_decision(self, handle):
         '''
         Returns True iff the agent has to make a decision
         '''
-        return self.is_at_fork(handle) or self.is_before_join(handle)
+        return self.is_at_fork(handle) or (
+            self.is_before_join(handle) and not self.only_one_agent()
+        )
 
     def get_actions(self, handle):
         '''

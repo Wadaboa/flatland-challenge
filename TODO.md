@@ -18,7 +18,7 @@
 ## Model
 
 * [ ] Insert prior bias into the network (to replicate standard action probabilities)
-* [ ] Initialize weights of the network
+* [x] Initialize weights of the network
 * [ ] Check hyperparameter network
 * [x] Change reward based on choices
 * [ ] Implement other Networks

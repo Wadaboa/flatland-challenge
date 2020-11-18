@@ -219,7 +219,9 @@ class CustomObservation(ObservationBuilder):
         print(self.observations[handle])
         print()
         '''
-        self.observations[handle] = self.normalize(self.observations[handle])
+        self.observations[handle] = self.dumb_normalization(
+            self.observations[handle]
+        )
         '''
         print()
         print(f'POSTHandle: {handle}')
@@ -565,6 +567,16 @@ class CustomObservation(ObservationBuilder):
                         break
 
         return deadlocks, crash_turns
+
+    def dumb_normalization(self, observation):
+        '''
+        Substitute infinite values with a lower bound (e.g. -1),
+        but avoid scaling observations
+        '''
+        normalized_observation = observation.copy()
+        normalized_observation[normalized_observation == -np.inf] = -self.LOWER
+        normalized_observation[normalized_observation == np.inf] = -self.LOWER
+        return normalized_observation
 
     def normalize(self, observation):
         '''
