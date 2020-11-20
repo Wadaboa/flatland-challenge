@@ -126,6 +126,7 @@ class DQNPolicy(Policy):
         '''
         Perform action selection based on the Q-values returned by the network
         '''
+        # Add 1 dimension to state to simulate a mini-batch of size 1
         state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
         self.qnetwork_local.eval()
         with torch.no_grad():
@@ -136,6 +137,7 @@ class DQNPolicy(Policy):
         legal_choices = np.full(
             choice_values.shape, legal_choices, dtype=bool
         )
+
         return (
             self.choice_selector.select(choice_values, legal_choices) if self.training
             else model_utils.masked_argmax(choice_values, legal_choices, dim=0)

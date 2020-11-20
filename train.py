@@ -251,7 +251,7 @@ def train_agents(args):
                 update_values[agent] = False
                 if info['action_required'][agent]:
                     if rail.is_real_decision(agent):
-                        legal_actions = rail.get_legal_actions(agent)
+                        legal_actions = rail.get_agent_actions(agent)
                         legal_choices[agent] = rail.get_legal_choices(
                             agent, legal_actions
                         )
@@ -259,14 +259,14 @@ def train_agents(args):
                         action = rail.map_choice_to_action(
                             choice, legal_actions
                         )
-                        assert action != RailEnvActions.DO_NOTHING.value
+                        assert action != RailEnvActions.DO_NOTHING.value, action
                         update_values[agent] = True
                         choices_count[choice] += 1
                         choices_taken.append(choice)
                         choice_dict.update({agent: choice})
                     else:
-                        actions = rail.get_actions(agent)
-                        assert len(actions) == 1
+                        actions = rail.get_agent_actions(agent)
+                        assert len(actions) == 1, actions
                         action = actions[0]
                 else:
                     # An action is not required if the train hasn't joined the railway network,
@@ -301,7 +301,7 @@ def train_agents(args):
                 # Only learn from timesteps where something happened
                 if update_values[agent] or (done[agent] and agent not in arrived_agents):
                     next_legal_choices = rail.get_legal_choices(
-                        agent, rail.get_legal_actions(agent)
+                        agent, rail.get_agent_actions(agent)
                     )
                     learn_timer.start()
                     experience = (
@@ -496,7 +496,7 @@ def eval_policy(args, env, policy, val_seeds):
             for agent in env.get_agent_handles():
                 if info['action_required'][agent]:
                     if rail.is_real_decision(agent):
-                        legal_actions = rail.get_legal_actions(agent)
+                        legal_actions = rail.get_agent_actions(agent)
                         legal_choices = rail.get_legal_choices(
                             agent, legal_actions
                         )
@@ -504,9 +504,10 @@ def eval_policy(args, env, policy, val_seeds):
                         action = rail.map_choice_to_action(
                             choice, legal_choices
                         )
+                        assert action != RailEnvActions.DO_NOTHING.value, action
                     else:
-                        actions = rail.get_actions(agent)
-                        assert len(actions) == 1
+                        actions = rail.get_agent_actions(agent)
+                        assert len(actions) == 1, actions
                         action = actions[0]
                 else:
                     action = RailEnvActions.DO_NOTHING.value
@@ -625,7 +626,7 @@ def parse_args():
         help="malfunction maximum duration", type=int
     )
     parser.add_argument(
-        "--max_moves", action='store', default=500,
+        "--max_moves", action='store', default=300, #500
         help="maximum number of moves in an episode", type=int
     )
     parser.add_argument(
@@ -655,7 +656,7 @@ def parse_args():
 
     # Training parameters
     parser.add_argument(
-        "--n_train_episodes", action='store', default=2500,
+        "--n_train_episodes", action='store', default=10000,  # 2500
         help="number of episodes to run", type=int
     )
     parser.add_argument(
@@ -675,7 +676,7 @@ def parse_args():
         help="final exploration", type=float
     )
     parser.add_argument(
-        "--eps_decay", action='store', default=0.99,
+        "--eps_decay", action='store', default=1e-4,  # 0.99
         help="exploration decay", type=float
     )
     parser.add_argument(

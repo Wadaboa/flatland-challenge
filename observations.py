@@ -56,7 +56,7 @@ SpeedData = namedtuple('SpeedData', ['times', 'remaining'])
 
 class CustomObservation(ObservationBuilder):
 
-    FEATURES = 12
+    FEATURES = 17
     LOWER, UPPER = -1, 1
     UNDER, OVER = -2, 2
 
@@ -91,7 +91,6 @@ class CustomObservation(ObservationBuilder):
         self.other_agents = dict()
         self.speed_data = dict()
         self.last_nodes = []
-        self.last_positions = []
         for handle, agent in enumerate(self.env.agents):
             times_per_cell = int(np.reciprocal(agent.speed_data["speed"]))
             self.speed_data[handle] = SpeedData(
@@ -105,7 +104,6 @@ class CustomObservation(ObservationBuilder):
             self.last_nodes.append(
                 (prev_node, prev_weight * times_per_cell)
             )
-            self.last_positions.append(agent_position)
 
     def reset(self):
         self._init_env()
@@ -146,26 +144,16 @@ class CustomObservation(ObservationBuilder):
         )
 
         # Update shortest cumulative weights
-        shortest_cum_weights = np.array(
-            self.compute_cumulative_weights(
-                handle, prediction.edges, remaining_turns_in_cell
-            )
-        )
-        self._shortest_cum_weights[handle, :shortest_cum_weights.shape[0]] = (
-            shortest_cum_weights
+        self._shortest_cum_weights[handle] = self.compute_cumulative_weights(
+            handle, prediction.lenght, prediction.edges, remaining_turns_in_cell
         )
 
         # Update last visited node and last positions
-        agent_position = tuple(shortest_path[0])
-        if self.last_positions[handle] != agent_position:
-            if self.railway_encoding.is_node(agent_position):
-                self.last_nodes[handle] = (agent_position, 0)
-            else:
-                self.last_nodes[handle] = (
-                    self.last_nodes[handle][0],
-                    self.last_nodes[handle][1] + 1
-                )
-            self.last_positions[handle] = agent_position
+        prev_node, prev_weight = self.railway_encoding.previous_node(
+            prediction.path[0]
+        )
+        self.last_nodes[handle] = (
+            prev_node, prev_weight*self.speed_data[handle].times)
 
     def get_many(self, handles=None):
         self.predictions = self.predictor.get_many()
@@ -191,7 +179,7 @@ class CustomObservation(ObservationBuilder):
         self.observations[handle] = np.full(
             (self.max_depth, self.max_depth, self.FEATURES), -np.inf
         )
-        if self.predictions[handle] is not None:
+        if self.predictions[handle] is not None and self.railway_encoding.is_real_decision(handle):
             shortest_path_prediction, deviation_paths_prediction = self.predictions[handle]
             packed_positions, packed_weights = self._get_shortest_packed_positions()
             shortest_feats = self._fill_path_values(
@@ -203,7 +191,7 @@ class CustomObservation(ObservationBuilder):
                 prev_deadlocks = 0
                 prev_num_agents_values = None
                 if i >= 1:
-                    prev_deadlocks = shortest_feats[i - 1, 10]
+                    prev_deadlocks = shortest_feats[i - 1, 11]
                     prev_num_agents_values = prev_num_agents[i - 1, :]
                 dev_feats = self._fill_path_values(
                     handle, deviation_prediction, packed_positions, packed_weights,
@@ -220,8 +208,8 @@ class CustomObservation(ObservationBuilder):
         print()
         '''
         self.observations[handle] = self.dumb_normalization(
-            self.observations[handle]
-        )
+            self.observations[handle])
+        # self.observations[handle] = self.normalize(self.observations[handle])
         '''
         print()
         print(f'POSTHandle: {handle}')
@@ -238,21 +226,18 @@ class CustomObservation(ObservationBuilder):
         '''
         # Adjust weights and positions based on which kind of path
         # we are analyzing (shortest or deviation)
-        path_weights = np.zeros((self.max_depth,))
+        path_weights = self._shortest_cum_weights[handle]
         path = prediction.path
         positions = [node[:-1] for node in path]
         if deviation == False:
-            weights = self._shortest_cum_weights[handle]
             positions = packed_positions[handle].tolist()[:len(path)]
             positions_weights = packed_weights[handle]
-            path_weights[:weights.shape[0]] = weights
         else:
-            weights = np.array(
+            path_weights = np.array(
                 self.compute_cumulative_weights(
-                    handle, prediction.edges, turns_to_deviation
+                    handle, prediction.lenght, prediction.edges, turns_to_deviation
                 )
             )
-            path_weights[:weights.shape[0]] = weights
             positions_weights = path_weights
 
         # Compute features
@@ -267,25 +252,54 @@ class CustomObservation(ObservationBuilder):
             handle, positions, positions_weights, packed_positions, packed_weights,
             prev_deadlocks=prev_deadlocks
         )
+        are_forks = self.compute_is_fork(path)
+        choices = self.compute_possible_choices(
+            path, prediction.edges, are_forks)
 
         # Build the feature matrix
         feature_matrix = np.vstack([
             num_agents, agent_distances, malfunctions,
-            target_distances, c_nodes, deadlocks, deadlock_distances
+            target_distances, path_weights, c_nodes, deadlocks, deadlock_distances,
+            are_forks, choices
         ]).T
 
         return feature_matrix
 
-    def compute_cumulative_weights(self, handle, edges, initial_distance):
+    def compute_is_fork(self, path):
+        '''
+        Given a path, returns for each node if it is a fork or not
+        '''
+        are_forks = np.full((self.max_depth,), self.LOWER)
+        for ind, node in enumerate(path):
+            are_forks[ind] = self.railway_encoding.is_fork(node)
+        return are_forks
+
+    def compute_possible_choices(self, path, edges, are_forks):
+        possible_choices = np.zeros((self.max_depth, 3))
+        for ind, node in enumerate(path):
+            actions = self.railway_encoding.get_actions(node)
+            possible_choices[ind] = self.railway_encoding.get_possible_choices(
+                node, actions)
+            if are_forks[ind] == 1 and ind < len(path) - 1:
+                action = edges[ind][2]['action']
+                possible_choices[ind] = self.railway_encoding.get_possible_choices(
+                    node, [action])
+        return np.transpose(possible_choices)
+
+    def compute_cumulative_weights(self, handle, lenght, edges, initial_distance):
         '''
         Given a list of edges, compute the cumulative sum of weights,
         representing the number of turns the given agent must perform
         to reach each node in the path
         '''
+        np_weights = np.zeros((self.max_depth,))
+        if lenght == np.inf:
+            np_weights = np.full((self.max_depth,), np.inf)
         weights = [initial_distance] + [
             e[2]['weight'] * self.speed_data[handle].times for e in edges
         ]
-        return np.cumsum(weights)
+        np_weights[:len(weights)] = np.cumsum(weights)
+        return np_weights
 
     def agents_in_path(self, handle, path, cum_weights, prev_num_agents=None):
         '''
@@ -574,8 +588,8 @@ class CustomObservation(ObservationBuilder):
         but avoid scaling observations
         '''
         normalized_observation = observation.copy()
-        normalized_observation[normalized_observation == -np.inf] = -self.LOWER
-        normalized_observation[normalized_observation == np.inf] = -self.LOWER
+        normalized_observation[normalized_observation == -np.inf] = self.LOWER
+        normalized_observation[normalized_observation == np.inf] = self.LOWER
         return normalized_observation
 
     def normalize(self, observation):
@@ -588,9 +602,12 @@ class CustomObservation(ObservationBuilder):
         agent_distances = normalized_observation[:, :, 4:6]
         malfunctions = normalized_observation[:, :, 6:8]
         target_distances = normalized_observation[:, :, 8]
-        c_nodes = normalized_observation[:, :, 9]
-        deadlocks = normalized_observation[:, :, 10]
-        deadlock_distances = normalized_observation[:, :, 11]
+        turns_to_node = normalized_observation[:, :, 9]
+        c_nodes = normalized_observation[:, :, 10]
+        deadlocks = normalized_observation[:, :, 11]
+        deadlock_distances = normalized_observation[:, :, 12]
+        are_forks = normalized_observation[:, :, 13]
+        choices = normalized_observation[:, :, 14:17]
 
         # Normalize number of agents in path
         done_agents = sum([
@@ -627,7 +644,12 @@ class CustomObservation(ObservationBuilder):
             agent_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER
         )
         target_distances = utils.min_max_scaling(
-            target_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER
+            target_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER,
+            known_min=0
+        )
+        turns_to_node = utils.min_max_scaling(
+            target_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER,
+            known_min=0
         )
         deadlock_distances = utils.min_max_scaling(
             deadlock_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER
@@ -638,9 +660,10 @@ class CustomObservation(ObservationBuilder):
         normalized_observation[:, :, 4:6] = agent_distances
         normalized_observation[:, :, 6:8] = malfunctions
         normalized_observation[:, :, 8] = target_distances
-        normalized_observation[:, :, 9] = c_nodes
-        normalized_observation[:, :, 10] = deadlocks
-        normalized_observation[:, :, 11] = deadlock_distances
+        normalized_observation[:, :, 9] = turns_to_node
+        normalized_observation[:, :, 10] = c_nodes
+        normalized_observation[:, :, 11] = deadlocks
+        normalized_observation[:, :, 12] = deadlock_distances
 
         # Sanity check
         normalized_observation[normalized_observation == -np.inf] = self.UNDER

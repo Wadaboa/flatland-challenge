@@ -30,14 +30,17 @@ class EpsilonGreedyActionSelector(ActionSelector):
             np.ones_like(actions, dtype=bool) if legal_actions is None
             else legal_actions
         )
-        #print(model_utils.masked_argmax(actions, legal_actions, dim=0))
         if random.random() > self.epsilon:
             return model_utils.masked_argmax(actions, legal_actions, dim=0)
         else:
             return random.choice(np.arange(actions.size)[legal_actions])
 
     def decay(self):
-        self.epsilon = max(self.epsilon_end, self.epsilon_decay * self.epsilon)
+        # Exponential Decay
+        # self.epsilon = max(self.epsilon_end, self.epsilon_decay * self.epsilon)
+        # Linear Decay
+        self.epsilon = max(
+            self.epsilon_end, self.epsilon-self.epsilon_decay)
 
     def reset(self):
         self.epsilon = self.epsilon_start

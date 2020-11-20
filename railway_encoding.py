@@ -2,6 +2,7 @@
 '''
 
 import itertools
+from networkx.algorithms.tree.recognition import is_forest
 
 import numpy as np
 import networkx as nx
@@ -224,6 +225,16 @@ class CellOrientationGraph():
         graph = self._unpacked_graph if unpacked else self.graph
         return node in graph.nodes
 
+    def get_predecessors(self, node, unpacked=False):
+        '''
+        Return the predecessors of the given node in the packed or
+        unpacked graph
+        '''
+        graph = self._unpacked_graph if unpacked else self.graph
+        if node not in graph.nodes:
+            return []
+        return list(graph.predecessors(node))
+
     def get_successors(self, node, unpacked=False):
         '''
         Return the successors of the given node in the packed or
@@ -339,6 +350,30 @@ class CellOrientationGraph():
         # Otherwise, last resort is DO_NOTHING
         return RailEnvActions.DO_NOTHING.value
 
+    def get_possible_choices(self, position, actions):
+        # If only one agent, stop moving is not legal
+        possible_moves = {
+            env_utils.RailEnvChoices.CHOICE_LEFT: False,
+            env_utils.RailEnvChoices.CHOICE_RIGHT: False,
+            env_utils.RailEnvChoices.STOP: (
+                self.is_before_join(position) and not self.only_one_agent()
+            )
+        }
+        if RailEnvActions.MOVE_FORWARD in actions:
+            # If RailEnvActions.MOVE_LEFT or RailEnvActions.MOVE_RIGHT in legal actions
+            if len(actions) > 1:
+                possible_moves[env_utils.RailEnvChoices.CHOICE_RIGHT] = True
+            possible_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
+        if RailEnvActions.MOVE_LEFT in actions:
+            possible_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
+        if RailEnvActions.MOVE_RIGHT in actions:
+            # If only RailEnvActions.MOVE_RIGHT in legal actions
+            if len(actions) == 1:
+                possible_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
+            else:
+                possible_moves[env_utils.RailEnvChoices.CHOICE_RIGHT] = True
+        return list(possible_moves.values())
+
     def get_legal_choices(self, handle, actions):
         '''
         Map the given RailEnvActions actions to a list of RailEnvChoices
@@ -348,37 +383,16 @@ class CellOrientationGraph():
         if self.is_done(handle):
             return [False, False, True]
 
-        # If only one agent, stop moving is not legal
-        legal_moves = {
-            env_utils.RailEnvChoices.CHOICE_LEFT: False,
-            env_utils.RailEnvChoices.CHOICE_RIGHT: False,
-            env_utils.RailEnvChoices.STOP: (
-                self.is_before_join(handle) and not self.only_one_agent()
-            )
-        }
-        if RailEnvActions.MOVE_FORWARD in actions:
-            # If RailEnvActions.MOVE_LEFT or RailEnvActions.MOVE_RIGHT in legal actions
-            if len(actions) > 1:
-                legal_moves[env_utils.RailEnvChoices.CHOICE_RIGHT] = True
-            legal_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
-        if RailEnvActions.MOVE_LEFT in actions:
-            legal_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
-        if RailEnvActions.MOVE_RIGHT in actions:
-            # If only RailEnvActions.MOVE_RIGHT in legal actions
-            if len(actions) == 1:
-                legal_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
-            else:
-                legal_moves[env_utils.RailEnvChoices.CHOICE_RIGHT] = True
-        return list(legal_moves.values())
+        return self.get_possible_choices(self.get_agent_cell(handle), actions)
 
     def get_legal_actions(self, handle):
         '''
         Compute and return all the active legal actions that the given agent can perform
         (an active action is MOVE_*), by removing actions that lead into an occupied cell
         '''
-        actions = self.get_actions(handle)
+        actions = self.get_agent_actions(handle)
         next_positions = [
-            self.position_by_action(handle, action)[:-1] for action in actions
+            self.agent_position_by_action(handle, action)[:-1] for action in actions
         ]
         agents_positions = [
             self.get_agent_cell(agent)[:-1] for agent in range(len(self.agents))
@@ -399,28 +413,36 @@ class CellOrientationGraph():
         # so as to avoid changing indexes
         for i in sorted(to_delete, reverse=True):
             del actions[i]
-
         return actions
+
+    def is_fork(self, position):
+        if position in self.graph.nodes:
+            return self.graph.nodes[position]['is_fork']
+        return False
+
+    def is_join(self, position):
+        if position in self.graph.nodes and self.graph.nodes[position]['is_join']:
+            return True
+        return False
+
+    def is_before_join(self, position):
+        successors = self.get_successors(position, unpacked=True)
+        for succ in successors:
+            if self.is_join(succ):
+                return True
+        return False
 
     def is_at_fork(self, handle):
         '''
         Returns True iff the agent is at a fork
         '''
-        position = self.get_agent_cell(handle)
-        if position in self.graph.nodes:
-            return self.graph.nodes[position]['is_fork']
-        return False
+        return self.is_fork(self.get_agent_cell(handle))
 
-    def is_before_join(self, handle):
+    def is_at_before_join(self, handle):
         '''
         Returns True iff the agent is before a join
         '''
-        position = self.get_agent_cell(handle)
-        successors = self.get_successors(position, unpacked=True)
-        for succ in successors:
-            if succ in self.graph.nodes:
-                return self.graph.nodes[succ]['is_join']
-        return False
+        return self.is_before_join(self.get_agent_cell(handle))
 
     def only_one_agent(self):
         '''
@@ -437,15 +459,14 @@ class CellOrientationGraph():
         Returns True iff the agent has to make a decision
         '''
         return self.is_at_fork(handle) or (
-            self.is_before_join(handle) and not self.only_one_agent()
+            self.is_at_before_join(handle) and not self.only_one_agent()
         )
 
-    def get_actions(self, handle):
+    def get_actions(self, position):
         '''
-        Return all the possible active actions that an agent can perform
+        Return all the possible active actions that can be performed from a given position
         (an active action is MOVE_*)
         '''
-        position = self.get_agent_cell(handle)
         successors = self.get_successors(position, unpacked=True)
         actions = []
         for succ in successors:
@@ -454,25 +475,34 @@ class CellOrientationGraph():
             )
         return actions
 
-    def no_successors_nodes(self, unpacked=False):
-        graph = self._unpacked_graph if unpacked else self.graph
-        no_succ = []
-        for node in graph.nodes:
-            succ = self.get_successors(node, unpacked=unpacked)
-            if len(succ) == 0:
-                no_succ.append(node)
-        return no_succ
+    def get_agent_actions(self, handle):
+        '''
+        Return all the possible active actions that an agent can perform
+        (an active action is MOVE_*)
+        '''
+        return self.get_actions(self.get_agent_cell(handle))
 
-    def position_by_action(self, handle, action):
+    def action_from_positions(self, source, dest, unpacked=True):
+        graph = self._unpacked_graph if unpacked else self.graph
+        if (source, dest) in graph.edges:
+            return graph.get_edge_data(source, dest)['action']
+        return None
+
+    def position_by_action(self, position, action):
         '''
-        Return the next node that the agent will occupy if it performs the given action
+        Return the next node if the given action will be performed in the given position
         '''
-        position = self.get_agent_cell(handle)
         successors = self.get_successors(position, unpacked=True)
         for succ in successors:
             if self._unpacked_graph.get_edge_data(position, succ)['action'] == action:
                 return succ
         return None
+
+    def agent_position_by_action(self, handle, action):
+        '''
+        Return the next node that the agent will occupy if it performs the given action
+        '''
+        self.position_by_action(self.get_agent_cell(handle), action)
 
     def shortest_paths(self, handle):
         '''
@@ -558,12 +588,13 @@ class CellOrientationGraph():
         edges = []
         starting_index = 0
         if path[0] not in self.graph.nodes:
-            fake_weight = nx.dijkstra_path_length(
+            fake_weight, mini_path = nx.bidirectional_dijkstra(
                 self._unpacked_graph, path[0], path[1]
             )
             edges.append((
                 path[0], path[1],
-                {'weight': fake_weight, 'action': RailEnvActions.MOVE_FORWARD}
+                {'weight': fake_weight, 'action': self._unpacked_graph.get_edge_data(
+                    mini_path[0], mini_path[1])['action']}
             ))
             starting_index = 1
         for i in range(starting_index, len(path) - 1):
@@ -601,6 +632,15 @@ class CellOrientationGraph():
             if new_node != node and new_node in self.graph:
                 nodes.append(new_node)
         return nodes
+
+    def no_successors_nodes(self, unpacked=False):
+        graph = self._unpacked_graph if unpacked else self.graph
+        no_succ = []
+        for node in graph.nodes:
+            succ = self.get_successors(node, unpacked=unpacked)
+            if len(succ) == 0:
+                no_succ.append(node)
+        return no_succ
 
     def draw_graph(self):
         '''
