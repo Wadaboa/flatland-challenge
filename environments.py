@@ -129,7 +129,6 @@ class RailEnvWrapper(RailEnv):
         }
         # Return the new observation vectors for each agent
         observation_dict = self._get_observations()
-
         return (self._normalize_obs(observation_dict), info_dict)
 
     def step(self, *args, **kwargs):

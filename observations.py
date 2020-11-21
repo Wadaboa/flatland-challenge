@@ -491,13 +491,6 @@ class GraphObservator(ObservationBuilder):
                                 cum_weights[j + 1] - cum_weights[j]
                             ) / self.speed_data[handle].times
 
-                            '''
-                            print()
-                            print(
-                                f'Handle {handle} -> Deadlock Edge: {source}-{dest} Space: {space} \n My Turns {cum_weights[j],cum_weights[j+1]} \n Oth Turns {packed_weights[agent, i],packed_weights[agent, i+1]}')
-                            print()
-                            '''
-
                             # Both agents in same edge: reduce space by how much they
                             # already have traversed
                             if cum_weights[j] < 0 and packed_weights[agent, i] < 0:

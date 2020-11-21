@@ -8,6 +8,13 @@
 * [ ] Check normalization correctness
 * [ ] Handle observation not present at all
 * [ ] Store agents in deadlock and substitute their shortest path as if they cannot reach their target (i.e. store current and next node)
+* [ ] Structure data to maintain choice logic - Padding on non taken choices
+* [ ] Refactor TreeObservation to be a binary tree
+
+## Prediction
+
+* [ ] Prefer shortest paths with less nodes
+* [ ] Identify and mark loop in the rail
 
 ## Main
 
@@ -21,7 +28,7 @@
 * [x] Initialize weights of the network
 * [ ] Check hyperparameter network
 * [x] Change reward based on choices
-* [ ] Implement other Networks
+* [ ] Implement other Networks - Graph Neural Networks
 
 ## Policy
 
