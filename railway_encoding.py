@@ -2,7 +2,6 @@
 '''
 
 import itertools
-from networkx.algorithms.tree.recognition import is_forest
 
 import numpy as np
 import networkx as nx
@@ -444,15 +443,17 @@ class CellOrientationGraph():
         '''
         return self.is_before_join(self.get_agent_cell(handle))
 
+    def remaining_agents(self):
+        done_agents = sum([
+            self.is_done(agent) for agent in range(len(self.agents))
+        ])
+        return len(self.agents) - done_agents
+
     def only_one_agent(self):
         '''
         Returns True iff only one agent remains in the railway
         '''
-        done_agents = sum([
-            self.is_done(agent) for agent in range(len(self.agents))
-        ])
-        remaining_agents = len(self.agents) - done_agents
-        return remaining_agents < 2
+        return self.remaining_agents() < 2
 
     def is_real_decision(self, handle):
         '''

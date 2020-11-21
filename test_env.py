@@ -213,10 +213,9 @@ def main():
         )
 
     # Initialize the agents policy
-    state_size = (args.max_depth ** 2) * observation_builder.FEATURES
     choice_size = 3
     if args.model != "":
-        policy = DDDQNPolicy(state_size, choice_size, evaluation_mode=True)
+        policy = DDDQNPolicy(env.state_size, choice_size, evaluation_mode=True)
         policy.load(args.model)
     else:
         policy = RandomPolicy()

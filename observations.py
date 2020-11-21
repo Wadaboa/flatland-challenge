@@ -12,7 +12,6 @@ from flatland.utils.ordered_set import OrderedSet
 from flatland.envs.rail_env import RailAgentStatus
 
 import utils
-from railway_encoding import CellOrientationGraph
 
 
 '''
@@ -54,29 +53,14 @@ Observation:
 SpeedData = namedtuple('SpeedData', ['times', 'remaining'])
 
 
-class CustomObservation(ObservationBuilder):
-
-    FEATURES = 17
-    LOWER, UPPER = -1, 1
-    UNDER, OVER = -2, 2
+class GraphObservator(ObservationBuilder):
 
     def __init__(self, max_depth, predictor):
         super().__init__()
         self.max_depth = max_depth
         self.predictor = predictor
         self.observations = dict()
-
-    def _init_env(self):
-        '''
-        Initialize the railway environment and the
-        predictor object
-        '''
-        self.railway_encoding = CellOrientationGraph(
-            grid=self.env.rail.grid, agents=self.env.agents
-        )
-        if self.predictor is not None:
-            self.predictor.set_railway_encoding(self.railway_encoding)
-            self.predictor.reset()
+        self.observation_dim = 17
 
     def _init_agents(self):
         '''
@@ -97,8 +81,8 @@ class CustomObservation(ObservationBuilder):
                 times=times_per_cell, remaining=0
             )
             self.other_agents[handle] = self.agent_handles - {handle}
-            agent_position = self.railway_encoding.get_agent_cell(handle)
-            prev_node, prev_weight = self.railway_encoding.previous_node(
+            agent_position = self.env.railway_encoding.get_agent_cell(handle)
+            prev_node, prev_weight = self.env.railway_encoding.previous_node(
                 agent_position
             )
             self.last_nodes.append(
@@ -106,8 +90,9 @@ class CustomObservation(ObservationBuilder):
             )
 
     def reset(self):
-        self._init_env()
         self._init_agents()
+        if self.predictor is not None:
+            self.predictor.reset()
 
     def set_env(self, env):
         super().set_env(env)
@@ -149,7 +134,7 @@ class CustomObservation(ObservationBuilder):
         )
 
         # Update last visited node and last positions
-        prev_node, prev_weight = self.railway_encoding.previous_node(
+        prev_node, prev_weight = self.env.railway_encoding.previous_node(
             prediction.path[0]
         )
         self.last_nodes[handle] = (
@@ -177,9 +162,9 @@ class CustomObservation(ObservationBuilder):
 
     def get(self, handle=0):
         self.observations[handle] = np.full(
-            (self.max_depth, self.max_depth, self.FEATURES), -np.inf
+            (self.max_depth, self.max_depth, self.observation_dim), -np.inf
         )
-        if self.predictions[handle] is not None and self.railway_encoding.is_real_decision(handle):
+        if self.predictions[handle] is not None and self.env.railway_encoding.is_real_decision(handle):
             shortest_path_prediction, deviation_paths_prediction = self.predictions[handle]
             packed_positions, packed_weights = self._get_shortest_packed_positions()
             shortest_feats = self._fill_path_values(
@@ -200,22 +185,6 @@ class CustomObservation(ObservationBuilder):
                     deviation=True
                 )
                 self.observations[handle][i + 1, :, :] = dev_feats
-
-        '''
-        print()
-        print(f'PREHandle: {handle}')
-        print(self.observations[handle])
-        print()
-        '''
-        self.observations[handle] = self.dumb_normalization(
-            self.observations[handle])
-        # self.observations[handle] = self.normalize(self.observations[handle])
-        '''
-        print()
-        print(f'POSTHandle: {handle}')
-        print(self.observations[handle])
-        print()
-        '''
         return self.observations[handle]
 
     def _fill_path_values(self, handle, prediction, packed_positions, packed_weights,
@@ -269,20 +238,20 @@ class CustomObservation(ObservationBuilder):
         '''
         Given a path, returns for each node if it is a fork or not
         '''
-        are_forks = np.full((self.max_depth,), self.LOWER)
+        are_forks = np.full((self.max_depth,), -np.inf)
         for ind, node in enumerate(path):
-            are_forks[ind] = self.railway_encoding.is_fork(node)
+            are_forks[ind] = self.env.railway_encoding.is_fork(node)
         return are_forks
 
     def compute_possible_choices(self, path, edges, are_forks):
         possible_choices = np.zeros((self.max_depth, 3))
         for ind, node in enumerate(path):
-            actions = self.railway_encoding.get_actions(node)
-            possible_choices[ind] = self.railway_encoding.get_possible_choices(
+            actions = self.env.railway_encoding.get_actions(node)
+            possible_choices[ind] = self.env.railway_encoding.get_possible_choices(
                 node, actions)
             if are_forks[ind] == 1 and ind < len(path) - 1:
                 action = edges[ind][2]['action']
-                possible_choices[ind] = self.railway_encoding.get_possible_choices(
+                possible_choices[ind] = self.env.railway_encoding.get_possible_choices(
                     node, [action])
         return np.transpose(possible_choices)
 
@@ -323,18 +292,18 @@ class CustomObservation(ObservationBuilder):
 
         # For each agent different than myself
         for agent in self.other_agents[handle]:
-            position = self.railway_encoding.get_agent_cell(agent)
+            position = self.env.railway_encoding.get_agent_cell(agent)
             # Check if agent is not DONE_REMOVED (position would be None)
             if position is not None:
                 # Take the other agent's next node in the packed graph
-                node, next_node_distance = self.railway_encoding.next_node(
+                node, next_node_distance = self.env.railway_encoding.next_node(
                     position
                 )
                 # Take every possible direction for the given node in the packed graph
-                nodes = self.railway_encoding.get_nodes((node[0], node[1]))
+                nodes = self.env.railway_encoding.get_nodes((node[0], node[1]))
                 # Check the next nodes of the next node in order to see
                 # the other agent's entry direction
-                next_nodes = self.railway_encoding.get_successors(node)
+                next_nodes = self.env.railway_encoding.get_successors(node)
 
                 # Check if one of the next nodes of the other agent are in my path
                 for other_node in nodes:
@@ -581,102 +550,3 @@ class CustomObservation(ObservationBuilder):
                         break
 
         return deadlocks, crash_turns
-
-    def dumb_normalization(self, observation):
-        '''
-        Substitute infinite values with a lower bound (e.g. -1),
-        but avoid scaling observations
-        '''
-        normalized_observation = observation.copy()
-        normalized_observation[normalized_observation == -np.inf] = self.LOWER
-        normalized_observation[normalized_observation == np.inf] = self.LOWER
-        return normalized_observation
-
-    def normalize(self, observation):
-        '''
-        Normalize the given observations by performing min-max scaling
-        over individual features
-        '''
-        normalized_observation = observation.copy()
-        num_agents = normalized_observation[:, :, 0:4]
-        agent_distances = normalized_observation[:, :, 4:6]
-        malfunctions = normalized_observation[:, :, 6:8]
-        target_distances = normalized_observation[:, :, 8]
-        turns_to_node = normalized_observation[:, :, 9]
-        c_nodes = normalized_observation[:, :, 10]
-        deadlocks = normalized_observation[:, :, 11]
-        deadlock_distances = normalized_observation[:, :, 12]
-        are_forks = normalized_observation[:, :, 13]
-        choices = normalized_observation[:, :, 14:17]
-
-        # Normalize number of agents in path
-        done_agents = sum([
-            1 for i in self.agent_handles
-            if self.env.agents[i].status in (RailAgentStatus.DONE, RailAgentStatus.DONE_REMOVED)
-        ])
-        remaining_agents = len(self.agent_handles) - done_agents
-        num_agents = utils.min_max_scaling(
-            num_agents, self.LOWER, self.UPPER, self.UNDER, self.OVER,
-            known_min=0, known_max=remaining_agents
-        )
-
-        # Normalize malfunctions
-        max_malfunctions = self.env.malfunction_generator.get_process_data().max_duration
-        malfunctions = utils.min_max_scaling(
-            malfunctions, self.LOWER, self.UPPER, self.UNDER, self.OVER,
-            known_min=0, known_max=max_malfunctions
-        )
-
-        # Normalize common nodes
-        c_nodes = utils.min_max_scaling(
-            c_nodes, self.LOWER, self.UPPER, self.UNDER, self.OVER,
-            known_min=0, known_max=remaining_agents
-        )
-
-        # Normalize deadlocks
-        deadlocks = utils.min_max_scaling(
-            deadlocks, self.LOWER, self.UPPER, self.UNDER, self.OVER,
-            known_min=0, known_max=remaining_agents
-        )
-
-        # Normalize distances
-        agent_distances = utils.min_max_scaling(
-            agent_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER
-        )
-        target_distances = utils.min_max_scaling(
-            target_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER,
-            known_min=0
-        )
-        turns_to_node = utils.min_max_scaling(
-            target_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER,
-            known_min=0
-        )
-        deadlock_distances = utils.min_max_scaling(
-            deadlock_distances, self.LOWER, self.UPPER, self.UNDER, self.OVER
-        )
-
-        # Build the normalized observation
-        normalized_observation[:, :, 0:4] = num_agents
-        normalized_observation[:, :, 4:6] = agent_distances
-        normalized_observation[:, :, 6:8] = malfunctions
-        normalized_observation[:, :, 8] = target_distances
-        normalized_observation[:, :, 9] = turns_to_node
-        normalized_observation[:, :, 10] = c_nodes
-        normalized_observation[:, :, 11] = deadlocks
-        normalized_observation[:, :, 12] = deadlock_distances
-
-        # Sanity check
-        normalized_observation[normalized_observation == -np.inf] = self.UNDER
-        normalized_observation[normalized_observation == np.inf] = self.OVER
-
-        # Check if the output is in range [UNDER, OVER]
-        if not np.logical_and(
-            normalized_observation >= self.UNDER,
-            normalized_observation <= self.OVER
-        ).all():
-            print(observation)
-            print()
-            print(normalized_observation)
-            print(f'Done Agent: {done_agents} Remaining: {remaining_agents}')
-
-        return normalized_observation

@@ -1,5 +1,7 @@
 import os
-from numpy.lib.function_base import average
+import copy
+import random
+
 from tqdm import tqdm
 from argparse import ArgumentParser
 from datetime import datetime
@@ -8,22 +10,29 @@ import numpy as np
 import torch
 from torch.utils.tensorboard import SummaryWriter
 
-from flatland.envs.rail_env import RailEnv, RailEnvActions
+from flatland.envs.rail_env import RailEnvActions
 from flatland.envs.rail_generators import rail_from_file, sparse_rail_generator
+from flatland.envs.observations import TreeObsForRailEnv
+from flatland.envs.predictions import ShortestPathPredictorForRailEnv
 from flatland.envs.malfunction_generators import ParamMalfunctionGen, MalfunctionParameters
 from flatland.envs.schedule_generators import sparse_schedule_generator
 from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
 from action_selectors import EpsilonGreedyActionSelector
+from env_utils import RailEnvChoices
 from predictions import ShortestPathPredictor
-from observations import CustomObservation
+from observations import GraphObservator
 from policies import DQNPolicy
+from environments import RailEnvWrapper
 import utils
 import env_utils
 
 
 RANDOM_SEED = 1
 WRITER = SummaryWriter()
+OBSERVATORS = {"tree": TreeObsForRailEnv, "graph": GraphObservator}
+PREDICTORS = {"tree": ShortestPathPredictorForRailEnv,
+              "graph": ShortestPathPredictor}
 
 
 def set_num_threads(num_threads):
@@ -71,7 +80,7 @@ def format_choices_probabilities(choices_probabilities):
     return buffer
 
 
-def create_rail_env(args, observation_builder, env=""):
+def create_rail_env(args, env=""):
     '''
     Build a RailEnv object with the specified parameters
     '''
@@ -86,7 +95,8 @@ def create_rail_env(args, observation_builder, env=""):
             max_rails_in_city=args.max_rails_in_cities,
             seed=RANDOM_SEED
         )
-
+    predictor = PREDICTORS[args.observation](max_depth=args.max_depth)
+    observator = OBSERVATORS[args.observation](args.max_depth, predictor)
     # Initialize malfunctions
     malfunctions = None
     if args.malfunction:
@@ -110,13 +120,13 @@ def create_rail_env(args, observation_builder, env=""):
     schedule_generator = sparse_schedule_generator(speed_map, seed=RANDOM_SEED)
 
     # Build the environment
-    return RailEnv(
+    return RailEnvWrapper(
         width=args.width,
         height=args.height,
         rail_generator=rail_generator,
         schedule_generator=schedule_generator,
         number_of_agents=args.num_trains,
-        obs_builder_object=observation_builder,
+        obs_builder_object=observator,
         malfunction_generator=malfunctions,
         remove_agents_at_target=True,
         random_seed=RANDOM_SEED
@@ -133,14 +143,10 @@ def train_agents(args):
         utils.fix_random(RANDOM_SEED)
 
     # Initialize predictor and observer
-    predictor = ShortestPathPredictor(max_depth=args.max_depth)
-    observation_builder = CustomObservation(
-        max_depth=args.max_depth, predictor=predictor
-    )
 
     # Setup the environments
-    train_env = create_rail_env(args, observation_builder, env=args.train_env)
-    val_env = create_rail_env(args, observation_builder, env=args.val_env)
+    train_env = create_rail_env(args, env=args.train_env)
+    val_env = create_rail_env(args, env=args.val_env)
 
     # Define "static" random seeds for evaluation purposes
     val_seeds = [
@@ -149,14 +155,13 @@ def train_agents(args):
     ]
 
     # Set state size and action size
-    state_size = (args.max_depth ** 2) * observation_builder.FEATURES
     choice_size = 3
     avg_score = 0.0
     avg_completition = 0.0
 
     # Initialize the agents policy
     policy = DQNPolicy(
-        state_size, choice_size,
+        train_env.state_size, choice_size,
         choice_selector=EpsilonGreedyActionSelector(
             epsilon_start=args.eps_start, epsilon_decay=args.eps_decay, epsilon_end=args.eps_end
         ), training=True
@@ -194,7 +199,7 @@ def train_agents(args):
     print("\n🧠 Model with Training-Id '{}\n".format(training_id))
 
     # Do the specified number of episodes
-    for episode in range(args.n_train_episodes):
+    for episode in range(args.n_train_episodes + 1):
         # Initialize timers
         step_timer = utils.Timer()
         reset_timer = utils.Timer()
@@ -206,12 +211,9 @@ def train_agents(args):
         if args.fix_random:
             obs, info = train_env.reset(random_seed=RANDOM_SEED)
         else:
-            obs, info = train_env.reset(
-                regenerate_rail=True, regenerate_schedule=True,
-                random_seed=env_utils.get_seed(train_env)
-            )
+            obs, info = train_env.reset(regenerate_rail=True, regenerate_schedule=True,
+                                        activate_agents=False, random_seed=env_utils.get_seed(train_env))
         reset_timer.end()
-        rail = train_env.obs_builder.railway_encoding
         if args.render_every and not args.render_val and episode % args.render_every == 0:
             env_renderer = RenderTool(
                 train_env,
@@ -227,13 +229,24 @@ def train_agents(args):
         # Initialize data structures for training info
         score, steps = 0, 0
         choices_taken = []
-        legal_choices = {handle: [] for handle in range(args.num_trains)}
+        legal_choices = dict()
         update_values = [False] * args.num_trains
         choices_count = [0] * choice_size
         action_dict = dict()
         choice_dict = dict()
-        rewards = {handle: 0 for handle in range(args.num_trains)}
+        rewards = dict()
+        prev_obs = dict()
+        prev_choices = dict()
         arrived_agents = set()
+        for handle in range(args.num_trains):
+            legal_choices[handle] = train_env.railway_encoding.get_legal_choices(
+                handle,
+                train_env.railway_encoding.get_agent_actions(handle)
+            )
+            rewards[handle] = 0
+            prev_choices[handle] = RailEnvChoices.CHOICE_LEFT.value
+            if obs[handle] is not None:
+                prev_obs[handle] = obs[handle].copy()
 
         # Do an episode
         for step in range(args.max_moves):
@@ -250,22 +263,25 @@ def train_agents(args):
             for agent in train_env.get_agent_handles():
                 update_values[agent] = False
                 if info['action_required'][agent]:
-                    if rail.is_real_decision(agent):
-                        legal_actions = rail.get_agent_actions(agent)
-                        legal_choices[agent] = rail.get_legal_choices(
+                    if train_env.railway_encoding.is_real_decision(agent):
+                        legal_actions = train_env.railway_encoding.get_agent_actions(
+                            agent)
+                        legal_choices[agent] = train_env.railway_encoding.get_legal_choices(
                             agent, legal_actions
                         )
                         choice = policy.act(obs[agent], legal_choices[agent])
-                        action = rail.map_choice_to_action(
+                        action = train_env.railway_encoding.map_choice_to_action(
                             choice, legal_actions
                         )
-                        assert action != RailEnvActions.DO_NOTHING.value, action
+                        assert action != RailEnvActions.DO_NOTHING.value, (
+                            choice, legal_actions)
                         update_values[agent] = True
                         choices_count[choice] += 1
                         choices_taken.append(choice)
                         choice_dict.update({agent: choice})
                     else:
-                        actions = rail.get_agent_actions(agent)
+                        actions = train_env.railway_encoding.get_agent_actions(
+                            agent)
                         assert len(actions) == 1, actions
                         action = actions[0]
                 else:
@@ -300,24 +316,23 @@ def train_agents(args):
 
                 # Only learn from timesteps where something happened
                 if update_values[agent] or (done[agent] and agent not in arrived_agents):
-                    next_legal_choices = rail.get_legal_choices(
-                        agent, rail.get_agent_actions(agent)
-                    )
                     learn_timer.start()
                     experience = (
-                        obs[agent], legal_choices[agent], choice_dict[agent],
-                        rewards[agent], next_obs[agent], next_legal_choices, done[agent]
+                        prev_obs[agent], prev_choices[agent], rewards[agent], obs[agent], legal_choices[agent], done[agent]
                     )
                     policy.step(experience)
                     rewards[agent] = 0
                     learn_timer.end()
+                    prev_obs[agent] = obs[agent].copy()
+                    prev_choices[agent] = choice_dict[agent]
 
                 # Add agent to the list of arrived agents
                 if done[agent]:
                     arrived_agents.add(agent)
 
                 # Update observation and score
-                obs[agent] = next_obs[agent].copy()
+                if next_obs[agent] is not None:
+                    obs[agent] = next_obs[agent].copy()
                 score += all_rewards[agent]
 
             # Break if every agent arrived
@@ -482,7 +497,6 @@ def eval_policy(args, env, policy, val_seeds):
         agents_with_same_start = env_utils.get_agents_same_start(env)
 
         # Do an episode
-        rail = env.obs_builder.railway_encoding
         for step in range(args.max_moves):
 
             # Prioritize enter of faster agent in the environment
@@ -495,18 +509,20 @@ def eval_policy(args, env, policy, val_seeds):
             # Perform a step
             for agent in env.get_agent_handles():
                 if info['action_required'][agent]:
-                    if rail.is_real_decision(agent):
-                        legal_actions = rail.get_agent_actions(agent)
-                        legal_choices = rail.get_legal_choices(
+                    if env.railway_encoding.is_real_decision(agent):
+                        legal_actions = env.railway_encoding.get_agent_actions(
+                            agent)
+                        legal_choices = env.railway_encoding.get_legal_choices(
                             agent, legal_actions
                         )
                         choice = policy.act(obs[agent], legal_choices)
-                        action = rail.map_choice_to_action(
-                            choice, legal_choices
+                        action = env.railway_encoding.map_choice_to_action(
+                            choice, legal_actions
                         )
-                        assert action != RailEnvActions.DO_NOTHING.value, action
+                        assert action != RailEnvActions.DO_NOTHING.value, (
+                            choice, legal_actions)
                     else:
-                        actions = rail.get_agent_actions(agent)
+                        actions = env.railway_encoding.get_agent_actions(agent)
                         assert len(actions) == 1, actions
                         action = actions[0]
                 else:
@@ -626,7 +642,7 @@ def parse_args():
         help="malfunction maximum duration", type=int
     )
     parser.add_argument(
-        "--max_moves", action='store', default=300, #500
+        "--max_moves", action='store', default=300,  # 500
         help="maximum number of moves in an episode", type=int
     )
     parser.add_argument(
@@ -652,6 +668,10 @@ def parse_args():
     parser.add_argument(
         "--variable_speed", action='store_true', default=False,
         help="enable variable speed"
+    )
+    parser.add_argument(
+        "--observation", action='store', default='graph', choices=OBSERVATORS.keys(),
+        help="select observation type"
     )
 
     # Training parameters

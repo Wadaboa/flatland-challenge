@@ -167,7 +167,7 @@ class DQNPolicy(Policy):
         '''
         # Sample a batch of experiences
         experiences = self.memory.sample()
-        states, legal_choices, choices, rewards, next_states, next_legal_choices, dones = experiences
+        states, choices, rewards, next_states, next_legal_choices, dones = experiences
 
         # Get expected Q-values from local model
         q_expected = self.qnetwork_local(states).gather(1, choices)

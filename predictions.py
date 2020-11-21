@@ -24,13 +24,16 @@ class ShortestPathPredictor(PredictionBuilder):
     def __init__(self, max_depth=5):
         super().__init__(max_depth)
 
+    def set_env(self, env):
+        super().set_env(env)
+
     def reset(self):
         '''
         Initialize shortest paths for each agent
         '''
         self._shortest_paths = dict()
         for agent in self.env.agents:
-            self._shortest_paths[agent.handle] = self.railway_encoding.shortest_paths(
+            self._shortest_paths[agent.handle] = self.env.railway_encoding.shortest_paths(
                 agent.handle
             )
 
@@ -41,8 +44,8 @@ class ShortestPathPredictor(PredictionBuilder):
         which cannot be followed anymore.
         The returned shortest paths have the agent's position as the first element.
         '''
-        position = self.railway_encoding.get_agent_cell(handle)
-        node, _ = self.railway_encoding.next_node(position)
+        position = self.env.railway_encoding.get_agent_cell(handle)
+        node, _ = self.env.railway_encoding.next_node(position)
         chosen_path = None
         paths_to_delete = []
         for i, shortest_path in enumerate(self._shortest_paths[handle]):
@@ -79,12 +82,12 @@ class ShortestPathPredictor(PredictionBuilder):
 
         # Compute shortest paths, if no path is already available
         if chosen_path is None:
-            self._shortest_paths[handle] = self.railway_encoding.shortest_paths(
+            self._shortest_paths[handle] = self.env.railway_encoding.shortest_paths(
                 handle
             )
             if not self._shortest_paths[handle]:
                 if position == node:
-                    node = self.railway_encoding.get_successors(node)[0]
+                    node = self.env.railway_encoding.get_successors(node)[0]
                 return np.inf, [position, node]
 
             chosen_path = self._shortest_paths[handle][0]
@@ -102,12 +105,12 @@ class ShortestPathPredictor(PredictionBuilder):
         padding = self.max_depth - 1
         if lenght < np.inf:
             padding -= len(path)
-            source, _ = self.railway_encoding.next_node(path[0])
+            source, _ = self.env.railway_encoding.next_node(path[0])
             if source != path[0]:
                 start = 1
                 deviation_paths.append(_empty_prediction())
             for i in range(start, depth - 1):
-                paths = self.railway_encoding.deviation_paths(
+                paths = self.env.railway_encoding.deviation_paths(
                     handle, path[i], path[i + 1]
                 )
                 deviation_path = []
@@ -115,10 +118,10 @@ class ShortestPathPredictor(PredictionBuilder):
                 if len(paths) > 0:
                     deviation_path = paths[0][1]
                     deviation_lenght = paths[0][0]
-                    edges = self.railway_encoding.edges_from_path(
+                    edges = self.env.railway_encoding.edges_from_path(
                         deviation_path[:self.max_depth]
                     )
-                    pos = self.railway_encoding.positions_from_path(
+                    pos = self.env.railway_encoding.positions_from_path(
                         deviation_path[:self.max_depth]
                     )
                     deviation_paths.append(
@@ -159,10 +162,10 @@ class ShortestPathPredictor(PredictionBuilder):
 
         # Build predictions
         lenght, path = self.get_shortest_path(handle)
-        edges = self.railway_encoding.edges_from_path(
+        edges = self.env.railway_encoding.edges_from_path(
             path[:self.max_depth]
         )
-        pos = self.railway_encoding.positions_from_path(
+        pos = self.env.railway_encoding.positions_from_path(
             path[:self.max_depth]
         )
         shortest_path_prediction = Prediction(
@@ -177,9 +180,3 @@ class ShortestPathPredictor(PredictionBuilder):
         self.env.dev_pred_dict[handle] = visited
 
         return (shortest_path_prediction, deviation_paths_prediction)
-
-    def set_env(self, env):
-        super().set_env(env)
-
-    def set_railway_encoding(self, railway_encoding):
-        self.railway_encoding = railway_encoding

@@ -9,7 +9,7 @@ import torch
 
 Experience = namedtuple(
     "Experience", field_names=[
-        "state", "legal_choices", "choice",
+        "state", "choice",
         "reward", "next_state", "next_legal_choices", "done"
     ]
 )
@@ -33,10 +33,10 @@ class ReplayBuffer:
         '''
         Add a new experience to memory
         '''
-        state, legal_choices, choice, reward, next_state, next_legal_choices, done = experience
+        state, choice, reward, next_state, next_legal_choices, done = experience
         self.memory.append(
             Experience(
-                state, legal_choices, choice, reward,
+                state, choice, reward,
                 next_state, next_legal_choices, done
             )
         )
@@ -46,13 +46,10 @@ class ReplayBuffer:
         Randomly sample a batch of experiences from memory.
         Each returned tensor has shape (batch_size, *)
         '''
-        states, legal_choices, choices, rewards, next_states, next_legal_choices, dones = zip(
+        states, choices, rewards, next_states, next_legal_choices, dones = zip(
             *random.sample(self.memory, k=self.batch_size)
         )
         states = torch.tensor(states, dtype=torch.float32, device=self.device)
-        legal_choices = torch.tensor(
-            legal_choices, dtype=torch.bool, device=self.device
-        )
         choices = torch.tensor(
             choices, dtype=torch.int64, device=self.device
         ).reshape((self.batch_size, -1))
@@ -68,7 +65,7 @@ class ReplayBuffer:
         dones = torch.tensor(
             dones, dtype=torch.uint8, device=self.device
         ).reshape((self.batch_size, -1))
-        return states, legal_choices, choices, rewards, next_states, next_legal_choices, dones
+        return states, choices, rewards, next_states, next_legal_choices, dones
 
     def save(self, filename):
         '''

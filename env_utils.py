@@ -86,7 +86,8 @@ def get_seed(env, seed=None):
     '''
     Exploit the RailEnv to get a random seed
     '''
-    return env._seed(seed)[0]
+    seed = env._seed(seed)
+    return seed[0]
 
 
 def check_if_all_blocked(env):
