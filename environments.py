@@ -1,12 +1,13 @@
-from flatland.envs.agent_utils import EnvAgent
-from binary_tree_obs import BinaryTreeObservator
 import numpy as np
 
 from flatland.envs.observations import TreeObsForRailEnv
 from flatland.envs.rail_env import RailEnv
+from flatland.envs.agent_utils import EnvAgent
 
-from railway_encoding import CellOrientationGraph
 import obs_normalization
+from railway_encoding import CellOrientationGraph
+from binary_tree_obs import BinaryTreeObservator
+from graph_obs import GraphObservator
 
 
 class RailEnvWrapper(RailEnv):
@@ -17,31 +18,10 @@ class RailEnvWrapper(RailEnv):
         self.normalize = normalize
         self.state_size = self._get_state_size()
 
-    def reset(self, regenerate_rail=True, regenerate_schedule=True, activate_agents=False,
-              random_seed=None):
+    def reset(self, regenerate_rail=True, regenerate_schedule=True,
+              activate_agents=False, random_seed=None):
         '''
-        reset(regenerate_rail, regenerate_schedule,
-              activate_agents, random_seed)
-
-        The method resets the rail environment
-
-        Parameters
-        ----------
-        regenerate_rail : bool, optional
-            regenerate the rails
-        regenerate_schedule : bool, optional
-            regenerate the schedule and the static agents
-        activate_agents : bool, optional
-            activate the agents
-        random_seed : bool, optional
-            random seed for environment
-
-        Returns
-        -------
-        observation_dict: Dict
-            Dictionary with an observation for each agent
-        info_dict: Dict with agent specific information
-
+        Reset the environment
         '''
 
         if random_seed:
@@ -144,18 +124,22 @@ class RailEnvWrapper(RailEnv):
                           )
         elif isinstance(self.obs_builder, BinaryTreeObservator):
             n_nodes = np.power(self.obs_builder.max_depth, 2)
+        elif isinstance(self.obs_builder, GraphObservator):
+            n_nodes = 1
         return n_features_per_node * n_nodes
 
     def _normalize_obs(self, obs):
-        if self.normalize:
-            for handle in obs:
-                if obs[handle] is not None:
-                    if isinstance(self.obs_builder, TreeObsForRailEnv):
-                        obs[handle] = obs_normalization.normalize_tree_obs(
-                            obs[handle], self.obs_builder.max_depth, observation_radius=10)
-                    elif isinstance(self.obs_builder, BinaryTreeObservator):
-                        obs[handle] = obs_normalization.normalize_graph_obs(obs[handle], self.railway_encoding.remaining_agents(
-                        ), self.malfunction_generator.get_process_data().max_duration)
+        if not self.normalize:
+            return obs
+
+        for handle in obs:
+            if obs[handle] is not None:
+                if isinstance(self.obs_builder, TreeObsForRailEnv):
+                    obs[handle] = obs_normalization.normalize_tree_obs(
+                        obs[handle], self.obs_builder.max_depth, observation_radius=10)
+                elif isinstance(self.obs_builder, BinaryTreeObservator):
+                    obs[handle] = obs_normalization.normalize_graph_obs(obs[handle], self.railway_encoding.remaining_agents(
+                    ), self.malfunction_generator.get_process_data().max_duration)
         return obs
 
     def _generate_rail(self):

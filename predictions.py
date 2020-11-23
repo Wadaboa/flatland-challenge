@@ -19,6 +19,27 @@ def _empty_prediction():
     )
 
 
+class NullPredictor(PredictionBuilder):
+
+    def __init__(self, max_depth=None):
+        super().__init__(max_depth)
+
+    def set_env(self, env):
+        super().set_env(env)
+
+    def get_many(self):
+        '''
+        Build the prediction for every agent
+        '''
+        return {agent.handle: None for agent in self.env.agents}
+
+    def get(self, handle):
+        '''
+        Build the prediction for the given agent
+        '''
+        return None
+
+
 class ShortestPathPredictor(PredictionBuilder):
 
     def __init__(self, max_depth=5):

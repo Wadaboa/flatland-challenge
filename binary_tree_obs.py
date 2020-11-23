@@ -287,7 +287,7 @@ class BinaryTreeObservator(ObservationBuilder):
 
     def get_agent_binary_tree(self, handle, prediction, features):
         position = self.env.railway_encoding.get_agent_cell(handle)
-        node, _ self.env.railway_encoding.next_node(position)
+        node, _ = self.env.railway_encoding.next_node(position)
         return self.get_binary_tree(node, self.max_depth, prediction, features)
 
     def compute_is_fork(self, path):

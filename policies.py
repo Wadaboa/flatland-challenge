@@ -6,7 +6,7 @@ import torch
 import torch.optim as optim
 import torch.nn as nn
 
-from models import DQN, DuelingDQN
+from models import DQN, DuelingDQN, DQNGNN
 from replay_buffers import ReplayBuffer
 import env_utils
 import model_utils
@@ -60,7 +60,7 @@ class RandomPolicy(Policy):
 
 class DQNPolicy(Policy):
     '''
-    DQN abstract policy
+    DQN policy
     '''
 
     PARAMETERS = {
@@ -76,7 +76,7 @@ class DQNPolicy(Policy):
         "double": True,
         "softmax_bellman": False,
         "loss": "huber",
-        "nonlinearity": "tanh"
+        "nonlinearity": "tanh",
     }
 
     def __init__(self, state_size, choice_size, choice_selector, training=False):
@@ -127,7 +127,10 @@ class DQNPolicy(Policy):
         Perform action selection based on the Q-values returned by the network
         '''
         # Add 1 dimension to state to simulate a mini-batch of size 1
-        state = torch.from_numpy(state).float().unsqueeze(0).to(self.device)
+        if isinstance(state, np.ndarray):
+            state = torch.from_numpy(
+                state
+            ).float().unsqueeze(0).to(self.device)
         self.qnetwork_local.eval()
         with torch.no_grad():
             choice_values = self.qnetwork_local(
@@ -277,3 +280,33 @@ class DQNPolicy(Policy):
         Load a stored representation of the replay buffer
         '''
         self.memory.load(filename)
+
+
+class DQNGNNPolicy(DQNPolicy):
+    '''
+    DQN + GNN policy
+    '''
+
+    PARAMETERS = dict(DQNPolicy.PARAMETERS, **{
+        "gnn_hidden_size": 16,
+        "embedding_size": 100
+    })
+
+    def __init__(self, state_size, choice_size, choice_selector, training=False):
+        '''
+        Initialize DQNGNNPolicy object
+        '''
+        super(DQNGNNPolicy, self).__init__(
+            state_size, choice_size, choice_selector, training=training
+        )
+
+        # Q-Network
+        self.qnetwork_local = DQNGNN(
+            self.state_size, self.choice_size, hidden_sizes=self.PARAMETERS["hidden_sizes"],
+            nonlinearity=self.PARAMETERS["nonlinearity"],
+            gnn_hidden_size=self.PARAMETERS["gnn_hidden_size"],
+            embedding_size=self.PARAMETERS["embedding_size"]
+        ).to(self.device)
+
+        if training:
+            self.qnetwork_target = copy.deepcopy(self.qnetwork_local)

@@ -1,6 +1,7 @@
 import os
 import copy
 import random
+import copy
 
 from tqdm import tqdm
 from argparse import ArgumentParser
@@ -20,9 +21,10 @@ from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
 from action_selectors import EpsilonGreedyActionSelector
 from env_utils import RailEnvChoices
-from predictions import ShortestPathPredictor
+from predictions import ShortestPathPredictor, NullPredictor
 from binary_tree_obs import BinaryTreeObservator
-from policies import DQNPolicy
+from graph_obs import GraphObservator
+from policies import DQNPolicy, DQNGNNPolicy
 from environments import RailEnvWrapper
 import utils
 import env_utils
@@ -30,9 +32,21 @@ import env_utils
 
 RANDOM_SEED = 1
 WRITER = SummaryWriter()
-OBSERVATORS = {"tree": TreeObsForRailEnv, "graph": BinaryTreeObservator}
-PREDICTORS = {"tree": ShortestPathPredictorForRailEnv,
-              "graph": ShortestPathPredictor}
+OBSERVATORS = {
+    "tree": TreeObsForRailEnv,
+    "binary_tree": BinaryTreeObservator,
+    "graph": GraphObservator
+}
+PREDICTORS = {
+    "tree": ShortestPathPredictorForRailEnv,
+    "binary_tree": ShortestPathPredictor,
+    "graph": NullPredictor
+}
+POLICIES = {
+    "tree": DQNPolicy,
+    "binary_tree": DQNPolicy,
+    "graph": DQNGNNPolicy,
+}
 
 
 def set_num_threads(num_threads):
@@ -133,6 +147,12 @@ def create_rail_env(args, env=""):
     )
 
 
+def copy_obs(obs):
+    if hasattr(obs, "copy"):
+        return obs.copy()
+    return copy.deepcopy(obs)
+
+
 def train_agents(args):
     '''
     Train and evaluate agents on the specified environments
@@ -160,9 +180,9 @@ def train_agents(args):
     avg_completition = 0.0
 
     # Initialize the agents policy
-    policy = DQNPolicy(
+    policy = POLICIES[args.observation](
         train_env.state_size, choice_size,
-        choice_selector=EpsilonGreedyActionSelector(
+        EpsilonGreedyActionSelector(
             epsilon_start=args.eps_start, epsilon_decay=args.eps_decay, epsilon_end=args.eps_end
         ), training=True
     )
@@ -246,7 +266,7 @@ def train_agents(args):
             rewards[handle] = 0
             prev_choices[handle] = RailEnvChoices.CHOICE_LEFT.value
             if obs[handle] is not None:
-                prev_obs[handle] = obs[handle].copy()
+                prev_obs[handle] = copy_obs(obs[handle])
 
         # Do an episode
         for step in range(args.max_moves):
@@ -323,7 +343,7 @@ def train_agents(args):
                     policy.step(experience)
                     rewards[agent] = 0
                     learn_timer.end()
-                    prev_obs[agent] = obs[agent].copy()
+                    prev_obs[agent] = copy_obs(obs[agent])
                     prev_choices[agent] = choice_dict[agent]
 
                 # Add agent to the list of arrived agents
@@ -332,7 +352,7 @@ def train_agents(args):
 
                 # Update observation and score
                 if next_obs[agent] is not None:
-                    obs[agent] = next_obs[agent].copy()
+                    obs[agent] = copy_obs(next_obs[agent])
                 score += all_rewards[agent]
 
             # Break if every agent arrived

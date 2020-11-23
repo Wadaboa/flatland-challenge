@@ -41,6 +41,10 @@ class CellOrientationGraph():
 
         self._generate_graph()
 
+        self.node_to_index, self.index_to_node = self.build_vocab(
+            unpacked=False
+        )
+
     def _generate_graph(self):
         '''
         Generate both the unpacked and the packed graph and
@@ -118,7 +122,7 @@ class CellOrientationGraph():
                     'weight': source[1]['weight'] + target[1]['weight'],
                     'action': source[1]['action'],
                     'choice': self.map_action_to_choice(
-                        source[1]['action'], self.get_actions(source)
+                        source[1]['action'], self.get_actions(source[0])
                     )
                 }
             )
@@ -167,9 +171,6 @@ class CellOrientationGraph():
         )
         self._set_nodes_attribute(
             'is_target', positions=set(self._targets.keys()), value=True, default=False
-        )
-        self._set_nodes_attribute(
-            'target_handles', positions=set(self._targets.keys()), value=self._targets
         )
         fork_positions, join_positions = self._compute_decision_types()
         self._set_nodes_attribute(
@@ -370,9 +371,9 @@ class CellOrientationGraph():
                 return env_utils.RailEnvChoices.CHOICE_LEFT
         if action == RailEnvActions.MOVE_FORWARD and RailEnvActions.MOVE_FORWARD in actions:
             if RailEnvActions.MOVE_LEFT in actions:
-                return RailEnvActions.CHOICE_RIGHT
+                return env_utils.RailEnvChoices.CHOICE_RIGHT
             if RailEnvActions.MOVE_RIGHT in actions:
-                return RailEnvActions.CHOICE_LEFT
+                return env_utils.RailEnvChoices.CHOICE_LEFT
         return env_utils.RailEnvChoices.STOP
 
     def get_possible_choices(self, position, actions):
@@ -606,6 +607,27 @@ class CellOrientationGraph():
         return nx.dijkstra_path_length(
             self._unpacked_graph, source, dest
         )
+
+    def get_adjacency_matrix(self, unpacked=False):
+        graph = self.graph if not unpacked else self._unpacked_graph
+        return graph.to_scipy_sparse_matrix(
+            dtype=np.dtype('long'), weight='weight', format='coo'
+        )
+
+    def get_graph_edges(self, unpacked=False, data=False):
+        graph = self.graph if not unpacked else self._unpacked_graph
+        return graph.edges(data=data)
+
+    def get_graph_nodes(self, unpacked=False, data=False):
+        graph = self.graph if not unpacked else self._unpacked_graph
+        return graph.nodes(data=data)
+
+    def build_vocab(self, unpacked=False):
+        graph = self.graph if not unpacked else self._unpacked_graph
+        nodes = sorted(list(graph.nodes()))
+        node_to_index = {node: i for i, node in enumerate(nodes)}
+        index_to_node = {i: node for i, node in enumerate(nodes)}
+        return node_to_index, index_to_node
 
     def edges_from_path(self, path):
         '''
