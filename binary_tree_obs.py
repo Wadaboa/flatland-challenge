@@ -47,13 +47,21 @@ Observation:
         12. How many turns before a possible deadlock
 '''
 
+
 # SpeedData:
 # - `times` represents the total number of turns required for an agent to complete a cell
 # - `remaining` represents the remaining number of steps required for an agent to complete the current cell
 SpeedData = namedtuple('SpeedData', ['times', 'remaining'])
 
+# Node:
+# - `position` represents the position of the node in the railway
+# - `features` represents the features associated to a node
+# - `left` represents its left child
+# - `right` represents its right child
+Node = namedtuple('Node', ['position', 'features', 'left', 'right'])
 
-class GraphObservator(ObservationBuilder):
+
+class BinaryTreeObservator(ObservationBuilder):
 
     def __init__(self, max_depth, predictor):
         super().__init__()
@@ -222,17 +230,65 @@ class GraphObservator(ObservationBuilder):
             prev_deadlocks=prev_deadlocks
         )
         are_forks = self.compute_is_fork(path)
-        choices = self.compute_possible_choices(
-            path, prediction.edges, are_forks)
 
         # Build the feature matrix
         feature_matrix = np.vstack([
             num_agents, agent_distances, malfunctions,
             target_distances, path_weights, c_nodes, deadlocks, deadlock_distances,
-            are_forks, choices
+            are_forks
         ]).T
 
         return feature_matrix
+
+    def get_binary_tree(self, position, depth, prediction, features, choices=[]):
+        if depth == 0:
+            return None
+        children = {"left": None, "right": None}
+        if self.env.railway_encoding.is_node(position, unpacked=False):
+            successors = self.env.railway_encoding.get_successors(
+                position, unpacked=False
+            )
+            for succ in successors:
+                if self.env.railway_encoding.get_edge_data(position, succ, 'choice', unpacked=False) == env_utils.RailEnvChoices.CHOICE_LEFT:
+                    children["left"] = succ
+                elif self.env.railway_encoding.get_edge_data(position, succ, 'choice', unpacked=False) == env_utils.RailEnvChoices.CHOICE_RIGHT:
+                    children["right"] = succ
+        return Node(
+            position=position,
+            features=self.get_node_features(
+                prediction, features, choices, depth
+            ),
+            left=get_binary_tree(
+                children["left"], depth - 1, prediction, features,
+                choices=choices + [env_utils.RailEnvChoices.CHOICE_LEFT]
+            ),
+            right=get_binary_tree(
+                children["right"], depth - 1, prediction, features,
+                choices=choices + [env_utils.RailEnvChoices.CHOICE_RIGHT]
+            )
+        )
+
+    def get_node_features(self, prediction, features, choices, depth):
+        sp_prediction, dp_predictions = prediction
+        pos = self.max_depth - depth
+        if pos == 0:
+            return features[0, 0, :]
+        equals = [0] * self.max_depth
+        for d, choice in enumerate(choices):
+            if choice == sp_prediction.edges[d][2]['choice']:
+                equals[0] += 1
+            for i, dp_prediction in enumerate(dp_predictions[:d]):
+                if choice == dp_prediction.edges[d][2]['choice']:
+                    equals[i + 1] += 1
+        for j, e in enumerate(equals):
+            if e == pos:
+                return features[j, pos, :]
+        return None
+
+    def get_agent_binary_tree(self, handle, prediction, features):
+        position = self.env.railway_encoding.get_agent_cell(handle)
+        node, _ self.env.railway_encoding.next_node(position)
+        return self.get_binary_tree(node, self.max_depth, prediction, features)
 
     def compute_is_fork(self, path):
         '''
@@ -242,18 +298,6 @@ class GraphObservator(ObservationBuilder):
         for ind, node in enumerate(path):
             are_forks[ind] = self.env.railway_encoding.is_fork(node)
         return are_forks
-
-    def compute_possible_choices(self, path, edges, are_forks):
-        possible_choices = np.zeros((self.max_depth, 3))
-        for ind, node in enumerate(path):
-            actions = self.env.railway_encoding.get_actions(node)
-            possible_choices[ind] = self.env.railway_encoding.get_possible_choices(
-                node, actions)
-            if are_forks[ind] == 1 and ind < len(path) - 1:
-                action = edges[ind][2]['action']
-                possible_choices[ind] = self.env.railway_encoding.get_possible_choices(
-                    node, [action])
-        return np.transpose(possible_choices)
 
     def compute_cumulative_weights(self, handle, lenght, edges, initial_distance):
         '''

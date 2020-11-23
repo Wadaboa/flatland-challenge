@@ -1,5 +1,5 @@
 from flatland.envs.agent_utils import EnvAgent
-from observations import GraphObservator
+from binary_tree_obs import BinaryTreeObservator
 import numpy as np
 
 from flatland.envs.observations import TreeObsForRailEnv
@@ -142,7 +142,7 @@ class RailEnvWrapper(RailEnv):
             n_nodes = sum([np.power(4, i)
                            for i in range(self.obs_builder.max_depth + 1)]
                           )
-        elif isinstance(self.obs_builder, GraphObservator):
+        elif isinstance(self.obs_builder, BinaryTreeObservator):
             n_nodes = np.power(self.obs_builder.max_depth, 2)
         return n_features_per_node * n_nodes
 
@@ -153,7 +153,7 @@ class RailEnvWrapper(RailEnv):
                     if isinstance(self.obs_builder, TreeObsForRailEnv):
                         obs[handle] = obs_normalization.normalize_tree_obs(
                             obs[handle], self.obs_builder.max_depth, observation_radius=10)
-                    elif isinstance(self.obs_builder, GraphObservator):
+                    elif isinstance(self.obs_builder, BinaryTreeObservator):
                         obs[handle] = obs_normalization.normalize_graph_obs(obs[handle], self.railway_encoding.remaining_agents(
                         ), self.malfunction_generator.get_process_data().max_duration)
         return obs

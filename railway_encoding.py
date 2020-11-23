@@ -2,6 +2,7 @@
 '''
 
 import itertools
+from collections import namedtuple
 
 import numpy as np
 import networkx as nx
@@ -115,7 +116,10 @@ class CellOrientationGraph():
                 source[0], target[0],
                 {
                     'weight': source[1]['weight'] + target[1]['weight'],
-                    'action': source[1]['action']
+                    'action': source[1]['action'],
+                    'choice': self.map_action_to_choice(
+                        source[1]['action'], self.get_actions(source)
+                    )
                 }
             )
             for source in sources for target in targets
@@ -224,6 +228,13 @@ class CellOrientationGraph():
         graph = self._unpacked_graph if unpacked else self.graph
         return node in graph.nodes
 
+    def get_edge_data(self, u, v, t, unpacked=False):
+        graph = self.graph if not unpacked else self._unpacked_graph
+        assert (u, v) in graph.edges
+        edge_data = graph.get_edge_data(u, v)
+        assert t in edge_data
+        return edge_data[t]
+
     def get_predecessors(self, node, unpacked=False):
         '''
         Return the predecessors of the given node in the packed or
@@ -325,29 +336,44 @@ class CellOrientationGraph():
             RailAgentStatus.DONE, RailAgentStatus.DONE_REMOVED
         )
 
-    def map_choice_to_action(self, choice, legal_actions):
+    def map_choice_to_action(self, choice, actions):
         '''
         Map the given RailEnvChoices action to a RailEnvActions action
         '''
         # If CHOICE_LEFT, then priorities are MOVE_LEFT, MOVE_FORWARD, MOVE_RIGHT
         if choice == env_utils.RailEnvChoices.CHOICE_LEFT.value:
-            if RailEnvActions.MOVE_LEFT in legal_actions:
+            if RailEnvActions.MOVE_LEFT in actions:
                 return RailEnvActions.MOVE_LEFT.value
-            elif RailEnvActions.MOVE_FORWARD in legal_actions:
+            elif RailEnvActions.MOVE_FORWARD in actions:
                 return RailEnvActions.MOVE_FORWARD.value
-            elif RailEnvActions.MOVE_RIGHT in legal_actions:
+            elif RailEnvActions.MOVE_RIGHT in actions:
                 return RailEnvActions.MOVE_RIGHT.value
         # If CHOICE_RIGHT, then priorities are MOVE_RIGHT, MOVE_FORWARD
         elif choice == env_utils.RailEnvChoices.CHOICE_RIGHT.value:
-            if RailEnvActions.MOVE_RIGHT in legal_actions:
+            if RailEnvActions.MOVE_RIGHT in actions:
                 return RailEnvActions.MOVE_RIGHT.value
-            elif RailEnvActions.MOVE_FORWARD in legal_actions:
+            elif RailEnvActions.MOVE_FORWARD in actions:
                 return RailEnvActions.MOVE_FORWARD.value
         # If STOP, then the priority is STOP_MOVING
         elif choice == env_utils.RailEnvChoices.STOP.value:
             return RailEnvActions.STOP_MOVING.value
         # Otherwise, last resort is DO_NOTHING
         return RailEnvActions.DO_NOTHING.value
+
+    def map_action_to_choice(self, action, actions):
+        if action == RailEnvActions.MOVE_LEFT and RailEnvActions.MOVE_LEFT in actions:
+            return env_utils.RailEnvChoices.CHOICE_LEFT
+        if action == RailEnvActions.MOVE_RIGHT and RailEnvActions.MOVE_RIGHT in actions:
+            if len(actions) > 1:
+                return env_utils.RailEnvChoices.CHOICE_RIGHT
+            elif len(actions) == 1:
+                return env_utils.RailEnvChoices.CHOICE_LEFT
+        if action == RailEnvActions.MOVE_FORWARD and RailEnvActions.MOVE_FORWARD in actions:
+            if RailEnvActions.MOVE_LEFT in actions:
+                return RailEnvActions.CHOICE_RIGHT
+            if RailEnvActions.MOVE_RIGHT in actions:
+                return RailEnvActions.CHOICE_LEFT
+        return env_utils.RailEnvChoices.STOP
 
     def get_possible_choices(self, position, actions):
         # If only one agent, stop moving is not legal
@@ -594,8 +620,11 @@ class CellOrientationGraph():
             )
             edges.append((
                 path[0], path[1],
-                {'weight': fake_weight, 'action': self._unpacked_graph.get_edge_data(
-                    mini_path[0], mini_path[1])['action']}
+                {
+                    'weight': fake_weight,
+                    'action': self._unpacked_graph.get_edge_data(mini_path[0], mini_path[1])['action'],
+                    'choice': env_utils.RailEnvChoices.CHOICE_LEFT
+                }
             ))
             starting_index = 1
         for i in range(starting_index, len(path) - 1):

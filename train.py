@@ -21,7 +21,7 @@ from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 from action_selectors import EpsilonGreedyActionSelector
 from env_utils import RailEnvChoices
 from predictions import ShortestPathPredictor
-from observations import GraphObservator
+from binary_tree_obs import BinaryTreeObservator
 from policies import DQNPolicy
 from environments import RailEnvWrapper
 import utils
@@ -30,7 +30,7 @@ import env_utils
 
 RANDOM_SEED = 1
 WRITER = SummaryWriter()
-OBSERVATORS = {"tree": TreeObsForRailEnv, "graph": GraphObservator}
+OBSERVATORS = {"tree": TreeObsForRailEnv, "graph": BinaryTreeObservator}
 PREDICTORS = {"tree": ShortestPathPredictorForRailEnv,
               "graph": ShortestPathPredictor}
 
