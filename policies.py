@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 import torch.nn as nn
+from torch_geometric.data import Data, DataLoader
 
 from models import DQN, DuelingDQN, DQNGNN
 from replay_buffers import ReplayBuffer
@@ -131,6 +132,8 @@ class DQNPolicy(Policy):
             state = torch.from_numpy(
                 state
             ).float().unsqueeze(0).to(self.device)
+        elif isinstance(state, Data):
+            state = DataLoader([state], batch_size=1)
         self.qnetwork_local.eval()
         with torch.no_grad():
             choice_values = self.qnetwork_local(
@@ -140,7 +143,6 @@ class DQNPolicy(Policy):
         legal_choices = np.full(
             choice_values.shape, legal_choices, dtype=bool
         )
-
         return (
             self.choice_selector.select(choice_values, legal_choices) if self.training
             else model_utils.masked_argmax(choice_values, legal_choices, dim=0)
@@ -232,8 +234,13 @@ class DQNPolicy(Policy):
 
             # Standard or softmax Bellman
             return (
-                model_utils.masked_max(q_targets_next, next_legal_choices) if not self.PARAMETERS["softmax_bellman"]
-                else np.sum(model_utils.masked_softmax(q_targets_next, next_legal_choices) * q_targets_next, axis=1, keepdims=True)
+                model_utils.masked_max(q_targets_next, next_legal_choices)
+                if not self.PARAMETERS["softmax_bellman"]
+                else np.sum(
+                    model_utils.masked_softmax(
+                        q_targets_next, next_legal_choices
+                    ) * q_targets_next, axis=1, keepdims=True
+                )
             )
 
         return _double_dqn() if self.PARAMETERS["double"] else _dqn()

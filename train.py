@@ -209,14 +209,14 @@ def train_agents(args):
     # Print initial training info
     training_timer = utils.Timer()
     training_timer.start()
-    print("\n🚉 Starting Training \t Training {} trains on {}x{} grid for {} episodes \tEvaluating on {} episodes every {} episodes".format(
+    print("\n🚉 Starting training \t Training {} trains on {}x{} grid for {} episodes \tEvaluating on {} episodes every {} episodes".format(
         args.num_trains,
         args.width, args.height,
         args.n_train_episodes,
         args.n_val_episodes,
         args.checkpoint
     ))
-    print("\n🧠 Model with Training-Id '{}\n".format(training_id))
+    print(f"\n🧠 Model with training id {training_id}\n")
 
     # Do the specified number of episodes
     for episode in range(args.n_train_episodes + 1):
@@ -476,7 +476,7 @@ def train_agents(args):
         len(policy.memory), policy.PARAMETERS["buffer_size"]
     ))
 
-    print("\n🧠 Saving model with Training-Id '{}".format(training_id))
+    print(f"\n🧠 Saving model with training id {training_id}")
     policy.save('./checkpoints/' + training_id + '-latest')
     if args.save_replay_buffer:
         policy.save_replay_buffer(
@@ -496,7 +496,7 @@ def eval_policy(args, env, policy, val_seeds):
     scores, completions, steps = [], [], []
 
     # Do the specified number of episodes
-    print('\nStarting Validation:')
+    print('\nStarting validation:')
     for episode, seed in enumerate(val_seeds):
         score = 0.0
         final_step = 0
@@ -607,9 +607,9 @@ def eval_policy(args, env, policy, val_seeds):
     # Print validation results
     print(
         '\r✅ Validation End'
-        '\t 🏆 Avg Score: {:+1.3f}'
-        '\t 💯 Avg Done: {:7.1%}%'
-        '\t 🦶 Avg Steps: {:5.2f}'.format(
+        '\t 🏆 Avg score: {:+1.3f}'
+        '\t 💯 Avg done: {:7.1%}%'
+        '\t 🦶 Avg steps: {:5.2f}'.format(
             np.mean(scores),
             np.mean(completions),
             np.mean(steps)
@@ -696,7 +696,7 @@ def parse_args():
 
     # Training parameters
     parser.add_argument(
-        "--n_train_episodes", action='store', default=10000,  # 2500
+        "--n_train_episodes", action='store', default=5000,
         help="number of episodes to run", type=int
     )
     parser.add_argument(
@@ -716,7 +716,7 @@ def parse_args():
         help="final exploration", type=float
     )
     parser.add_argument(
-        "--eps_decay", action='store', default=1e-4,  # 0.99
+        "--eps_decay", action='store', default=2e-4,  # 0.99
         help="exploration decay", type=float
     )
     parser.add_argument(
@@ -732,7 +732,7 @@ def parse_args():
         help="number of threads PyTorch can use", type=int
     )
     parser.add_argument(
-        "--render_every", action='store', default=0,
+        "--render_every", action='store', default=150,
         help="how often to render an episode", type=int
     )
     parser.add_argument(

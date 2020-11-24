@@ -5,6 +5,7 @@ from collections import namedtuple, deque
 
 import numpy as np
 import torch
+from torch_geometric.data import Data, DataLoader
 
 
 Experience = namedtuple(
@@ -49,16 +50,30 @@ class ReplayBuffer:
         states, choices, rewards, next_states, next_legal_choices, dones = zip(
             *random.sample(self.memory, k=self.batch_size)
         )
-        states = torch.tensor(states, dtype=torch.float32, device=self.device)
+
+        # Check for PyTorch Geometric
+        if isinstance(states[0], np.ndarray):
+            states = torch.tensor(
+                states, dtype=torch.float32, device=self.device
+            )
+        elif isinstance(states[0], Data):
+            states = DataLoader(states, batch_size=1)
+
         choices = torch.tensor(
             choices, dtype=torch.int64, device=self.device
         ).reshape((self.batch_size, -1))
         rewards = torch.tensor(
             rewards, dtype=torch.float32, device=self.device
         ).reshape((self.batch_size, -1))
-        next_states = torch.tensor(
-            next_states, dtype=torch.float32, device=self.device
-        )
+
+        # Check for PyTorch Geometric
+        if isinstance(next_states[0], np.ndarray):
+            next_states = torch.tensor(
+                next_states, dtype=torch.float32, device=self.device
+            )
+        elif isinstance(next_states[0], Data):
+            next_states = DataLoader(next_states, batch_size=1)
+
         next_legal_choices = torch.tensor(
             next_legal_choices, dtype=torch.bool, device=self.device
         )

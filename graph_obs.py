@@ -64,24 +64,27 @@ class GraphObservator(ObservationBuilder):
         # Store a list of important positions, so that the DQN is called with
         # the GNN embeddings of these nodes
         agent_position = self.env.railway_encoding.get_agent_cell(handle)
-        agent_in_packed = self.env.railway_encoding.is_node(
-            agent_position, unpacked=False
-        )
-        if agent_in_packed:
-            successors = self.env.railway_encoding.get_successors(
+        agent_pos_index = -1
+        successors = []
+        if agent_position is not None:
+            agent_in_packed = self.env.railway_encoding.is_node(
                 agent_position, unpacked=False
             )
-        else:
-            actual_agent_position = tuple(agent_position)
-            agent_position, _ = self.env.railway_encoding.previous_node(
-                actual_agent_position
-            )
-            successor, _ = self.env.railway_encoding.next_node(
-                actual_agent_position
-            )
-            successors = [successor]
+            if agent_in_packed:
+                successors = self.env.railway_encoding.get_successors(
+                    agent_position, unpacked=False
+                )
+            else:
+                actual_agent_position = tuple(agent_position)
+                agent_position, _ = self.env.railway_encoding.previous_node(
+                    actual_agent_position
+                )
+                successor, _ = self.env.railway_encoding.next_node(
+                    actual_agent_position
+                )
+                successors = [successor]
+            agent_pos_index = self.env.railway_encoding.node_to_index[agent_position]
 
-        agent_pos_index = self.env.railway_encoding.node_to_index[agent_position]
         successors_indexes = {"left": -1, "right": -1}
         for succ in successors:
             succ_index = self.env.railway_encoding.node_to_index[succ]
@@ -92,11 +95,11 @@ class GraphObservator(ObservationBuilder):
                 successors_indexes["left"] = succ_index
             elif succ_choice == env_utils.RailEnvChoices.CHOICE_RIGHT:
                 successors_indexes["right"] = succ_index
-        pos = [
+        pos = torch.tensor([
             successors_indexes["left"],
             successors_indexes["right"],
             agent_pos_index
-        ]
+        ], dtype=torch.long)
 
         # Create a PyTorch Geometric Data object
         data = Data(

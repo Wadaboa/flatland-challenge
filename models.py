@@ -33,6 +33,8 @@ class DQN(nn.Module):
 
     def __init__(self, state_size, action_size, hidden_sizes=[128, 128], nonlinearity="tanh"):
         super(DQN, self).__init__()
+        self.state_size = state_size
+        self.action_size = action_size
         self.fc = get_linear(
             state_size, action_size, hidden_sizes, nonlinearity=nonlinearity
         )
@@ -53,6 +55,8 @@ class DuelingDQN(nn.Module):
 
     def __init__(self, state_size, action_size, hidden_sizes=[128, 128], nonlinearity="tanh", aggregation="mean"):
         super(DuelingDQN, self).__init__()
+        self.state_size = state_size
+        self.action_size = action_size
         self.aggregation = aggregation
         self.fc_val = get_linear(
             state_size, 1, hidden_sizes, nonlinearity=nonlinearity
@@ -78,16 +82,16 @@ class DQNGNN(DQN):
     DQN + GNN
     '''
 
-    def __init__(self, state_size, action_size, hidden_sizes=[128, 128], nonlinearity="relu",
+    def __init__(self, state_size, action_size, hidden_sizes=[128, 128], nonlinearity="tanh",
                  gnn_hidden_size=16, embedding_size=100, depth=3, dropout=0.0):
         super(DQNGNN, self).__init__(
             action_size * embedding_size, action_size,
             hidden_sizes=hidden_sizes, nonlinearity=nonlinearity
         )
-        self.depth = depth
-        self.nl = nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
-        self.dropout = dropout
         self.embedding_size = embedding_size
+        self.depth = depth
+        self.dropout = dropout
+        self.nl = nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
         self.gnn_conv = nn.ModuleList()
         self.gnn_conv.append(gnn.GCNConv(state_size, gnn_hidden_size))
         for i in range(1, self.depth - 1):
@@ -95,29 +99,35 @@ class DQNGNN(DQN):
         self.gnn_conv.append(gnn.GCNConv(gnn_hidden_size, self.embedding_size))
 
     def forward(self, state):
-        x, edge_index, edge_weight, pos = (
-            state.x, state.edge_index, state.edge_weight, state.pos
-        )
-
-        # Perform a number of graph convolutions specified by
-        # the given depth
-        for i in range(self.depth):
-            x = self.gnn_conv[i](x, edge_index, edge_weight=edge_weight)
-            emb = x
-            x = self.nl(x)
-            x = F.dropout(x, p=self.dropout, training=self.training)
-
-        # Extract useful embeddings
         embs = torch.empty(
-            size=(len(pos), self.embedding_size), dtype=torch.float
+            size=(
+                len(state),
+                self.action_size,
+                self.embedding_size
+            ), dtype=torch.float
         )
-        for i, p in enumerate(pos):
-            if p == -1:
-                embs[i] = torch.tensor(
-                    [-1] * self.embedding_size, dtype=torch.float
-                )
-            else:
-                embs[i] = emb[p]
+        for i, graph in enumerate(state):
+            x, edge_index, edge_weight, pos = (
+                graph.x, graph.edge_index, graph.edge_weight, graph.pos
+            )
 
-        # Call the DQN
-        return super().forward(embs.unsqueeze(0))
+            # Perform a number of graph convolutions specified by
+            # the given depth
+            for d in range(self.depth):
+                x = self.gnn_conv[d](x, edge_index, edge_weight=edge_weight)
+                emb = x
+                x = self.nl(x)
+                x = F.dropout(x, p=self.dropout, training=self.training)
+
+            # Extract useful embeddings
+            for j, p in enumerate(pos):
+                if p == -1:
+                    embs[i, j] = torch.tensor(
+                        [-1] * self.embedding_size, dtype=torch.float
+                    )
+                else:
+                    embs[i, j] = emb[p.item()]
+
+        # Call the DQN with a tensor of shape
+        # (batch_size, action_size, embedding_size)
+        return super().forward(embs)
