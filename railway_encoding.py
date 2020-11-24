@@ -84,7 +84,8 @@ class CellOrientationGraph():
                                 (new_position_x, new_position_y, final_dir.value),
                                 {
                                     'weight': 1,
-                                    'action': env_utils.agent_action(original_dir, final_dir)
+                                    'action': env_utils.agent_action(original_dir, final_dir),
+                                    'choice': env_utils.RailEnvChoices.CHOICE_LEFT
                                 }
                             )
                             edges.append(edge)

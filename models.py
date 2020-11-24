@@ -7,17 +7,17 @@ import torch.nn.functional as F
 from torch.nn.functional import softmax
 
 
-def get_seq(input_size, output_size, hidden_sizes, module=nn.Linear, nonlinearity="tanh"):
+def get_linear(input_size, output_size, hidden_sizes, nonlinearity="tanh"):
     '''
-    Returns a PyTorch Sequential object containing `module` typed layers with
+    Returns a PyTorch Sequential object containing FC layers with
     non-linear activation functions, by following the given input/hidden/output sizes
     '''
     assert len(hidden_sizes) >= 1
     nl = nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
-    fc = [module(input_size, hidden_sizes[0]), nl]
+    fc = [nn.Linear(input_size, hidden_sizes[0]), nl]
     for i in range(1, len(hidden_sizes)):
-        fc.extend([module(hidden_sizes[i - 1], hidden_sizes[i]), nl])
-    fc.extend([module(hidden_sizes[-1], output_size)])
+        fc.extend([nn.Linear(hidden_sizes[i - 1], hidden_sizes[i]), nl])
+    fc.extend([nn.Linear(hidden_sizes[-1], output_size)])
     return nn.Sequential(*fc)
 
 
@@ -33,9 +33,8 @@ class DQN(nn.Module):
 
     def __init__(self, state_size, action_size, hidden_sizes=[128, 128], nonlinearity="tanh"):
         super(DQN, self).__init__()
-        self.fc = get_seq(
-            state_size, action_size, hidden_sizes,
-            module=nn.Linear, nonlinearity=nonlinearity
+        self.fc = get_linear(
+            state_size, action_size, hidden_sizes, nonlinearity=nonlinearity
         )
 
     def forward(self, state):
@@ -55,13 +54,11 @@ class DuelingDQN(nn.Module):
     def __init__(self, state_size, action_size, hidden_sizes=[128, 128], nonlinearity="tanh", aggregation="mean"):
         super(DuelingDQN, self).__init__()
         self.aggregation = aggregation
-        self.fc_val = get_seq(
-            state_size, 1, hidden_sizes,
-            module=nn.Linear, nonlinearity=nonlinearity
+        self.fc_val = get_linear(
+            state_size, 1, hidden_sizes, nonlinearity=nonlinearity
         )
-        self.fc_adv = get_seq(
-            state_size, action_size, hidden_sizes,
-            module=nn.Linear, nonlinearity=nonlinearity
+        self.fc_adv = get_linear(
+            state_size, action_size, hidden_sizes, nonlinearity=nonlinearity
         )
 
     def forward(self, state):
@@ -82,26 +79,45 @@ class DQNGNN(DQN):
     '''
 
     def __init__(self, state_size, action_size, hidden_sizes=[128, 128], nonlinearity="relu",
-                 gnn_hidden_size=16, embedding_size=100):
+                 gnn_hidden_size=16, embedding_size=100, depth=3, dropout=0.0):
         super(DQNGNN, self).__init__(
-            state_size, action_size, hidden_sizes=hidden_sizes, nonlinearity=nonlinearity
+            action_size * embedding_size, action_size,
+            hidden_sizes=hidden_sizes, nonlinearity=nonlinearity
         )
-        '''
-        self.gnn_conv = get_seq(
-            state_size, embedding_size, gnn_hidden_sizes,
-            module=gnn.GCNConv, nonlinearity=nonlinearity
-        )
-        '''
-        self.conv1 = gnn.GCNConv(state_size, gnn_hidden_size)
-        self.conv2 = gnn.GCNConv(gnn_hidden_size, gnn_hidden_size)
-        self.conv3 = gnn.GCNConv(gnn_hidden_size, embedding_size)
+        self.depth = depth
+        self.nl = nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
+        self.dropout = dropout
+        self.embedding_size = embedding_size
+        self.gnn_conv = nn.ModuleList()
+        self.gnn_conv.append(gnn.GCNConv(state_size, gnn_hidden_size))
+        for i in range(1, self.depth - 1):
+            self.gnn_conv.append(gnn.GCNConv(gnn_hidden_size, gnn_hidden_size))
+        self.gnn_conv.append(gnn.GCNConv(gnn_hidden_size, self.embedding_size))
 
     def forward(self, state):
-        x, edge_index = state.x, state.edge_index
-        x = self.conv1(x, edge_index)
-        x = nn.ReLU(x)
-        x = self.conv2(x, edge_index)
-        x = nn.ReLU(x)
-        x = self.conv3(x, edge_index)
-        x = nn.ReLU(x)
-        return self.fc(x)
+        x, edge_index, edge_weight, pos = (
+            state.x, state.edge_index, state.edge_weight, state.pos
+        )
+
+        # Perform a number of graph convolutions specified by
+        # the given depth
+        for i in range(self.depth):
+            x = self.gnn_conv[i](x, edge_index, edge_weight=edge_weight)
+            emb = x
+            x = self.nl(x)
+            x = F.dropout(x, p=self.dropout, training=self.training)
+
+        # Extract useful embeddings
+        embs = torch.empty(
+            size=(len(pos), self.embedding_size), dtype=torch.float
+        )
+        for i, p in enumerate(pos):
+            if p == -1:
+                embs[i] = torch.tensor(
+                    [-1] * self.embedding_size, dtype=torch.float
+                )
+            else:
+                embs[i] = emb[p]
+
+        # Call the DQN
+        return super().forward(embs.unsqueeze(0))

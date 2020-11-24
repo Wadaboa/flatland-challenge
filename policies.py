@@ -289,7 +289,9 @@ class DQNGNNPolicy(DQNPolicy):
 
     PARAMETERS = dict(DQNPolicy.PARAMETERS, **{
         "gnn_hidden_size": 16,
-        "embedding_size": 100
+        "embedding_size": 100,
+        "depth": 3,
+        "dropout": 0.0
     })
 
     def __init__(self, state_size, choice_size, choice_selector, training=False):
@@ -302,10 +304,12 @@ class DQNGNNPolicy(DQNPolicy):
 
         # Q-Network
         self.qnetwork_local = DQNGNN(
-            self.state_size, self.choice_size, hidden_sizes=self.PARAMETERS["hidden_sizes"],
+            state_size, self.choice_size,
+            hidden_sizes=self.PARAMETERS["hidden_sizes"],
             nonlinearity=self.PARAMETERS["nonlinearity"],
             gnn_hidden_size=self.PARAMETERS["gnn_hidden_size"],
-            embedding_size=self.PARAMETERS["embedding_size"]
+            depth=self.PARAMETERS["depth"],
+            dropout=self.PARAMETERS["dropout"]
         ).to(self.device)
 
         if training:
