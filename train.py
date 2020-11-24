@@ -40,7 +40,7 @@ OBSERVATORS = {
 PREDICTORS = {
     "tree": ShortestPathPredictorForRailEnv,
     "binary_tree": ShortestPathPredictor,
-    "graph": NullPredictor
+    "graph": ShortestPathPredictor
 }
 POLICIES = {
     "tree": DQNPolicy,
@@ -162,8 +162,6 @@ def train_agents(args):
     if args.fix_random:
         utils.fix_random(RANDOM_SEED)
 
-    # Initialize predictor and observer
-
     # Setup the environments
     train_env = create_rail_env(args, env=args.train_env)
     val_env = create_rail_env(args, env=args.val_env)
@@ -177,7 +175,7 @@ def train_agents(args):
     # Set state size and action size
     choice_size = 3
     avg_score = 0.0
-    avg_completition = 0.0
+    avg_completion = 0.0
 
     # Initialize the agents policy
     policy = POLICIES[args.observation](
@@ -375,9 +373,10 @@ def train_agents(args):
         normalized_score = (
             score / (args.max_moves * train_env.get_num_agents())
         )
-        avg_completition = (episode * avg_completition +
-                            completion)/(episode + 1)
-        avg_score = (episode * avg_score + normalized_score)/(episode + 1)
+        avg_completion = (
+            episode * avg_completion + completion
+        ) / (episode + 1)
+        avg_score = (episode * avg_score + normalized_score) / (episode + 1)
         choices_probs = choices_count / np.sum(choices_count)
 
         # Save model and replay buffer at checkpoint
@@ -405,7 +404,7 @@ def train_agents(args):
                 normalized_score,
                 avg_score,
                 completion,
-                avg_completition,
+                avg_completion,
                 steps,
                 policy.choice_selector.epsilon,
                 format_choices_probabilities(choices_probs)

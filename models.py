@@ -82,8 +82,9 @@ class DQNGNN(DQN):
     DQN + GNN
     '''
 
-    def __init__(self, state_size, action_size, hidden_sizes=[128, 128], nonlinearity="tanh",
-                 gnn_hidden_size=16, embedding_size=100, depth=3, dropout=0.0):
+    def __init__(self, state_size, action_size, embedding_size,
+                 hidden_sizes=[128, 128], nonlinearity="tanh",
+                 gnn_hidden_size=16, depth=3, dropout=0.0):
         super(DQNGNN, self).__init__(
             action_size * embedding_size, action_size,
             hidden_sizes=hidden_sizes, nonlinearity=nonlinearity

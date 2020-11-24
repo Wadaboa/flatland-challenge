@@ -295,9 +295,9 @@ class DQNGNNPolicy(DQNPolicy):
     '''
 
     PARAMETERS = dict(DQNPolicy.PARAMETERS, **{
-        "gnn_hidden_size": 16,
-        "embedding_size": 100,
-        "depth": 3,
+        "gnn_hidden_size": 10,
+        "embedding_size": 15,
+        "depth": 2,
         "dropout": 0.0
     })
 
@@ -311,7 +311,7 @@ class DQNGNNPolicy(DQNPolicy):
 
         # Q-Network
         self.qnetwork_local = DQNGNN(
-            state_size, self.choice_size,
+            state_size, choice_size, self.PARAMETERS["embedding_size"],
             hidden_sizes=self.PARAMETERS["hidden_sizes"],
             nonlinearity=self.PARAMETERS["nonlinearity"],
             gnn_hidden_size=self.PARAMETERS["gnn_hidden_size"],
