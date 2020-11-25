@@ -82,28 +82,35 @@ class DQNGNN(DQN):
     DQN + GNN
     '''
 
-    def __init__(self, state_size, action_size, embedding_size,
+    def __init__(self, state_size, action_size, pos_size, embedding_size,
                  hidden_sizes=[128, 128], nonlinearity="tanh",
                  gnn_hidden_size=16, depth=3, dropout=0.0):
         super(DQNGNN, self).__init__(
             action_size * embedding_size, action_size,
             hidden_sizes=hidden_sizes, nonlinearity=nonlinearity
         )
+        self.pos_size = pos_size
         self.embedding_size = embedding_size
         self.depth = depth
         self.dropout = dropout
         self.nl = nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
         self.gnn_conv = nn.ModuleList()
-        self.gnn_conv.append(gnn.GCNConv(state_size, gnn_hidden_size))
+        self.gnn_conv.append(gnn.GCNConv(
+            state_size, gnn_hidden_size
+        ))
         for i in range(1, self.depth - 1):
-            self.gnn_conv.append(gnn.GCNConv(gnn_hidden_size, gnn_hidden_size))
-        self.gnn_conv.append(gnn.GCNConv(gnn_hidden_size, self.embedding_size))
+            self.gnn_conv.append(gnn.GCNConv(
+                gnn_hidden_size, gnn_hidden_size
+            ))
+        self.gnn_conv.append(gnn.GCNConv(
+            gnn_hidden_size, self.embedding_size
+        ))
 
     def forward(self, state):
         embs = torch.empty(
             size=(
                 len(state),
-                self.action_size,
+                self.pos_size,
                 self.embedding_size
             ), dtype=torch.float
         )
@@ -124,7 +131,7 @@ class DQNGNN(DQN):
             for j, p in enumerate(pos):
                 if p == -1:
                     embs[i, j] = torch.tensor(
-                        [-1] * self.embedding_size, dtype=torch.float
+                        [-self.depth] * self.embedding_size, dtype=torch.float
                     )
                 else:
                     embs[i, j] = emb[p.item()]

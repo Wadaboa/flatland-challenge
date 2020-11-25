@@ -2,6 +2,7 @@ import os
 import copy
 import random
 import copy
+import time
 
 from tqdm import tqdm
 from argparse import ArgumentParser
@@ -167,10 +168,12 @@ def train_agents(args):
     val_env = create_rail_env(args, env=args.val_env)
 
     # Define "static" random seeds for evaluation purposes
-    val_seeds = [
-        env_utils.get_seed(val_env)
-        for e in range(args.n_val_episodes)
-    ]
+    val_seeds = [RANDOM_SEED] * args.n_val_episodes
+    if not args.fix_random:
+        val_seeds = [
+            env_utils.get_seed(val_env)
+            for e in range(args.n_val_episodes)
+        ]
 
     # Set state size and action size
     choice_size = 3
@@ -283,7 +286,8 @@ def train_agents(args):
                 if info['action_required'][agent]:
                     if train_env.railway_encoding.is_real_decision(agent):
                         legal_actions = train_env.railway_encoding.get_agent_actions(
-                            agent)
+                            agent
+                        )
                         legal_choices[agent] = train_env.railway_encoding.get_legal_choices(
                             agent, legal_actions
                         )
@@ -292,7 +296,8 @@ def train_agents(args):
                             choice, legal_actions
                         )
                         assert action != RailEnvActions.DO_NOTHING.value, (
-                            choice, legal_actions)
+                            choice, legal_actions
+                        )
                         update_values[agent] = True
                         choices_count[choice] += 1
                         choices_taken.append(choice)
@@ -399,6 +404,7 @@ def train_agents(args):
             ' Avg: {:>7.2%}'
             '\t 🦶 Steps {:3n}'
             '\t 🎲 Epsilon: {:4.3f} '
+            '\t 🤔 Choices taken {:3n}'
             '\t 🔀 Choices probabilities: {:^}'.format(
                 episode,
                 normalized_score,
@@ -407,29 +413,14 @@ def train_agents(args):
                 avg_completion,
                 steps,
                 policy.choice_selector.epsilon,
+                np.sum(choices_count),
                 format_choices_probabilities(choices_probs)
             ), end="\n"
         )
 
         # Evaluate policy and log results at some interval
         if episode > 0 and episode % args.checkpoint == 0 and args.n_val_episodes > 0:
-            scores, completions, val_steps = eval_policy(
-                args, val_env, policy, val_seeds
-            )
-
-            # Log validation metrics to tensorboard
-            tensorboard_log(
-                "validation/scores", scores, episode,
-                plot=['mean', 'std', 'hist']
-            )
-            tensorboard_log(
-                "validation/completions", completions, episode,
-                plot=['mean', 'std', 'hist']
-            )
-            tensorboard_log(
-                "validation/steps", val_steps, episode,
-                plot=['mean', 'std', 'hist']
-            )
+            eval_policy(args, val_env, policy, val_seeds, episode)
 
         # Log training actions info to tensorboard
         tensorboard_log(
@@ -444,6 +435,7 @@ def train_agents(args):
 
         # Log training info to tensorboard
         tensorboard_log("training/steps", steps, episode)
+        tensorboard_log("training/choices", np.sum(choices_count), episode)
         tensorboard_log(
             "training/epsilon", policy.choice_selector.epsilon, episode
         )
@@ -486,23 +478,30 @@ def train_agents(args):
     WRITER.close()
 
 
-def eval_policy(args, env, policy, val_seeds):
+def eval_policy(args, env, policy, val_seeds, train_episode):
     '''
     Perform a validation round with the given policy
     in the specified environment
     '''
     action_dict = dict()
-    scores, completions, steps = [], [], []
+    scores, completions, steps, choices_count = [], [], [], []
 
     # Do the specified number of episodes
     print('\nStarting validation:')
     for episode, seed in enumerate(val_seeds):
         score = 0.0
         final_step = 0
-        obs, info = env.reset(
-            regenerate_rail=True, regenerate_schedule=True,
-            random_seed=seed
-        )
+        choices_taken = []
+
+        if args.fix_random:
+            obs, info = env.reset(
+                random_seed=RANDOM_SEED
+            )
+        else:
+            obs, info = env.reset(
+                regenerate_rail=True, regenerate_schedule=True,
+                random_seed=seed
+            )
         if args.render_every and args.render_val and episode % args.render_every == 0:
             env_renderer = RenderTool(
                 env,
@@ -530,16 +529,19 @@ def eval_policy(args, env, policy, val_seeds):
                 if info['action_required'][agent]:
                     if env.railway_encoding.is_real_decision(agent):
                         legal_actions = env.railway_encoding.get_agent_actions(
-                            agent)
+                            agent
+                        )
                         legal_choices = env.railway_encoding.get_legal_choices(
                             agent, legal_actions
                         )
                         choice = policy.act(obs[agent], legal_choices)
+                        choices_taken.append(choice)
                         action = env.railway_encoding.map_choice_to_action(
                             choice, legal_actions
                         )
                         assert action != RailEnvActions.DO_NOTHING.value, (
-                            choice, legal_actions)
+                            choice, legal_actions
+                        )
                     else:
                         actions = env.railway_encoding.get_agent_actions(agent)
                         assert len(actions) == 1, actions
@@ -579,28 +581,20 @@ def eval_policy(args, env, policy, val_seeds):
         completion = tasks_finished / env.get_num_agents()
         completions.append(completion)
         steps.append(final_step)
+        choices_count.append(len(choices_taken))
 
         print(
             '\r🚂 Validation {:3n}'
             '\t 🏆 Score: {:+4.3f}'
             '\t 💯 Done: {:7.2%}'
-            '\t 🦶 Steps: {:4n}'.format(
+            '\t 🦶 Steps: {:4n}'
+            '\t 🤔 Choices taken {:3n}'.format(
                 episode,
                 normalized_score,
                 completion,
-                final_step
+                final_step,
+                len(choices_taken)
             ), end="\n"
-        )
-
-        # Log validation metrics to tensorboard
-        tensorboard_log(
-            "validation/env_scores", score, episode,
-        )
-        tensorboard_log(
-            "validation/env_completions", completion, episode,
-        )
-        tensorboard_log(
-            "validation/env_steps", final_step, episode
         )
 
     # Print validation results
@@ -608,13 +602,32 @@ def eval_policy(args, env, policy, val_seeds):
         '\r✅ Validation End'
         '\t 🏆 Avg score: {:+1.3f}'
         '\t 💯 Avg done: {:7.1%}%'
-        '\t 🦶 Avg steps: {:5.2f}'.format(
+        '\t 🦶 Avg steps: {:5.2f}'
+        '\t 🤔 Avg choices taken {:5.2f}'.format(
             np.mean(scores),
             np.mean(completions),
-            np.mean(steps)
+            np.mean(steps),
+            np.mean(choices_count)
         ), end="\n\n"
     )
-    return scores, completions, steps
+
+    # Log validation metrics to tensorboard
+    tensorboard_log(
+        "validation/scores", scores, train_episode,
+        plot=['mean', 'std', 'hist']
+    )
+    tensorboard_log(
+        "validation/completions", completions, train_episode,
+        plot=['mean', 'std', 'hist']
+    )
+    tensorboard_log(
+        "validation/steps", steps, train_episode,
+        plot=['mean', 'std', 'hist']
+    )
+    tensorboard_log(
+        "validation/choices_count", choices_count, train_episode,
+        plot=['mean', 'std', 'hist']
+    )
 
 
 def parse_args():
@@ -661,7 +674,7 @@ def parse_args():
         help="malfunction maximum duration", type=int
     )
     parser.add_argument(
-        "--max_moves", action='store', default=300,  # 500
+        "--max_moves", action='store', default=500,
         help="maximum number of moves in an episode", type=int
     )
     parser.add_argument(
@@ -715,7 +728,7 @@ def parse_args():
         help="final exploration", type=float
     )
     parser.add_argument(
-        "--eps_decay", action='store', default=2e-4,  # 0.99
+        "--eps_decay", action='store', default=3e-4,  # 0.99
         help="exploration decay", type=float
     )
     parser.add_argument(

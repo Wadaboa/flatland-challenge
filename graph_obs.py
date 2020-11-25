@@ -14,7 +14,7 @@ class GraphObservator(ObservationBuilder):
         self.max_depth = max_depth
         self.predictor = predictor
         self.observations = dict()
-        self.observation_dim = 5
+        self.observation_dim = 1
 
     def reset(self):
         if self.predictor is not None:
@@ -60,8 +60,8 @@ class GraphObservator(ObservationBuilder):
                 handle, n[0], n[1], n[2]
             ]
             x[self.env.railway_encoding.node_to_index[n]] = [
-                d["is_dead_end"], d["is_fork"], d["is_join"],
-                d["is_target"], target_distance
+                #d["is_dead_end"], d["is_fork"], d["is_join"], d["is_target"],
+                target_distance
             ]
         x = torch.tensor(x, dtype=torch.float)
 

@@ -73,22 +73,39 @@ class CellOrientationGraph():
                         self._straight_rails.add((i, j))
                     elif num_ones == 1:
                         self._dead_ends.add((i, j))
+                    tmp_edges, tmp_actions = [], dict()
                     for k, bit in enumerate(trans_bitmap):
                         if bit == '1':
                             original_dir, final_dir = self._BITMAP_TO_TRANS[k]
                             new_position_x, new_position_y = get_new_position(
                                 [i, j], final_dir.value
                             )
-                            edge = (
+                            tmp_action = env_utils.agent_action(
+                                original_dir, final_dir
+                            )
+                            tmp_edges.append((
                                 (i, j, original_dir.value),
                                 (new_position_x, new_position_y, final_dir.value),
-                                {
-                                    'weight': 1,
-                                    'action': env_utils.agent_action(original_dir, final_dir),
-                                    'choice': env_utils.RailEnvChoices.CHOICE_LEFT
-                                }
-                            )
-                            edges.append(edge)
+                                tmp_action
+                            ))
+                            tmp_actions.setdefault(
+                                (i, j, original_dir.value), []
+                            ).append(tmp_action)
+
+                    for tmp_edge in tmp_edges:
+                        tmp_choice = self.map_action_to_choice(
+                            tmp_edge[2], tmp_actions[tmp_edge[0]]
+                        )
+                        edge = (
+                            tmp_edge[0],
+                            tmp_edge[1],
+                            {
+                                'weight': 1,
+                                'action': tmp_edge[2],
+                                'choice': tmp_choice
+                            }
+                        )
+                        edges.append(edge)
         return edges
 
     def _pack_graph(self):
@@ -122,9 +139,7 @@ class CellOrientationGraph():
                 {
                     'weight': source[1]['weight'] + target[1]['weight'],
                     'action': source[1]['action'],
-                    'choice': self.map_action_to_choice(
-                        source[1]['action'], self.get_actions(source[0])
-                    )
+                    'choice': source[1]['choice']
                 }
             )
             for source in sources for target in targets
@@ -375,6 +390,7 @@ class CellOrientationGraph():
                 return env_utils.RailEnvChoices.CHOICE_RIGHT
             if RailEnvActions.MOVE_RIGHT in actions:
                 return env_utils.RailEnvChoices.CHOICE_LEFT
+            return env_utils.RailEnvChoices.CHOICE_LEFT
         return env_utils.RailEnvChoices.STOP
 
     def get_possible_choices(self, position, actions):

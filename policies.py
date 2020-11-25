@@ -68,8 +68,8 @@ class DQNPolicy(Policy):
         "buffer_size": int(1e5),
         "min_buffer_size": 0,
         "batch_size": 128,
-        "update_every": 8,
-        "learning_rate": 0.5e-4,
+        "update_every": 4,
+        "learning_rate": 0.1e-3,
         "tau": 1e-3,
         "discount": 0.99,
         "hidden_sizes": [128, 128],
@@ -77,7 +77,7 @@ class DQNPolicy(Policy):
         "double": True,
         "softmax_bellman": False,
         "loss": "huber",
-        "nonlinearity": "tanh",
+        "nonlinearity": "relu",
     }
 
     def __init__(self, state_size, choice_size, choice_selector, training=False):
@@ -295,10 +295,12 @@ class DQNGNNPolicy(DQNPolicy):
     '''
 
     PARAMETERS = dict(DQNPolicy.PARAMETERS, **{
-        "gnn_hidden_size": 10,
-        "embedding_size": 15,
-        "depth": 2,
-        "dropout": 0.0
+        "gnn_hidden_size": 2,
+        "embedding_size": 1,
+        "pos_size": 3,
+        "depth": 4,
+        "dropout": 0.0,
+        "gnn_aggregation": "mean"
     })
 
     def __init__(self, state_size, choice_size, choice_selector, training=False):
@@ -311,12 +313,15 @@ class DQNGNNPolicy(DQNPolicy):
 
         # Q-Network
         self.qnetwork_local = DQNGNN(
-            state_size, choice_size, self.PARAMETERS["embedding_size"],
+            state_size, choice_size,
+            self.PARAMETERS["pos_size"],
+            self.PARAMETERS["embedding_size"],
             hidden_sizes=self.PARAMETERS["hidden_sizes"],
             nonlinearity=self.PARAMETERS["nonlinearity"],
             gnn_hidden_size=self.PARAMETERS["gnn_hidden_size"],
             depth=self.PARAMETERS["depth"],
-            dropout=self.PARAMETERS["dropout"]
+            dropout=self.PARAMETERS["dropout"],
+            # gnn_aggregation=self.PARAMETERS["gnn_aggregation"]
         ).to(self.device)
 
         if training:
