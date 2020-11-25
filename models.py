@@ -114,7 +114,7 @@ class DQNGNN(DQN):
                 self.embedding_size
             ), dtype=torch.float
         )
-        for i, graph in enumerate(state):
+        for i, graph in enumerate(state.to_data_list()):
             x, edge_index, edge_weight, pos = (
                 graph.x, graph.edge_index, graph.edge_weight, graph.pos
             )

@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch_geometric.data import Data, DataLoader
+from torch_geometric.data import Data, Batch
 
 from models import DQN, DuelingDQN, DQNGNN
 from replay_buffers import ReplayBuffer
@@ -72,12 +72,20 @@ class DQNPolicy(Policy):
         "learning_rate": 0.1e-3,
         "tau": 1e-3,
         "discount": 0.99,
+        # The number and hidden sizes 
         "hidden_sizes": [128, 128],
+        # Enable or disable dueling DQN
         "dueling": True,
+        # Enable or disable double DQN
         "double": True,
+        # Whether to apply softmax Bellman or standard Bellman
         "softmax_bellman": False,
+        # Loss function (`mse` or `huber`)
         "loss": "huber",
+        # Non-linear function to use (`relu` or `tanh`)
         "nonlinearity": "relu",
+        # Clip the norm of the gradients (True) or clip the gradient itself (False)
+        "clip_gradient_norm": False
     }
 
     def __init__(self, state_size, choice_size, choice_selector, training=False):
@@ -107,7 +115,7 @@ class DQNPolicy(Policy):
         ).to(self.device)
 
         # Training parameters
-        if training:
+        if self.training:
             self.time_step = 0
             self.qnetwork_target = copy.deepcopy(self.qnetwork_local)
             self.optimizer = optim.Adam(
@@ -123,7 +131,7 @@ class DQNPolicy(Policy):
                 self.PARAMETERS["buffer_size"], self.device
             )
 
-    def act(self, state, legal_choices):
+    def act(self, state, legal_choices, val=False):
         '''
         Perform action selection based on the Q-values returned by the network
         '''
@@ -133,7 +141,7 @@ class DQNPolicy(Policy):
                 state
             ).float().unsqueeze(0).to(self.device)
         elif isinstance(state, Data):
-            state = DataLoader([state], batch_size=1)
+            state = Batch.from_data_list([state]).to(self.device)
         self.qnetwork_local.eval()
         with torch.no_grad():
             choice_values = self.qnetwork_local(
@@ -144,7 +152,7 @@ class DQNPolicy(Policy):
             choice_values.shape, legal_choices, dtype=bool
         )
         return (
-            self.choice_selector.select(choice_values, legal_choices) if self.training
+            self.choice_selector.select(choice_values, legal_choices) if not val
             else model_utils.masked_argmax(choice_values, legal_choices, dim=0)
         )
 
@@ -195,6 +203,13 @@ class DQNPolicy(Policy):
         self.loss = self.criterion(q_expected, q_targets)
         self.optimizer.zero_grad()
         self.loss.backward()
+        if self.PARAMETERS["clip_gradient_norm"]:
+            nn.utils.clip_grad.clip_grad_norm_(
+                self.qnetwork_local.parameters(), 10
+            )
+        else:
+            for param in self.qnetwork_local.parameters():
+                param.grad.data.clamp_(-1, 1)
         self.optimizer.step()
 
         # Update target network

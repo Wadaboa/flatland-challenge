@@ -1,0 +1,9 @@
+flatland-rl==2.2.2
+tensorboard==2.3.0
+tensorboardx==2.1
+-f https://pytorch-geometric.com/whl/torch-1.6.0.html
+torch-scatter==latest+cu102
+torch-sparse==latest+cu102
+torch-cluster==latest+cu102
+torch-spline-conv==latest+cu102
+torch-geometric==1.6.1

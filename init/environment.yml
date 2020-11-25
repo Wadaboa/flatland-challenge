@@ -1,8 +1,10 @@
 name: flatland-rl
+
 channels:
   - pytorch
   - conda-forge
   - defaults
+
 dependencies:
   - psutil==5.7.2
   - pytorch==1.6.0
@@ -14,7 +16,4 @@ dependencies:
   - tabulate==0.8.7
   - tqdm==4.51.0
   - pip:
-      - flatland-rl==2.2.2
-      - tensorboard==2.3.0
-      - tensorboardx==2.1
-      - pyglet==1.5.9
+      - -r file:conda_pip_requirements.txt

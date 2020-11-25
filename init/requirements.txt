@@ -12,3 +12,10 @@ autopep8==1.5.4
 tabulate==0.8.7
 pyglet==1.5.9
 tqdm==4.51.0
+-f https://pytorch-geometric.com/whl/torch-1.6.0.html
+torch-sparse==latest+cpu
+torch-scatter==latest+cpu
+torch-cluster==latest+cpu
+torch-spline-conv==latest+cpu
+torch-geometric==1.6.1
+pyyaml==5.3.1

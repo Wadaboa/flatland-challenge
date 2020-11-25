@@ -1,0 +1,59 @@
+env:
+  # Path to the train environment file
+  train_env: ""
+  # Path to the validation environment file
+  val_env: ""
+  # Number of trains to spawn
+  num_trains: 1
+  # Environment width
+  width: 48
+  # Environment height
+  height: 27
+  # Enable malfunctions
+  malfunction: False
+  # Malfunction minimum duration
+  malfunction_min_duration: 15
+  # Malfunction maximum duration
+  malfunction_max_duration: 50
+  # Maximum number of moves in an episode
+  max_moves: 500
+  # Predictor maximum depth
+  max_depth: 5
+  # Maximum number of cities where agents can start or end
+  max_cities: 5
+  # Type of city distribution
+  grid: False
+  # Maximum number of tracks allowed between cities
+  max_rails_between_cities: 2
+  # Maximum number of parallel tracks within a city
+  max_rails_in_cities: 3
+  # Enable variable speed
+  variable_speed: False
+  # Select observation type
+  observation: "graph"
+
+train:
+  # Number of episodes to run
+  n_train_episodes: 5000
+  # Number of evaluation episodes
+  n_val_episodes: 25
+  # Checkpoint interval
+  checkpoint: 100
+  # Initial exploration
+  param_start: 1.0
+  # Final exploration
+  param_end: 0.01
+  # Exploration decay
+  param_decaying_episodes: 0.70
+  # Replay buffer to restore
+  restore_replay_buffer: ""
+  # Save replay buffer at each evaluation interval
+  save_replay_buffer: False
+  # Number of threads PyTorch can use
+  num_threads: 1
+  # How often to render an episode
+  render_every: 150
+  # Render validation or training episodes
+  render_val: False
+  # Fix all the possible sources of randomness
+  fix_random: True

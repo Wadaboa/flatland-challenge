@@ -3,13 +3,13 @@ import copy
 import random
 import copy
 import time
-
-from tqdm import tqdm
-from argparse import ArgumentParser
 from datetime import datetime
+from argparse import Namespace
 
+import yaml
 import numpy as np
 import torch
+from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
 from flatland.envs.rail_env import RailEnvActions
@@ -20,7 +20,7 @@ from flatland.envs.malfunction_generators import ParamMalfunctionGen, Malfunctio
 from flatland.envs.schedule_generators import sparse_schedule_generator
 from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
-from action_selectors import EpsilonGreedyActionSelector
+from action_selectors import EpsilonGreedyActionSelector, LinearParameterDecay
 from env_utils import RailEnvChoices
 from predictions import ShortestPathPredictor, NullPredictor
 from binary_tree_obs import BinaryTreeObservator
@@ -104,10 +104,10 @@ def create_rail_env(args, env=""):
         rail_generator = rail_from_file(env)
     else:
         rail_generator = sparse_rail_generator(
-            max_num_cities=args.max_cities,
-            grid_mode=args.grid,
-            max_rails_between_cities=args.max_rails_between_cities,
-            max_rails_in_city=args.max_rails_in_cities,
+            max_num_cities=args.env.max_cities,
+            grid_mode=args.env.grid,
+            max_rails_between_cities=args.env.max_rails_between_cities,
+            max_rails_in_city=args.env.max_rails_in_cities,
             seed=RANDOM_SEED
         )
     predictor = PREDICTORS[args.observation](max_depth=args.max_depth)
@@ -184,7 +184,10 @@ def train_agents(args):
     policy = POLICIES[args.observation](
         train_env.state_size, choice_size,
         EpsilonGreedyActionSelector(
-            epsilon_start=args.eps_start, epsilon_decay=args.eps_decay, epsilon_end=args.eps_end
+            LinearParameterDecay(
+                parameter_start=args.param_start, parameter_end=args.param_end,
+                episodes=args.n_train_episodes, decaying_episodes=args.param_decaying_episodes
+            )
         ), training=True
     )
 
@@ -291,7 +294,8 @@ def train_agents(args):
                         legal_choices[agent] = train_env.railway_encoding.get_legal_choices(
                             agent, legal_actions
                         )
-                        choice = policy.act(obs[agent], legal_choices[agent])
+                        choice = policy.act(
+                            obs[agent], legal_choices[agent], val=False)
                         action = train_env.railway_encoding.map_choice_to_action(
                             choice, legal_actions
                         )
@@ -435,7 +439,9 @@ def train_agents(args):
 
         # Log training info to tensorboard
         tensorboard_log("training/steps", steps, episode)
-        tensorboard_log("training/choices", np.sum(choices_count), episode)
+        tensorboard_log(
+            "training/choices_count", np.sum(choices_count), episode
+        )
         tensorboard_log(
             "training/epsilon", policy.choice_selector.epsilon, episode
         )
@@ -534,7 +540,9 @@ def eval_policy(args, env, policy, val_seeds, train_episode):
                         legal_choices = env.railway_encoding.get_legal_choices(
                             agent, legal_actions
                         )
-                        choice = policy.act(obs[agent], legal_choices)
+                        choice = policy.act(
+                            obs[agent], legal_choices, val=True
+                        )
                         choices_taken.append(choice)
                         action = env.railway_encoding.map_choice_to_action(
                             choice, legal_actions
@@ -630,140 +638,13 @@ def eval_policy(args, env, policy, val_seeds, train_episode):
     )
 
 
-def parse_args():
-    '''
-    Parse terminal arguments
-    '''
-    parser = ArgumentParser()
-
-    # Environment parameters
-    parser.add_argument(
-        "--train_env", action='store', default="",
-        help="path to the train environment file", type=str
-    )
-    parser.add_argument(
-        "--val_env", action='store', default="",
-        help="path to the validation environment file", type=str
-    )
-    parser.add_argument(
-        "--num_trains", action='store', default=1,
-        help="number of trains to spawn", type=int
-    )
-    parser.add_argument(
-        "--width", action='store', default=48,
-        help="environment width", type=int
-    )
-    parser.add_argument(
-        "--height", action='store', default=27,
-        help="environment height", type=int
-    )
-    parser.add_argument(
-        "--malfunction", action='store_true', default=False,
-        help="enable malfunctions"
-    )
-    parser.add_argument(
-        "--malfunction_rate", action='store', default=0.2,
-        help="malfunction rate", type=float
-    )
-    parser.add_argument(
-        "--malfunction_min_duration", action='store', default=15,
-        help="malfunction minimum duration", type=int
-    )
-    parser.add_argument(
-        "--malfunction_max_duration", action='store', default=50,
-        help="malfunction maximum duration", type=int
-    )
-    parser.add_argument(
-        "--max_moves", action='store', default=500,
-        help="maximum number of moves in an episode", type=int
-    )
-    parser.add_argument(
-        "--max_depth", action='store', default=5,
-        help="predictor maximum depth", type=int
-    )
-    parser.add_argument(
-        "--max_cities", action='store', default=5,
-        help="maximum number of cities where agents can start or end", type=int
-    )
-    parser.add_argument(
-        "--grid", action='store_true',
-        help="type of city distribution"
-    )
-    parser.add_argument(
-        "--max_rails_between_cities", action='store', default=2,
-        help="maximum number of tracks allowed between cities", type=int
-    )
-    parser.add_argument(
-        "--max_rails_in_cities", action='store', default=3,
-        help="maximum number of parallel tracks within a city", type=int
-    )
-    parser.add_argument(
-        "--variable_speed", action='store_true', default=False,
-        help="enable variable speed"
-    )
-    parser.add_argument(
-        "--observation", action='store', default='graph', choices=OBSERVATORS.keys(),
-        help="select observation type"
-    )
-
-    # Training parameters
-    parser.add_argument(
-        "--n_train_episodes", action='store', default=5000,
-        help="number of episodes to run", type=int
-    )
-    parser.add_argument(
-        "--n_val_episodes", action='store', default=25,
-        help="number of evaluation episodes", type=int
-    )
-    parser.add_argument(
-        "--checkpoint", action='store', default=100,
-        help="checkpoint interval", type=int
-    )
-    parser.add_argument(
-        "--eps_start", action='store', default=1.0,
-        help="initial exploration", type=float
-    )
-    parser.add_argument(
-        "--eps_end", action='store', default=0.01,
-        help="final exploration", type=float
-    )
-    parser.add_argument(
-        "--eps_decay", action='store', default=3e-4,  # 0.99
-        help="exploration decay", type=float
-    )
-    parser.add_argument(
-        "--restore_replay_buffer", action='store', default="",
-        help="replay buffer to restore", type=str
-    )
-    parser.add_argument(
-        "--save_replay_buffer", action='store_true',
-        help="save replay buffer at each evaluation interval"
-    )
-    parser.add_argument(
-        "--num_threads", action='store', default=1,
-        help="number of threads PyTorch can use", type=int
-    )
-    parser.add_argument(
-        "--render_every", action='store', default=150,
-        help="how often to render an episode", type=int
-    )
-    parser.add_argument(
-        "--render_val", action='store_true',
-        help="render validation or training episodes"
-    )
-    parser.add_argument(
-        "--fix_random", action='store_true',
-        help="fix all the possible sources of randomness"
-    )
-
-    return parser.parse_args()
-
-
 def main():
     '''
     Train environment with custom observation and prediction
     '''
-    args = parse_args()
+    with open('parameters.yml', 'r') as conf:
+        args = yaml.load(conf, Loader=yaml.FullLoader)
+    args = utils.Struct(**args)
     train_agents(args)
 
 
