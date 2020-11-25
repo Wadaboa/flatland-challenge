@@ -11,7 +11,7 @@ from models import DQN, DuelingDQN, DQNGNN
 from replay_buffers import ReplayBuffer
 import env_utils
 import model_utils
-from action_selectors import ActionSelector
+from action_selectors import ActionSelector, RandomActionSelector
 
 
 class Policy:
@@ -42,7 +42,7 @@ class RandomPolicy(Policy):
     '''
 
     def __init__(self, state_size=None, choice_size=None):
-        self.action_selector = action_selectors.RandomActionSelector()
+        self.action_selector = RandomActionSelector()
         super(RandomPolicy, self).__init__(state_size, choice_size)
 
     def act(self, state, legal_choices=None):
@@ -72,7 +72,7 @@ class DQNPolicy(Policy):
         "learning_rate": 0.1e-3,
         "tau": 1e-3,
         "discount": 0.99,
-        # The number and hidden sizes 
+        # The number of hidden layer with their hidden sizes
         "hidden_sizes": [128, 128],
         # Enable or disable dueling DQN
         "dueling": True,

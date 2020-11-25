@@ -1,7 +1,7 @@
 import numpy as np
 
 from flatland.envs.observations import TreeObsForRailEnv
-from flatland.envs.rail_env import RailEnv
+from flatland.envs.rail_env import RailEnv, RailEnvActions
 from flatland.envs.agent_utils import EnvAgent
 
 import obs_normalization

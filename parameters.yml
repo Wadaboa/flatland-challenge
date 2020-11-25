@@ -1,24 +1,16 @@
+# Enviroment cofiguration
 env:
-  # Path to the train environment file
-  train_env: ""
-  # Path to the validation environment file
-  val_env: ""
+  # Path to the enviroment file
+  load_env: ""
+  seed: 1
   # Number of trains to spawn
   num_trains: 1
   # Environment width
   width: 48
   # Environment height
   height: 27
-  # Enable malfunctions
-  malfunction: False
-  # Malfunction minimum duration
-  malfunction_min_duration: 15
-  # Malfunction maximum duration
-  malfunction_max_duration: 50
   # Maximum number of moves in an episode
   max_moves: 500
-  # Predictor maximum depth
-  max_depth: 5
   # Maximum number of cities where agents can start or end
   max_cities: 5
   # Type of city distribution
@@ -29,31 +21,176 @@ env:
   max_rails_in_cities: 3
   # Enable variable speed
   variable_speed: False
-  # Select observation type
-  observation: "graph"
+  # Malfunctions config
+  malfunctions:
+    # Enable malfunctions
+    enabled: False
+    # Malfunction minimum duration
+    min_duration: 15
+    # Malfunction maximum duration
+    max_duration: 50
 
-train:
-  # Number of episodes to run
-  n_train_episodes: 5000
-  # Number of evaluation episodes
-  n_val_episodes: 25
-  # Checkpoint interval
-  checkpoint: 100
+# Observator config
+observator:
+  max_depth: 5
+
+# Predictor config
+predictor:
+  max_depth: 5
+
+# Policy config
+policy:
+  # Select policy type
+  type:
+    graph: True
+    tree: False
+    binary_tree: False
+    random: False
+  # Output choice size
+  choice_size: 3
+
+# Learning config
+learning:
+  # Learning rate
+  learning_rate: 0.1e-3
+  # Weight multiplier for target network soft update
+  tau: 1e-3
+  # Discount multiplier for expected Q value of targets
+  discount: 0.99
+  # Bellman fuction
+  bellman:
+    # Softmax Bellman
+    softmax: False
+    # Standard Bellman
+    max: True
+  # Loss function
+  loss:
+    # Huber function
+    huber: True
+    # MSE function
+    mse: False
+  # Type of gradient clipping
+  gradient:
+    #  Clip the norm of the gradients (10)
+    clip_norm: False
+    # Clip the gradient itself (-1, 1)
+    clip_grad: True
+
+# ParameterDecay config
+parameter_decay:
+  # Type of ParameterDecay
+  type:
+    # Linear decay (param - decay)
+    linear: True
+    # Exponential decay (param * decay)
+    exponential: False
+    # No decay
+    no_decay: False
   # Initial exploration
-  param_start: 1.0
+  start: 1.0
   # Final exploration
-  param_end: 0.01
-  # Exploration decay
-  param_decaying_episodes: 0.70
-  # Replay buffer to restore
-  restore_replay_buffer: ""
-  # Save replay buffer at each evaluation interval
-  save_replay_buffer: False
+  end: 0.01
+  # Percentage of episode with parameter greater than final exploration
+  decay_episodes: 0.70
+
+# ActionSelector config
+action_selector:
+  # Type of ActionSelector
+  type:
+    eps_greedy: True
+    boltzmann: False
+    random: False
+    greedy: False
+    categorical: False
+
+# Model config
+model:
+  # Enable or disable dueling DQN
+  dueling: True
+  # Enable or disable double DQN
+  double: True
+  # The number of hidden layer with their hidden sizes
+  hidden_sizes:
+    - 128
+    - 128
+  # Non-linear function
+  nonlinearity:
+    # RELU function
+    relu: True
+    # Tanh function
+    tanh: False
+  # GNN configuration
+  gnn:
+    # Size of the hidden layers
+    hidden_size: 2
+    # Size of the output embedding
+    embedding_size: 1
+    # Number of produced embeddings
+    pos_size: 3
+    # Number of hidden layers and of convolutions
+    depth: 4
+    # Dropout value
+    dropout: 0.0
+    # Aggregation function
+    aggr_function:
+      # Mean function
+      mean: False
+      # Sum function
+      sum: True
+
+# Replay buffer config
+replay_buffer:
+  # Max buffer dimension
+  buffer_size: int(1e5)
+  # Min buffer dimension
+  min_buffer_size: 0
+  # Batch size
+  batch_size: 128
+  # After how many 'step' try to 'learn'
+  update_every: 4
+
+training:
   # Number of threads PyTorch can use
   num_threads: 1
-  # How often to render an episode
-  render_every: 150
-  # Render validation or training episodes
-  render_val: False
   # Fix all the possible sources of randomness
   fix_random: True
+  # Number of episodes to run
+  n_train_episodes: 5000
+  # Checkpoint interval - how often to evaluate and save the model
+  checkpoint: 100
+  # Random seed
+  random_seed: 1
+
+  # Train enviroment config
+  train_env:
+    # Train on random enviroments or on the same one
+    all_random: False
+    # Path to the train environment file
+    load_env: ""
+
+  # Evaluation enviroment config
+  eval_env:
+    # Evaluate on random enviroments or on the same one
+    all_random: False
+    # Number of evaluation episodes
+    n_episodes: 25
+    # Path to the validation environment file
+    load_env: ""
+
+  # Replay buffer config
+  replay_buffer:
+    # Replay buffer to restore
+    load_buffer: ""
+    # Save replay buffer at each checkpoint
+    save_buffer: False
+
+  # Renderer config
+  renderer:
+    # Render episodes during training
+    training: True
+    # How often to render an episode in training
+    train_checkpoint: 150
+    # Render episodes during evaluation
+    evaluation: True
+    # How often to render an episode in evaluation
+    eval_checkpoint: 5

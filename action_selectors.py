@@ -117,7 +117,7 @@ class EpsilonGreedyActionSelector(ActionSelector):
         self.epsilon = self.decay_schedule.decay(self.epsilon)
 
     def reset(self):
-        self.epsilon = decay_schedule.parameter_start
+        self.epsilon = self.decay_schedule.parameter_start
 
 
 class RandomActionSelector(EpsilonGreedyActionSelector):
