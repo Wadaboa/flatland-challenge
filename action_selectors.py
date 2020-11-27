@@ -23,9 +23,9 @@ class ParameterDecay:
 
 class NullParameterDecay(ParameterDecay):
 
-    def __init__(self, parameter):
+    def __init__(self, parameter_start, *args):
         super(NullParameterDecay, self).__init__(
-            parameter, parameter, parameter_decay=0
+            parameter_start, parameter_start, parameter_decay=0
         )
 
     def decay(self, parameter):
@@ -76,6 +76,13 @@ class ExponentialParameterDecay(ParameterDecay):
         )
 
 
+PARAMETER_DECAYS = {
+    "none": NullParameterDecay,
+    "linear": LinearParameterDecay,
+    "exponential": ExponentialParameterDecay
+}
+
+
 class ActionSelector:
 
     def __init__(self, decay_schedule):
@@ -95,22 +102,22 @@ class ActionSelector:
 class EpsilonGreedyActionSelector(ActionSelector):
 
     def __init__(self, decay_schedule):
-        super(EpsilonGreedyActionSelector, self).__init__(self, decay_schedule)
+        super(EpsilonGreedyActionSelector, self).__init__(decay_schedule)
         self.epsilon = decay_schedule.parameter_start
 
-    def select(self, actions, legal_actions=None, val=False):
+    def select(self, actions, legal_actions=None, training=False):
         legal_actions = (
             np.ones_like(actions, dtype=bool) if legal_actions is None
             else legal_actions
         )
         max_action = model_utils.masked_argmax(actions, legal_actions, dim=0)
-        if val:
-            return max_action, False
+        if not training:
+            return max_action, True
         random_action = random.choice(np.arange(actions.size)[legal_actions])
         is_equal = max_action == random_action
         return (
-            max_action, is_equal if random.random() > self.epsilon
-            else random_action, is_equal
+            (max_action, is_equal) if random.random() > self.epsilon
+            else (random_action, is_equal)
         )
 
     def decay(self):
@@ -122,34 +129,34 @@ class EpsilonGreedyActionSelector(ActionSelector):
 
 class RandomActionSelector(EpsilonGreedyActionSelector):
 
-    def __init__(self):
+    def __init__(self, *args):
         super(RandomActionSelector, self).__init__(
-            NullParameterDecay(parameter=1)
+            NullParameterDecay(parameter_start=1)
         )
 
 
 class GreedyActionSelector(EpsilonGreedyActionSelector):
 
-    def __init__(self):
+    def __init__(self, *args):
         super(GreedyActionSelector, self).__init__(
-            NullParameterDecay(parameter=0)
+            NullParameterDecay(parameter_start=0)
         )
 
 
 class BoltzmannActionSelector(ActionSelector):
 
     def __init__(self, decay_schedule):
-        super(BoltzmannActionSelector, self).__init__(self, decay_schedule)
+        super(BoltzmannActionSelector, self).__init__(decay_schedule)
         self.temperature = decay_schedule.parameter_start
 
-    def select(self, actions, legal_actions=None, val=False):
+    def select(self, actions, legal_actions=None, training=False):
         legal_actions = (
             np.ones_like(actions, dtype=bool) if legal_actions is None
             else legal_actions
         )
         max_action = model_utils.masked_argmax(actions, legal_actions, dim=0)
-        if val:
-            return max_action, False
+        if not training:
+            return max_action, True
         dist = model_utils.masked_softmax(
             actions, legal_actions, dim=0, temperature=self.temperature
         )
@@ -168,7 +175,16 @@ class BoltzmannActionSelector(ActionSelector):
 
 class CategoricalActionSelector(BoltzmannActionSelector):
 
-    def __init__(self):
+    def __init__(self, *args):
         super(CategoricalActionSelector, self).__init__(
-            NullParameterDecay(parameter=1)
+            NullParameterDecay(parameter_start=1)
         )
+
+
+ACTION_SELECTORS = {
+    "eps_greedy":  EpsilonGreedyActionSelector,
+    "random": RandomActionSelector,
+    "greedy": GreedyActionSelector,
+    "boltzmann": BoltzmannActionSelector,
+    "categorical": CategoricalActionSelector
+}

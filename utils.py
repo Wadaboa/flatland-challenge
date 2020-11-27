@@ -1,4 +1,5 @@
 import random
+import os
 from timeit import default_timer
 
 import numpy as np
@@ -65,6 +66,15 @@ def fix_random(seed):
     torch.backends.cudnn.deterministic = True
 
 
+def set_num_threads(num_threads):
+    '''
+    Set the maximum number of threads PyTorch can use
+    '''
+    torch.set_num_threads(num_threads)
+    os.environ["OMP_NUM_THREADS"] = str(num_threads)
+    os.environ["MKL_NUM_THREADS"] = str(num_threads)
+
+
 class Timer():
     '''
     Utility to measure times
@@ -95,12 +105,25 @@ class Timer():
 
 
 class Struct:
+    '''
+    Struct class, s.t. a nested dictionary is transformed
+    into a nested object
+    '''
+
     def __init__(self, **entries):
         for k, v in entries.items():
             if isinstance(v, dict):
                 self.__dict__.update({k: Struct(**v)})
             else:
                 self.__dict__.update({k: v})
+
+    def get_true_key(self):
+        '''
+        Return the only key in the Struct s.t. its value is True
+        '''
+        true_types = [k for k, v in self.__dict__.items() if v == True]
+        assert len(true_types) == 1
+        return true_types[0]
 
     def __str__(self):
         return str(self.__dict__)

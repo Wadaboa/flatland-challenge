@@ -39,7 +39,7 @@ def masked_argmax(vec, mask, dim=1, fill_value=np.nan):
     Argmax only on valid outputs
     '''
     assert vec.shape == mask.shape
-    assert np.all(mask.any(axis=dim))
+    assert np.all(mask.any(axis=dim)), mask
 
     masked_arr = ma.masked_array(
         vec, mask=np.invert(mask), fill_value=fill_value

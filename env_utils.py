@@ -1,14 +1,34 @@
 import os
+import copy
 from enum import IntEnum
 
 from flatland.envs.agent_utils import RailAgentStatus
-from flatland.core.grid.grid4_utils import get_new_position
 from flatland.envs.rail_env import RailEnvActions
-from flatland.envs.persistence import RailEnvPersister
 from flatland.envs.rail_env import RailEnv
-from flatland.envs.rail_generators import sparse_rail_generator
+from flatland.envs.rail_generators import rail_from_file, sparse_rail_generator
+from flatland.envs.malfunction_generators import ParamMalfunctionGen, MalfunctionParameters
+from flatland.envs.schedule_generators import sparse_schedule_generator
+from flatland.envs.observations import TreeObsForRailEnv
+from flatland.envs.predictions import ShortestPathPredictorForRailEnv
+
+from predictions import ShortestPathPredictor, NullPredictor
+from binary_tree_obs import BinaryTreeObservator
+from graph_obs import GraphObservator
+from environments import RailEnvWrapper
 
 import utils
+
+
+OBSERVATORS = {
+    "tree": TreeObsForRailEnv,
+    "binary_tree": BinaryTreeObservator,
+    "graph": GraphObservator
+}
+PREDICTORS = {
+    "tree": ShortestPathPredictorForRailEnv,
+    "binary_tree": ShortestPathPredictor,
+    "graph": ShortestPathPredictor
+}
 
 
 class RailEnvChoices(IntEnum):
@@ -38,20 +58,68 @@ class RailEnvChoices(IntEnum):
         ]
 
 
-def agent_action(original_dir, final_dir):
+def create_rail_env(args, load_env=""):
     '''
-    Return the action performed by an agent, by analyzing
-    the starting direction and the final direction of the movement
+    Build a RailEnv object with the specified parameters,
+    as described in the .yml file
     '''
-    value = (final_dir.value - original_dir.value) % 4
-    if value in (1, -3):
-        return RailEnvActions.MOVE_RIGHT
-    elif value in (-1, 3):
-        return RailEnvActions.MOVE_LEFT
-    return RailEnvActions.MOVE_FORWARD
+    # Check if an environment file is provided
+    if load_env:
+        rail_generator = rail_from_file(env)
+    else:
+        rail_generator = sparse_rail_generator(
+            max_num_cities=args.env.max_cities,
+            grid_mode=args.env.grid,
+            max_rails_between_cities=args.env.max_rails_between_cities,
+            max_rails_in_city=args.env.max_rails_in_cities,
+            seed=args.env.seed
+        )
+
+    # Build predictor and observator
+    obs_type = args.policy.type.get_true_key()
+    predictor = PREDICTORS[obs_type](max_depth=args.predictor.max_depth)
+    observator = OBSERVATORS[obs_type](args.observator.max_depth, predictor)
+
+    # Initialize malfunctions
+    malfunctions = None
+    if args.env.malfunctions.enabled:
+        malfunctions = ParamMalfunctionGen(
+            MalfunctionParameters(
+                malfunction_rate=args.env.malfunctions.rate,
+                min_duration=args.env.malfunctions.min_duration,
+                max_duration=args.env.malfunctions.max_duration
+            )
+        )
+
+    # Initialize agents speeds
+    speed_map = None
+    if args.env.variable_speed:
+        speed_map = {
+            1.: 0.25,
+            1. / 2.: 0.25,
+            1. / 3.: 0.25,
+            1. / 4.: 0.25
+        }
+    schedule_generator = sparse_schedule_generator(
+        speed_map, seed=args.env.seed
+    )
+
+    # Build the environment
+    return RailEnvWrapper(
+        width=args.env.width,
+        height=args.env.height,
+        rail_generator=rail_generator,
+        schedule_generator=schedule_generator,
+        number_of_agents=args.env.num_trains,
+        obs_builder_object=observator,
+        malfunction_generator=malfunctions,
+        remove_agents_at_target=True,
+        random_seed=args.env.seed
+    )
 
 
-def create_save_env(path, width, height, num_trains, max_cities, max_rails_between_cities, max_rails_in_cities, grid=False, seed=0):
+def create_save_env(path, width, height, num_trains, max_cities,
+                    max_rails_between_cities, max_rails_in_cities, grid=False, seed=0):
     '''
     Create a RailEnv environment with the given settings and save it as pickle
     '''
@@ -68,18 +136,7 @@ def create_save_env(path, width, height, num_trains, max_cities, max_rails_betwe
         rail_generator=rail_generator,
         number_of_agents=num_trains
     )
-    save_env(path, env)
-
-
-def save_env(path, env):
-    '''
-    Save the given RailEnv environment as pickle
-    '''
-    filename = os.path.join(
-        path,
-        f"{env.width}x{env.height}-{env.random_seed}.pkl"
-    )
-    RailEnvPersister.save(env, filename)
+    env.save(path)
 
 
 def get_seed(env, seed=None):
@@ -90,63 +147,23 @@ def get_seed(env, seed=None):
     return seed[0]
 
 
-def check_if_all_blocked(env):
+def copy_obs(obs):
     '''
-    Checks whether all the agents are blocked (full deadlock situation)
+    Return a deep copy of the given observation
     '''
-    # First build a map of agents in each position
-    location_has_agent = {}
-    for agent in env.agents:
-        if agent.status in [RailAgentStatus.ACTIVE, RailAgentStatus.DONE] and agent.position:
-            location_has_agent[tuple(agent.position)] = 1
-
-    # Looks for any agent that can still move
-    for handle in env.get_agent_handles():
-        agent = env.agents[handle]
-        if agent.status == RailAgentStatus.READY_TO_DEPART:
-            agent_virtual_position = agent.initial_position
-        elif agent.status == RailAgentStatus.ACTIVE:
-            agent_virtual_position = agent.position
-        elif agent.status == RailAgentStatus.DONE:
-            agent_virtual_position = agent.target
-        else:
-            continue
-
-        possible_transitions = env.rail.get_transitions(
-            *agent_virtual_position, agent.direction
-        )
-        orientation = agent.direction
-
-        for branch_direction in [(orientation + i) % 4 for i in range(-1, 3)]:
-            if possible_transitions[branch_direction]:
-                new_position = get_new_position(
-                    agent_virtual_position, branch_direction
-                )
-
-                if new_position not in location_has_agent:
-                    return False
-
-    # Full deadlock
-    return True
+    if hasattr(obs, "copy"):
+        return obs.copy()
+    return copy.deepcopy(obs)
 
 
-def get_agents_same_start(env):
+def agent_action(original_dir, final_dir):
     '''
-    Return a dictionary indexed by agents starting positions,
-    and having a list of handles as values, s.t. agents with
-    the same starting position are ordered by decreasing speed
+    Return the action performed by an agent, by analyzing
+    the starting direction and the final direction of the movement
     '''
-    agents_with_same_start = dict()
-    for handle_one, agent_one in enumerate(env.agents):
-        for handle_two, agent_two in enumerate(env.agents):
-            if handle_one != handle_two and agent_one.initial_position == agent_two.initial_position:
-                agents_with_same_start.setdefault(
-                    agent_one.initial_position, set()
-                ).update({handle_one, handle_two})
-
-    for position in agents_with_same_start:
-        agents_with_same_start[position] = sorted(
-            list(agents_with_same_start[position]), reverse=True,
-            key=lambda x: env.agents[x].speed_data['speed']
-        )
-    return agents_with_same_start
+    value = (final_dir.value - original_dir.value) % 4
+    if value in (1, -3):
+        return RailEnvActions.MOVE_RIGHT
+    elif value in (-1, 3):
+        return RailEnvActions.MOVE_LEFT
+    return RailEnvActions.MOVE_FORWARD

@@ -1,8 +1,13 @@
+import os
+
 import numpy as np
 
 from flatland.envs.observations import TreeObsForRailEnv
-from flatland.envs.rail_env import RailEnv, RailEnvActions
+from flatland.envs.rail_env import RailEnv, RailEnvActions, RailAgentStatus
 from flatland.envs.agent_utils import EnvAgent
+from flatland.envs.persistence import RailEnvPersister
+from flatland.utils.rendertools import RenderTool, AgentRenderVariant
+from flatland.core.grid.grid4_utils import get_new_position
 
 import obs_normalization
 from railway_encoding import CellOrientationGraph
@@ -17,6 +22,84 @@ class RailEnvWrapper(RailEnv):
         self.railway_encoding = None
         self.normalize = normalize
         self.state_size = self._get_state_size()
+
+    def get_agents_same_start(self):
+        '''
+        Return a dictionary indexed by agents starting positions,
+        and having a list of handles as values, s.t. agents with
+        the same starting position are ordered by decreasing speed
+        '''
+        agents_with_same_start = dict()
+        for handle_one, agent_one in enumerate(self.agents):
+            for handle_two, agent_two in enumerate(self.agents):
+                if handle_one != handle_two and agent_one.initial_position == agent_two.initial_position:
+                    agents_with_same_start.setdefault(
+                        agent_one.initial_position, set()
+                    ).update({handle_one, handle_two})
+
+        for position in agents_with_same_start:
+            agents_with_same_start[position] = sorted(
+                list(agents_with_same_start[position]), reverse=True,
+                key=lambda x: self.agents[x].speed_data['speed']
+            )
+        return agents_with_same_start
+
+    def check_if_all_blocked(self):
+        '''
+        Checks whether all the agents are blocked (full deadlock situation)
+        '''
+        # First build a map of agents in each position
+        location_has_agent = {}
+        for agent in self.agents:
+            if agent.status in [RailAgentStatus.ACTIVE, RailAgentStatus.DONE] and agent.position:
+                location_has_agent[tuple(agent.position)] = 1
+
+        # Looks for any agent that can still move
+        for handle in self.get_agent_handles():
+            agent = self.agents[handle]
+            if agent.status == RailAgentStatus.READY_TO_DEPART:
+                agent_virtual_position = agent.initial_position
+            elif agent.status == RailAgentStatus.ACTIVE:
+                agent_virtual_position = agent.position
+            elif agent.status == RailAgentStatus.DONE:
+                agent_virtual_position = agent.target
+            else:
+                continue
+
+            possible_transitions = self.rail.get_transitions(
+                *agent_virtual_position, agent.direction
+            )
+            orientation = agent.direction
+
+            for branch_direction in [(orientation + i) % 4 for i in range(-1, 3)]:
+                if possible_transitions[branch_direction]:
+                    new_position = get_new_position(
+                        agent_virtual_position, branch_direction
+                    )
+
+                    if new_position not in location_has_agent:
+                        return False
+
+        # Full deadlock
+        return True
+
+    def save(self, path):
+        '''
+        Save the given RailEnv environment as pickle
+        '''
+        filename = os.path.join(
+            path, f"{self.width}x{self.height}-{self.random_seed}.pkl"
+        )
+        RailEnvPersister.save(self, filename)
+
+    def get_renderer(self):
+        return RenderTool(
+            self,
+            agent_render_variant=AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX,
+            show_debug=True,
+            screen_height=1080,
+            screen_width=1920
+        )
 
     def reset(self, regenerate_rail=True, regenerate_schedule=True,
               activate_agents=False, random_seed=None):

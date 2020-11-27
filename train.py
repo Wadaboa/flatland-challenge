@@ -1,62 +1,22 @@
-import os
-import copy
-import random
-import copy
 import time
 from datetime import datetime
-from argparse import Namespace
 
 import yaml
 import numpy as np
-import torch
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 
 from flatland.envs.rail_env import RailEnvActions
-from flatland.envs.rail_generators import rail_from_file, sparse_rail_generator
-from flatland.envs.observations import TreeObsForRailEnv
-from flatland.envs.predictions import ShortestPathPredictorForRailEnv
-from flatland.envs.malfunction_generators import ParamMalfunctionGen, MalfunctionParameters
-from flatland.envs.schedule_generators import sparse_schedule_generator
-from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
-from action_selectors import EpsilonGreedyActionSelector, LinearParameterDecay
-from env_utils import RailEnvChoices
-from predictions import ShortestPathPredictor, NullPredictor
-from binary_tree_obs import BinaryTreeObservator
-from graph_obs import GraphObservator
-from policies import DQNPolicy, DQNGNNPolicy
-from environments import RailEnvWrapper
 import utils
 import env_utils
+import policies
+from action_selectors import ACTION_SELECTORS, PARAMETER_DECAYS
+from env_utils import RailEnvChoices
+from policies import POLICIES
 
 
-RANDOM_SEED = 1
 WRITER = SummaryWriter()
-OBSERVATORS = {
-    "tree": TreeObsForRailEnv,
-    "binary_tree": BinaryTreeObservator,
-    "graph": GraphObservator
-}
-PREDICTORS = {
-    "tree": ShortestPathPredictorForRailEnv,
-    "binary_tree": ShortestPathPredictor,
-    "graph": ShortestPathPredictor
-}
-POLICIES = {
-    "tree": DQNPolicy,
-    "binary_tree": DQNPolicy,
-    "graph": DQNGNNPolicy,
-}
-
-
-def set_num_threads(num_threads):
-    '''
-    Set the maximum number of threads PyTorch can use
-    '''
-    torch.set_num_threads(num_threads)
-    os.environ["OMP_NUM_THREADS"] = str(num_threads)
-    os.environ["MKL_NUM_THREADS"] = str(num_threads)
 
 
 def tensorboard_log(name, x, y, plot=['min', 'max', 'mean', 'std', 'hist']):
@@ -95,107 +55,52 @@ def format_choices_probabilities(choices_probabilities):
     return buffer
 
 
-def create_rail_env(args, env=""):
-    '''
-    Build a RailEnv object with the specified parameters
-    '''
-    # Check if an environment file is provided
-    if env:
-        rail_generator = rail_from_file(env)
-    else:
-        rail_generator = sparse_rail_generator(
-            max_num_cities=args.env.max_cities,
-            grid_mode=args.env.grid,
-            max_rails_between_cities=args.env.max_rails_between_cities,
-            max_rails_in_city=args.env.max_rails_in_cities,
-            seed=RANDOM_SEED
-        )
-    predictor = PREDICTORS[args.observation](max_depth=args.max_depth)
-    observator = OBSERVATORS[args.observation](args.max_depth, predictor)
-    # Initialize malfunctions
-    malfunctions = None
-    if args.malfunction:
-        malfunctions = ParamMalfunctionGen(
-            MalfunctionParameters(
-                malfunction_rate=args.malfunction_rate,
-                min_duration=args.malfunction_min_duration,
-                max_duration=args.malfunction_max_duration
-            )
-        )
-
-    # Initialize agents speeds
-    speed_map = None
-    if args.variable_speed:
-        speed_map = {
-            1.: 0.25,
-            1. / 2.: 0.25,
-            1. / 3.: 0.25,
-            1. / 4.: 0.25
-        }
-    schedule_generator = sparse_schedule_generator(speed_map, seed=RANDOM_SEED)
-
-    # Build the environment
-    return RailEnvWrapper(
-        width=args.width,
-        height=args.height,
-        rail_generator=rail_generator,
-        schedule_generator=schedule_generator,
-        number_of_agents=args.num_trains,
-        obs_builder_object=observator,
-        malfunction_generator=malfunctions,
-        remove_agents_at_target=True,
-        random_seed=RANDOM_SEED
-    )
-
-
-def copy_obs(obs):
-    if hasattr(obs, "copy"):
-        return obs.copy()
-    return copy.deepcopy(obs)
-
-
 def train_agents(args):
     '''
     Train and evaluate agents on the specified environments
     '''
     # Initialize threads and seeds
-    set_num_threads(args.num_threads)
-    if args.fix_random:
-        utils.fix_random(RANDOM_SEED)
+    utils.set_num_threads(args.generic.num_threads)
+    if args.generic.fix_random:
+        utils.fix_random(args.generic.random_seed)
 
     # Setup the environments
-    train_env = create_rail_env(args, env=args.train_env)
-    val_env = create_rail_env(args, env=args.val_env)
+    train_env = env_utils.create_rail_env(
+        args, load_env=args.training.train_env.load
+    )
+    eval_env = env_utils.create_rail_env(
+        args, load_env=args.training.eval_env.load
+    )
 
     # Define "static" random seeds for evaluation purposes
-    val_seeds = [RANDOM_SEED] * args.n_val_episodes
-    if not args.fix_random:
-        val_seeds = [
-            env_utils.get_seed(val_env)
-            for e in range(args.n_val_episodes)
+    eval_seeds = [args.env.seed] * args.training.eval_env.episodes
+    if args.training.eval_env.all_random:
+        eval_seeds = [
+            env_utils.get_seed(eval_env)
+            for e in range(args.training.eval_env.episodes)
         ]
 
-    # Set state size and action size
-    choice_size = 3
-    avg_score = 0.0
-    avg_completion = 0.0
+    # Pick action selector and parameter decay
+    pd_type = args.parameter_decay.type.get_true_key()
+    parameter_decay = PARAMETER_DECAYS[pd_type](
+        parameter_start=args.parameter_decay.start,
+        parameter_end=args.parameter_decay.end,
+        total_episodes=args.training.train_env.episodes,
+        decaying_episodes=args.parameter_decay.decaying_episodes
+    )
+    as_type = args.action_selector.type.get_true_key()
+    action_selector = ACTION_SELECTORS[as_type](parameter_decay)
 
     # Initialize the agents policy
-    policy = POLICIES[args.observation](
-        train_env.state_size, choice_size,
-        EpsilonGreedyActionSelector(
-            LinearParameterDecay(
-                parameter_start=args.param_start, parameter_end=args.param_end,
-                episodes=args.n_train_episodes, decaying_episodes=args.param_decaying_episodes
-            )
-        ), training=True
+    policy_type = args.policy.type.get_true_key()
+    policy = POLICIES[policy_type](
+        args, train_env.state_size, action_selector, training=True
     )
 
     # Handle replay buffer
-    if args.restore_replay_buffer:
+    if args.replay_buffer.load:
         try:
-            policy.load_replay_buffer(args.restore_replay_buffer)
-            policy.test()
+            policy.load_replay_buffer(args.replay_buffer.load)
         except RuntimeError as e:
             print(
                 "\n🛑 Could't load replay buffer, were the experiences generated using the same depth?"
@@ -203,7 +108,7 @@ def train_agents(args):
             print(e)
             exit(1)
     print("\n💾 Replay buffer status: {}/{} experiences".format(
-        len(policy.memory), policy.PARAMETERS["buffer_size"]
+        len(policy.memory), args.replay_buffer.size
     ))
 
     # Set the unique ID for this training
@@ -214,16 +119,17 @@ def train_agents(args):
     training_timer = utils.Timer()
     training_timer.start()
     print("\n🚉 Starting training \t Training {} trains on {}x{} grid for {} episodes \tEvaluating on {} episodes every {} episodes".format(
-        args.num_trains,
-        args.width, args.height,
-        args.n_train_episodes,
-        args.n_val_episodes,
-        args.checkpoint
+        args.env.num_trains,
+        args.env.width, args.env.height,
+        args.training.train_env.episodes,
+        args.training.eval_env.episodes,
+        args.training.checkpoint
     ))
     print(f"\n🧠 Model with training id {training_id}\n")
 
     # Do the specified number of episodes
-    for episode in range(args.n_train_episodes + 1):
+    avg_score, avg_completion = 0.0, 0.0
+    for episode in range(args.training.train_env.episodes + 1):
         # Initialize timers
         step_timer = utils.Timer()
         reset_timer = utils.Timer()
@@ -232,50 +138,41 @@ def train_agents(args):
 
         # Reset environment and renderer
         reset_timer.start()
-        if args.fix_random:
-            obs, info = train_env.reset(random_seed=RANDOM_SEED)
+        if not args.training.train_env.all_random:
+            obs, info = train_env.reset(random_seed=args.env.seed)
         else:
-            obs, info = train_env.reset(regenerate_rail=True, regenerate_schedule=True,
-                                        activate_agents=False, random_seed=env_utils.get_seed(train_env))
-        reset_timer.end()
-        if args.render_every and not args.render_val and episode % args.render_every == 0:
-            env_renderer = RenderTool(
-                train_env,
-                agent_render_variant=AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX,
-                show_debug=True,
-                screen_height=1080,
-                screen_width=1920
+            obs, info = train_env.reset(
+                regenerate_rail=True, regenerate_schedule=True,
+                random_seed=env_utils.get_seed(train_env)
             )
+        reset_timer.end()
+        if args.training.renderer.training and episode % args.training.renderer.train_checkpoint == 0:
+            env_renderer = train_env.get_renderer()
 
         # Compute agents with same source
-        agents_with_same_start = env_utils.get_agents_same_start(train_env)
+        agents_with_same_start = train_env.get_agents_same_start()
 
         # Initialize data structures for training info
         score, steps = 0, 0
         choices_taken = []
+        choices_count = [0] * policies.CHOICE_SIZE
+        num_exploration_choices = [0] * policies.CHOICE_SIZE
         legal_choices = dict()
-        update_values = [False] * args.num_trains
-        choices_count = [0] * choice_size
-        action_dict = dict()
-        choice_dict = dict()
-        rewards = dict()
-        prev_obs = dict()
-        prev_choices = dict()
+        update_values = [False] * args.env.num_trains
+        action_dict, choice_dict = dict(), dict()
+        rewards = [0] * args.env.num_trains
         arrived_agents = set()
-        for handle in range(args.num_trains):
+        prev_obs = dict()
+        prev_choices = [RailEnvChoices.CHOICE_LEFT.value] * args.env.num_trains
+        for handle in range(args.env.num_trains):
             legal_choices[handle] = train_env.railway_encoding.get_legal_choices(
-                handle,
-                train_env.railway_encoding.get_agent_actions(handle)
+                handle, train_env.railway_encoding.get_agent_actions(handle)
             )
-            rewards[handle] = 0
-            prev_choices[handle] = RailEnvChoices.CHOICE_LEFT.value
             if obs[handle] is not None:
-                prev_obs[handle] = copy_obs(obs[handle])
+                prev_obs[handle] = env_utils.copy_obs(obs[handle])
 
         # Do an episode
-        for step in range(args.max_moves):
-            # Inference step
-            inference_timer.start()
+        for step in range(args.env.max_moves):
 
             # Prioritize entry of faster agents in the environment
             for position in agents_with_same_start:
@@ -284,8 +181,14 @@ def train_agents(args):
                     for agent in agents_with_same_start[position]:
                         info['action_required'][agent] = False
 
+            # Compute an action for each agent, if necessary
+            inference_timer.start()
             for agent in train_env.get_agent_handles():
+                # An action is not required if the train hasn't joined the railway network,
+                # if it already reached its target, or if it's currently malfunctioning,
+                # or if it's in deadlock or if it's in the middle of traversing a cell
                 update_values[agent] = False
+                action = RailEnvActions.DO_NOTHING.value
                 if info['action_required'][agent]:
                     if train_env.railway_encoding.is_real_decision(agent):
                         legal_actions = train_env.railway_encoding.get_agent_actions(
@@ -294,8 +197,9 @@ def train_agents(args):
                         legal_choices[agent] = train_env.railway_encoding.get_legal_choices(
                             agent, legal_actions
                         )
-                        choice = policy.act(
-                            obs[agent], legal_choices[agent], val=False)
+                        choice, is_best = policy.act(
+                            obs[agent], legal_choices[agent], training=True
+                        )
                         action = train_env.railway_encoding.map_choice_to_action(
                             choice, legal_actions
                         )
@@ -305,17 +209,14 @@ def train_agents(args):
                         update_values[agent] = True
                         choices_count[choice] += 1
                         choices_taken.append(choice)
+                        num_exploration_choices[choice] += int(is_best)
                         choice_dict.update({agent: choice})
                     else:
                         actions = train_env.railway_encoding.get_agent_actions(
-                            agent)
+                            agent
+                        )
                         assert len(actions) == 1, actions
                         action = actions[0]
-                else:
-                    # An action is not required if the train hasn't joined the railway network,
-                    # if it already reached its target, or if it's currently malfunctioning,
-                    # or if it's in deadlock or if it's in the middle of traversing a cell
-                    action = RailEnvActions.DO_NOTHING.value
                 action_dict.update({agent: action})
             inference_timer.end()
 
@@ -325,7 +226,7 @@ def train_agents(args):
             step_timer.end()
 
             # Render an episode at some interval
-            if args.render_every and not args.render_val and episode % args.render_every == 0:
+            if args.training.renderer.training and episode % args.training.renderer.train_checkpoint == 0:
                 env_renderer.render_env(
                     show=True, show_observations=False, show_predictions=True, show_rowcols=True
                 )
@@ -337,7 +238,7 @@ def train_agents(args):
                 # otherwise return a positive reward equal to the maximum
                 # number of steps
                 if done[agent]:
-                    rewards[agent] = args.max_moves
+                    rewards[agent] = args.env.max_moves
                 else:
                     rewards[agent] += all_rewards[agent]
 
@@ -345,12 +246,13 @@ def train_agents(args):
                 if update_values[agent] or (done[agent] and agent not in arrived_agents):
                     learn_timer.start()
                     experience = (
-                        prev_obs[agent], prev_choices[agent], rewards[agent], obs[agent], legal_choices[agent], done[agent]
+                        prev_obs[agent], prev_choices[agent], rewards[agent],
+                        obs[agent], legal_choices[agent], done[agent]
                     )
                     policy.step(experience)
-                    rewards[agent] = 0
                     learn_timer.end()
-                    prev_obs[agent] = copy_obs(obs[agent])
+                    rewards[agent] = 0
+                    prev_obs[agent] = env_utils.copy_obs(obs[agent])
                     prev_choices[agent] = choice_dict[agent]
 
                 # Add agent to the list of arrived agents
@@ -359,19 +261,19 @@ def train_agents(args):
 
                 # Update observation and score
                 if next_obs[agent] is not None:
-                    obs[agent] = copy_obs(next_obs[agent])
+                    obs[agent] = env_utils.copy_obs(next_obs[agent])
                 score += all_rewards[agent]
 
             # Break if every agent arrived
             steps = step
-            if done['__all__'] or env_utils.check_if_all_blocked(train_env):
+            if done['__all__'] or train_env.check_if_all_blocked():
                 break
 
         # Close window
-        if args.render_every and not args.render_val and episode % args.render_every == 0:
+        if args.training.renderer.training and episode % args.renderer.training.train_checkpoint == 0:
             env_renderer.close_window()
 
-        # Epsilon decay
+        # Parameter decay
         policy.choice_selector.decay()
 
         # Save final scores
@@ -389,11 +291,11 @@ def train_agents(args):
         choices_probs = choices_count / np.sum(choices_count)
 
         # Save model and replay buffer at checkpoint
-        if episode % args.checkpoint == 0:
+        if episode % args.training.checkpoint == 0:
             policy.save(
                 './checkpoints/' + training_id + '-' + str(episode)
             )
-            if args.save_replay_buffer:
+            if args.replay_buffer.save:
                 policy.save_replay_buffer(
                     './replay_buffers/' + training_id +
                     '-' + str(episode) + '.pkl'
@@ -406,9 +308,10 @@ def train_agents(args):
             ' Avg: {:>+4.3f}'
             '\t 💯 Done: {:<7.2%}'
             ' Avg: {:>7.2%}'
-            '\t 🦶 Steps {:3n}'
+            '\t 🦶 Steps: {:3n}'
             '\t 🎲 Epsilon: {:4.3f} '
-            '\t 🤔 Choices taken {:3n}'
+            '\t 🤔 Choices: {:3n}'
+            '\t 🤠 Exploration: {:3n}'
             '\t 🔀 Choices probabilities: {:^}'.format(
                 episode,
                 normalized_score,
@@ -418,13 +321,14 @@ def train_agents(args):
                 steps,
                 policy.choice_selector.epsilon,
                 np.sum(choices_count),
+                np.sum(num_exploration_choices),
                 format_choices_probabilities(choices_probs)
             ), end="\n"
         )
 
         # Evaluate policy and log results at some interval
-        if episode > 0 and episode % args.checkpoint == 0 and args.n_val_episodes > 0:
-            eval_policy(args, val_env, policy, val_seeds, episode)
+        if episode > 0 and episode % args.training.checkpoint == 0 and args.training.eval_env.episodes > 0:
+            eval_policy(args, eval_env, policy, eval_seeds, episode)
 
         # Log training actions info to tensorboard
         tensorboard_log(
@@ -441,6 +345,10 @@ def train_agents(args):
         tensorboard_log("training/steps", steps, episode)
         tensorboard_log(
             "training/choices_count", np.sum(choices_count), episode
+        )
+        tensorboard_log(
+            "training/exploration_choices",
+            np.sum(num_exploration_choices), episode
         )
         tensorboard_log(
             "training/epsilon", policy.choice_selector.epsilon, episode
@@ -462,20 +370,22 @@ def train_agents(args):
             "timer/total", training_timer.get_current(), episode
         )
 
+    # Print final training info
     print("\n\r🏁 Training Ended \tTrained {} trains on {}x{} grid for {} episodes \t Evaluated on {} episodes every {} episodes".format(
-        args.num_trains,
-        args.width, args.height,
-        args.n_train_episodes,
-        args.n_val_episodes,
-        args.checkpoint
+        args.env.num_trains,
+        args.env.width, args.env.height,
+        args.training.train_env.episodes,
+        args.training.eval_env.episodes,
+        args.training.checkpoint
     ))
-    print("\n💾 Replay buffer status: {}/{} experiences".format(
-        len(policy.memory), policy.PARAMETERS["buffer_size"]
-    ))
+    print(
+        f"\n💾 Replay buffer status: {len(policy.memory)}/{args.replay_buffer.size} experiences"
+    )
 
+    # Save trained models
     print(f"\n🧠 Saving model with training id {training_id}")
     policy.save('./checkpoints/' + training_id + '-latest')
-    if args.save_replay_buffer:
+    if args.replay_buffer.save:
         policy.save_replay_buffer(
             './replay_buffers/' + training_id + '-latest' + '.pkl'
         )
@@ -484,7 +394,7 @@ def train_agents(args):
     WRITER.close()
 
 
-def eval_policy(args, env, policy, val_seeds, train_episode):
+def eval_policy(args, env, policy, eval_seeds, train_episode):
     '''
     Perform a validation round with the given policy
     in the specified environment
@@ -494,34 +404,27 @@ def eval_policy(args, env, policy, val_seeds, train_episode):
 
     # Do the specified number of episodes
     print('\nStarting validation:')
-    for episode, seed in enumerate(val_seeds):
+    for episode, seed in enumerate(eval_seeds):
         score = 0.0
         final_step = 0
         choices_taken = []
 
-        if args.fix_random:
-            obs, info = env.reset(
-                random_seed=RANDOM_SEED
-            )
+        # Reset environment and renderer
+        if not args.training.eval_env.all_random:
+            obs, info = env.reset(random_seed=seed)
         else:
             obs, info = env.reset(
                 regenerate_rail=True, regenerate_schedule=True,
                 random_seed=seed
             )
-        if args.render_every and args.render_val and episode % args.render_every == 0:
-            env_renderer = RenderTool(
-                env,
-                agent_render_variant=AgentRenderVariant.AGENT_SHOWS_OPTIONS_AND_BOX,
-                show_debug=True,
-                screen_height=1080,
-                screen_width=1920
-            )
+        if args.training.renderer.evaluation and episode % args.renderer.training.eval_checkpoint == 0:
+            env_renderer = env.get_renderer()
 
         # Compute agents with same source
-        agents_with_same_start = env_utils.get_agents_same_start(env)
+        agents_with_same_start = env.get_agents_same_start()
 
         # Do an episode
-        for step in range(args.max_moves):
+        for step in range(args.env.max_moves):
 
             # Prioritize enter of faster agent in the environment
             for position in agents_with_same_start:
@@ -532,6 +435,7 @@ def eval_policy(args, env, policy, val_seeds, train_episode):
 
             # Perform a step
             for agent in env.get_agent_handles():
+                action = RailEnvActions.DO_NOTHING.value
                 if info['action_required'][agent]:
                     if env.railway_encoding.is_real_decision(agent):
                         legal_actions = env.railway_encoding.get_agent_actions(
@@ -540,8 +444,8 @@ def eval_policy(args, env, policy, val_seeds, train_episode):
                         legal_choices = env.railway_encoding.get_legal_choices(
                             agent, legal_actions
                         )
-                        choice = policy.act(
-                            obs[agent], legal_choices, val=True
+                        choice, is_best = policy.act(
+                            obs[agent], legal_choices[agent], training=False
                         )
                         choices_taken.append(choice)
                         action = env.railway_encoding.map_choice_to_action(
@@ -554,15 +458,13 @@ def eval_policy(args, env, policy, val_seeds, train_episode):
                         actions = env.railway_encoding.get_agent_actions(agent)
                         assert len(actions) == 1, actions
                         action = actions[0]
-                else:
-                    action = RailEnvActions.DO_NOTHING.value
                 action_dict.update({agent: action})
 
             # Perform a step in the environment
             obs, all_rewards, done, info = env.step(action_dict)
 
             # Render an episode at some interval
-            if args.render_every and args.render_val and episode % args.render_every == 0:
+            if args.training.renderer.evaluation and episode % args.renderer.training.eval_checkpoint == 0:
                 env_renderer.render_env(
                     show=True, show_observations=False, show_predictions=True, show_rowcols=True
                 )
@@ -577,7 +479,7 @@ def eval_policy(args, env, policy, val_seeds, train_episode):
                 break
 
         # Close window
-        if args.render_every and args.render_val and episode % args.render_every == 0:
+        if args.training.renderer.evaluation and episode % args.renderer.training.eval_checkpoint == 0:
             env_renderer.close_window()
 
         # Save final scores
@@ -591,6 +493,7 @@ def eval_policy(args, env, policy, val_seeds, train_episode):
         steps.append(final_step)
         choices_count.append(len(choices_taken))
 
+        # Print evaluation results on one episode
         print(
             '\r🚂 Validation {:3n}'
             '\t 🏆 Score: {:+4.3f}'

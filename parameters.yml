@@ -1,8 +1,7 @@
-# Enviroment cofiguration
+# Environment cofiguration
 env:
-  # Path to the enviroment file
-  load_env: ""
-  seed: 1
+  # Random seed used to generate rails
+  seed: 15
   # Number of trains to spawn
   num_trains: 1
   # Environment width
@@ -25,6 +24,8 @@ env:
   malfunctions:
     # Enable malfunctions
     enabled: False
+    # Malfunction rate
+    rate: !!float 1e-4
     # Malfunction minimum duration
     min_duration: 15
     # Malfunction maximum duration
@@ -32,76 +33,85 @@ env:
 
 # Observator config
 observator:
-  max_depth: 5
+  # Maximum depth for the observator
+  max_depth: 4
 
 # Predictor config
 predictor:
+  # Maximum depth for the predictor
   max_depth: 5
 
 # Policy config
 policy:
   # Select policy type
   type:
+    # GNN observation policy
     graph: True
+    # Standard tree observation policy
     tree: False
+    # Binary tree observation policy
     binary_tree: False
+    # Random policy
     random: False
-  # Output choice size
-  choice_size: 3
 
-# Learning config
-learning:
-  # Learning rate
-  learning_rate: 0.1e-3
-  # Weight multiplier for target network soft update
-  tau: 1e-3
-  # Discount multiplier for expected Q value of targets
-  discount: 0.99
-  # Bellman fuction
-  bellman:
-    # Softmax Bellman
-    softmax: False
-    # Standard Bellman
-    max: True
-  # Loss function
-  loss:
-    # Huber function
-    huber: True
-    # MSE function
-    mse: False
-  # Type of gradient clipping
-  gradient:
-    #  Clip the norm of the gradients (10)
-    clip_norm: False
-    # Clip the gradient itself (-1, 1)
-    clip_grad: True
+# Action selector config
+action_selector:
+  # Type of action selector
+  type:
+    # Epsilon-greedy action selection
+    eps_greedy: True
+    # Boltzmann action selection
+    boltzmann: False
+    # Random action selection
+    random: False
+    # Greedy action selection
+    greedy: False
+    # Categorical action selection
+    categorical: False
 
-# ParameterDecay config
+# Action selection parameter decay config
 parameter_decay:
-  # Type of ParameterDecay
+  # Type of decay
   type:
     # Linear decay (param - decay)
     linear: True
     # Exponential decay (param * decay)
     exponential: False
     # No decay
-    no_decay: False
+    none: False
   # Initial exploration
-  start: 1.0
+  start: !!float 1.0
   # Final exploration
-  end: 0.01
+  end: !!float 0.01
   # Percentage of episode with parameter greater than final exploration
-  decay_episodes: 0.70
+  decaying_episodes: !!float 0.70
 
-# ActionSelector config
-action_selector:
-  # Type of ActionSelector
-  type:
-    eps_greedy: True
-    boltzmann: False
-    random: False
-    greedy: False
-    categorical: False
+# Learning config
+learning:
+  # Learning rate
+  learning_rate: !!float 0.1e-3
+  # Weight multiplier for target network soft update
+  tau: !!float 1e-3
+  # Discount multiplier for expected Q-value of targets
+  discount: !!float 0.99
+  # Bellman fuction
+  softmax_bellman: False
+  # Loss function
+  loss:
+    # Huber loss
+    huber: True
+    # MSE loss
+    mse: False
+  # Type of gradient clipping
+  gradient:
+    # Maximum value for the norm of the gradients
+    max_norm: 10
+    # Maximum symmetrical limit for the values of the gradients
+    value_limit: 1
+    # Clip the norm of the gradients (`max_grad_norm`)
+    clip_norm: False
+    # Clamp the gradient itself (-`grad_value_limit`, `grad_value_limit`)
+    clamp_values: True
 
 # Model config
 model:
@@ -115,7 +125,7 @@ model:
     - 128
   # Non-linear function
   nonlinearity:
-    # RELU function
+    # ReLU function
     relu: True
     # Tanh function
     tanh: False
@@ -125,12 +135,10 @@ model:
     hidden_size: 2
     # Size of the output embedding
     embedding_size: 1
-    # Number of produced embeddings
+    # Number of embeddings to pass to the DQN
     pos_size: 3
-    # Number of hidden layers and of convolutions
-    depth: 4
     # Dropout value
-    dropout: 0.0
+    dropout: !!float 0.0
     # Aggregation function
     aggr_function:
       # Mean function
@@ -140,49 +148,48 @@ model:
 
 # Replay buffer config
 replay_buffer:
-  # Max buffer dimension
-  buffer_size: int(1e5)
-  # Min buffer dimension
-  min_buffer_size: 0
+  # Maximum buffer dimension
+  size: 100000
   # Batch size
   batch_size: 128
-  # After how many 'step' try to 'learn'
-  update_every: 4
+  # Try to learn after this many steps
+  checkpoint: 4
+  # Replay buffer to restore
+  load: ""
+  # Save replay buffer at each checkpoint
+  save: False
 
-training:
+# Generic config
+generic:
   # Number of threads PyTorch can use
   num_threads: 1
   # Fix all the possible sources of randomness
   fix_random: True
-  # Number of episodes to run
-  n_train_episodes: 5000
-  # Checkpoint interval - how often to evaluate and save the model
-  checkpoint: 100
-  # Random seed
+  # Random seed used when `fix_random` is True
   random_seed: 1
+
+# Training config
+training:
+  # Checkpoint interval (how often to evaluate and save the model)
+  checkpoint: 100
 
   # Train enviroment config
   train_env:
+    # Path to the train environment file
+    load: ""
+    # Number of training episodes to run
+    episodes: 5000
     # Train on random enviroments or on the same one
     all_random: False
-    # Path to the train environment file
-    load_env: ""
 
   # Evaluation enviroment config
   eval_env:
+    # Path to the evaluation environment file
+    load: ""
+    # Number of evaluation episodes
+    episodes: 25
     # Evaluate on random enviroments or on the same one
     all_random: False
-    # Number of evaluation episodes
-    n_episodes: 25
-    # Path to the validation environment file
-    load_env: ""
-
-  # Replay buffer config
-  replay_buffer:
-    # Replay buffer to restore
-    load_buffer: ""
-    # Save replay buffer at each checkpoint
-    save_buffer: False
 
   # Renderer config
   renderer:
@@ -194,3 +201,13 @@ training:
     evaluation: True
     # How often to render an episode in evaluation
     eval_checkpoint: 5
+
+testing:
+  # Path to the environment file
+  load: ""
+  # Path to the model to load
+  model: "checkpoints/gnn-4depth-1emb-500moves-onlydist"
+  # Seconds to sleep between moves
+  sleep: 0
+  # Save intermediate renderer frames
+  save_frames: True

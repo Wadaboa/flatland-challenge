@@ -82,6 +82,12 @@ class ReplayBuffer:
         ).reshape((self.batch_size, -1))
         return states, choices, rewards, next_states, next_legal_choices, dones
 
+    def can_sample(self):
+        '''
+        Check if there are enough samples in the replay buffer
+        '''
+        return len(self.memory) >= self.batch_size
+
     def save(self, filename):
         '''
         Save the current replay buffer to a pickle file

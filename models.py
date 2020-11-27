@@ -107,14 +107,15 @@ class DQNGNN(DQN):
         ))
 
     def forward(self, state):
+        graphs = state.to_data_list()
         embs = torch.empty(
             size=(
-                len(state),
+                len(graphs),
                 self.pos_size,
                 self.embedding_size
             ), dtype=torch.float
         )
-        for i, graph in enumerate(state.to_data_list()):
+        for i, graph in enumerate(graphs):
             x, edge_index, edge_weight, pos = (
                 graph.x, graph.edge_index, graph.edge_weight, graph.pos
             )
