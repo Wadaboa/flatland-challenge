@@ -2,6 +2,7 @@ import time
 from datetime import datetime
 
 import yaml
+import wandb
 import numpy as np
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
@@ -16,29 +17,26 @@ from env_utils import RailEnvChoices
 from policies import POLICIES
 
 
-WRITER = SummaryWriter()
-
-
-def tensorboard_log(name, x, y, plot=['min', 'max', 'mean', 'std', 'hist']):
+def tensorboard_log(writer, name, x, y, plot=['min', 'max', 'mean', 'std', 'hist']):
     '''
     Log the given x/y values to tensorboard
     '''
     if not isinstance(x, np.ndarray) and not isinstance(x, list):
-        WRITER.add_scalar(name, x, y)
+        writer.add_scalar(name, x, y)
     else:
         if ((isinstance(x, list) and len(x) == 0) or
                 (isinstance(x, np.ndarray) and x.size == 0)):
             return
         if 'min' in plot:
-            WRITER.add_scalar(f"{name}_min", np.min(x), y)
+            writer.add_scalar(f"{name}_min", np.min(x), y)
         if 'max' in plot:
-            WRITER.add_scalar(f"{name}_max", np.max(x), y)
+            writer.add_scalar(f"{name}_max", np.max(x), y)
         if 'mean' in plot:
-            WRITER.add_scalar(f"{name}_mean", np.mean(x), y)
+            writer.add_scalar(f"{name}_mean", np.mean(x), y)
         if 'std' in plot:
-            WRITER.add_scalar(f"{name}_std", np.std(x), y)
+            writer.add_scalar(f"{name}_std", np.std(x), y)
         if 'hist' in plot:
-            WRITER.add_histogram(name, np.array(x), y)
+            writer.add_histogram(name, np.array(x), y)
 
 
 def format_choices_probabilities(choices_probabilities):
@@ -55,7 +53,7 @@ def format_choices_probabilities(choices_probabilities):
     return buffer
 
 
-def train_agents(args):
+def train_agents(args, writer):
     '''
     Train and evaluate agents on the specified environments
     '''
@@ -96,6 +94,8 @@ def train_agents(args):
     policy = POLICIES[policy_type](
         args, train_env.state_size, action_selector, training=True
     )
+    if args.generic.wandb_gradients:
+        policy.enable_wandb()
 
     # Handle replay buffer
     if args.replay_buffer.load:
@@ -270,7 +270,7 @@ def train_agents(args):
                 break
 
         # Close window
-        if args.training.renderer.training and episode % args.renderer.training.train_checkpoint == 0:
+        if args.training.renderer.training and episode % args.training.renderer.train_checkpoint == 0:
             env_renderer.close_window()
 
         # Parameter decay
@@ -282,7 +282,7 @@ def train_agents(args):
         )
         completion = tasks_finished / train_env.get_num_agents()
         normalized_score = (
-            score / (args.max_moves * train_env.get_num_agents())
+            score / (args.env.max_moves * train_env.get_num_agents())
         )
         avg_completion = (
             episode * avg_completion + completion
@@ -292,13 +292,13 @@ def train_agents(args):
 
         # Save model and replay buffer at checkpoint
         if episode % args.training.checkpoint == 0:
-            policy.save(
-                './checkpoints/' + training_id + '-' + str(episode)
-            )
+            policy.save(f'./checkpoints/{training_id}-{episode}')
+            # Save partial model to wandb
+            if episode > 0 and episode % args.generic.wandb_checkpoint == 0:
+                wandb.save(f'./checkpoints/{training_id}-{episode}.local')
             if args.replay_buffer.save:
                 policy.save_replay_buffer(
-                    './replay_buffers/' + training_id +
-                    '-' + str(episode) + '.pkl'
+                    f'./replay_buffers/{training_id}-{episode}.pkl'
                 )
 
         # Print episode info
@@ -328,46 +328,54 @@ def train_agents(args):
 
         # Evaluate policy and log results at some interval
         if episode > 0 and episode % args.training.checkpoint == 0 and args.training.eval_env.episodes > 0:
-            eval_policy(args, eval_env, policy, eval_seeds, episode)
+            eval_policy(args, writer, eval_env, policy, eval_seeds, episode)
 
         # Log training actions info to tensorboard
         tensorboard_log(
-            "choices/left", choices_probs[env_utils.RailEnvChoices.CHOICE_LEFT.value], episode
+            writer, "choices/left",
+            choices_probs[env_utils.RailEnvChoices.CHOICE_LEFT.value], episode
         )
         tensorboard_log(
-            "choices/right", choices_probs[env_utils.RailEnvChoices.CHOICE_RIGHT.value], episode
+            writer, "choices/right",
+            choices_probs[env_utils.RailEnvChoices.CHOICE_RIGHT.value], episode
         )
         tensorboard_log(
-            "choices/stop", choices_probs[env_utils.RailEnvChoices.STOP.value], episode
+            writer, "choices/stop",
+            choices_probs[env_utils.RailEnvChoices.STOP.value], episode
         )
 
         # Log training info to tensorboard
-        tensorboard_log("training/steps", steps, episode)
+        tensorboard_log(writer, "training/steps", steps, episode)
         tensorboard_log(
-            "training/choices_count", np.sum(choices_count), episode
+            writer, "training/choices_count",
+            np.sum(choices_count), episode
         )
         tensorboard_log(
-            "training/exploration_choices",
+            writer, "training/exploration_choices",
             np.sum(num_exploration_choices), episode
         )
         tensorboard_log(
-            "training/epsilon", policy.choice_selector.epsilon, episode
+            writer, "training/epsilon",
+            policy.choice_selector.epsilon, episode
         )
         tensorboard_log(
-            "training/loss", policy.loss.data.item(), episode
+            writer, "training/loss",
+            policy.loss.data.item(), episode
         )
-        tensorboard_log("training/score", normalized_score, episode)
-        tensorboard_log("training/completion", completion, episode)
+        tensorboard_log(writer, "training/score", normalized_score, episode)
+        tensorboard_log(writer, "training/completion", completion, episode)
         tensorboard_log(
-            "training/buffer_size", len(policy.memory), episode
+            writer, "training/buffer_size",
+            len(policy.memory), episode
         )
 
         # Log training time info to tensorboard
-        tensorboard_log("timer/reset", reset_timer.get(), episode)
-        tensorboard_log("timer/step", step_timer.get(), episode)
-        tensorboard_log("timer/learn", learn_timer.get(), episode)
+        tensorboard_log(writer, "timer/reset", reset_timer.get(), episode)
+        tensorboard_log(writer, "timer/step", step_timer.get(), episode)
+        tensorboard_log(writer, "timer/learn", learn_timer.get(), episode)
         tensorboard_log(
-            "timer/total", training_timer.get_current(), episode
+            writer, "timer/total",
+            training_timer.get_current(), episode
         )
 
     # Print final training info
@@ -384,17 +392,15 @@ def train_agents(args):
 
     # Save trained models
     print(f"\n🧠 Saving model with training id {training_id}")
-    policy.save('./checkpoints/' + training_id + '-latest')
+    policy.save(f'./checkpoints/{training_id}-latest')
+    wandb.save(f'./checkpoints/{training_id}-latest.local')
     if args.replay_buffer.save:
         policy.save_replay_buffer(
-            './replay_buffers/' + training_id + '-latest' + '.pkl'
+            f'./replay_buffers/{training_id}-latest.pkl'
         )
 
-    # Close Tensorboard writer
-    WRITER.close()
 
-
-def eval_policy(args, env, policy, eval_seeds, train_episode):
+def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
     '''
     Perform a validation round with the given policy
     in the specified environment
@@ -417,7 +423,7 @@ def eval_policy(args, env, policy, eval_seeds, train_episode):
                 regenerate_rail=True, regenerate_schedule=True,
                 random_seed=seed
             )
-        if args.training.renderer.evaluation and episode % args.renderer.training.eval_checkpoint == 0:
+        if args.training.renderer.evaluation and episode % args.training.renderer.eval_checkpoint == 0:
             env_renderer = env.get_renderer()
 
         # Compute agents with same source
@@ -464,7 +470,7 @@ def eval_policy(args, env, policy, eval_seeds, train_episode):
             obs, all_rewards, done, info = env.step(action_dict)
 
             # Render an episode at some interval
-            if args.training.renderer.evaluation and episode % args.renderer.training.eval_checkpoint == 0:
+            if args.training.renderer.evaluation and episode % args.training.renderer.eval_checkpoint == 0:
                 env_renderer.render_env(
                     show=True, show_observations=False, show_predictions=True, show_rowcols=True
                 )
@@ -479,12 +485,12 @@ def eval_policy(args, env, policy, eval_seeds, train_episode):
                 break
 
         # Close window
-        if args.training.renderer.evaluation and episode % args.renderer.training.eval_checkpoint == 0:
+        if args.training.renderer.evaluation and episode % args.training.renderer.eval_checkpoint == 0:
             env_renderer.close_window()
 
         # Save final scores
         normalized_score = (
-            score / (args.max_moves * env.get_num_agents())
+            score / (args.env.max_moves * env.get_num_agents())
         )
         scores.append(normalized_score)
         tasks_finished = sum(done[idx] for idx in env.get_agent_handles())
@@ -524,19 +530,19 @@ def eval_policy(args, env, policy, eval_seeds, train_episode):
 
     # Log validation metrics to tensorboard
     tensorboard_log(
-        "validation/scores", scores, train_episode,
+        writer, "evaluation/scores", scores, train_episode,
         plot=['mean', 'std', 'hist']
     )
     tensorboard_log(
-        "validation/completions", completions, train_episode,
+        writer, "evaluation/completions", completions, train_episode,
         plot=['mean', 'std', 'hist']
     )
     tensorboard_log(
-        "validation/steps", steps, train_episode,
+        writer, "evaluation/steps", steps, train_episode,
         plot=['mean', 'std', 'hist']
     )
     tensorboard_log(
-        "validation/choices_count", choices_count, train_episode,
+        writer, "evaluation/choices_count", choices_count, train_episode,
         plot=['mean', 'std', 'hist']
     )
 
@@ -547,8 +553,17 @@ def main():
     '''
     with open('parameters.yml', 'r') as conf:
         args = yaml.load(conf, Loader=yaml.FullLoader)
+    wandb.init(
+        project='flatland-challenge',
+        entity="wadaboa",
+        config=args
+    )
+    wandb.tensorboard.patch(tensorboardX=False, pytorch=True)
+    writer = SummaryWriter()
     args = utils.Struct(**args)
-    train_agents(args)
+    train_agents(args, writer)
+    writer.close()
+    wandb.finish()
 
 
 if __name__ == "__main__":

@@ -167,6 +167,10 @@ generic:
   fix_random: True
   # Random seed used when `fix_random` is True
   random_seed: 1
+  # Checkpoint to save model to wandb
+  wandb_checkpoint: 500
+  # Enable gradients logging in wandb
+  wandb_gradients: True
 
 # Training config
 training:
@@ -178,7 +182,7 @@ training:
     # Path to the train environment file
     load: ""
     # Number of training episodes to run
-    episodes: 5000
+    episodes: 2500
     # Train on random enviroments or on the same one
     all_random: False
 

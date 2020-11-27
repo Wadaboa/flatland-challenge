@@ -5,6 +5,7 @@ import numpy as np
 import torch
 import torch.optim as optim
 import torch.nn as nn
+import wandb
 from torch_geometric.data import Data, Batch
 
 import env_utils
@@ -120,6 +121,20 @@ class DQNPolicy(Policy):
                 CHOICE_SIZE, self.params.replay_buffer.batch_size,
                 self.params.replay_buffer.size, self.device
             )
+            # Log gradients to wandb
+            wandb.watch(
+                self.qnetwork_local, self.criterion,
+                log="all", log_freq=1
+            )
+
+    def enable_wandb(self):
+        '''
+        Log gradients and parameters to wandb
+        '''
+        wandb.watch(
+            self.qnetwork_local, self.criterion,
+            log="all", log_freq=1
+        )
 
     def act(self, state, legal_choices, training=False):
         '''
@@ -205,6 +220,10 @@ class DQNPolicy(Policy):
                     self.params.learning.gradient.value_limit
                 )
         self.optimizer.step()
+
+        # Log loss to wandb
+        if self.params.generic.wandb_gradients:
+            wandb.log({"loss": self.loss})
 
         # Update target network
         self._soft_update(self.qnetwork_local, self.qnetwork_target)
