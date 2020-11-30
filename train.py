@@ -94,7 +94,7 @@ def train_agents(args, writer):
     policy = POLICIES[policy_type](
         args, train_env.state_size, action_selector, training=True
     )
-    if args.generic.wandb_gradients:
+    if args.generic.enable_wandb and args.generic.wandb_gradients:
         policy.enable_wandb()
 
     # Handle replay buffer
@@ -294,7 +294,7 @@ def train_agents(args, writer):
         if episode % args.training.checkpoint == 0:
             policy.save(f'./checkpoints/{training_id}-{episode}')
             # Save partial model to wandb
-            if episode > 0 and episode % args.generic.wandb_checkpoint == 0:
+            if args.generic.enable_wandb and episode > 0 and episode % args.generic.wandb_checkpoint == 0:
                 wandb.save(f'./checkpoints/{training_id}-{episode}.local')
             if args.replay_buffer.save:
                 policy.save_replay_buffer(
@@ -393,7 +393,8 @@ def train_agents(args, writer):
     # Save trained models
     print(f"\n🧠 Saving model with training id {training_id}")
     policy.save(f'./checkpoints/{training_id}-latest')
-    wandb.save(f'./checkpoints/{training_id}-latest.local')
+    if args.generic.enable_wandb:
+        wandb.save(f'./checkpoints/{training_id}-latest.local')
     if args.replay_buffer.save:
         policy.save_replay_buffer(
             f'./replay_buffers/{training_id}-latest.pkl'
@@ -553,17 +554,17 @@ def main():
     '''
     with open('parameters.yml', 'r') as conf:
         args = yaml.load(conf, Loader=yaml.FullLoader)
-    wandb.init(
-        project='flatland-challenge',
-        entity="wadaboa",
-        config=args
-    )
-    wandb.tensorboard.patch(tensorboardX=False, pytorch=True)
+    if args["generic"]["enable_wandb"]:
+        wandb.init(
+            project='flatland-challenge',
+            entity="wadaboa",
+            config=args
+        )
+        wandb.tensorboard.patch(tensorboardX=False, pytorch=True)
     writer = SummaryWriter()
     args = utils.Struct(**args)
     train_agents(args, writer)
     writer.close()
-    wandb.finish()
 
 
 if __name__ == "__main__":

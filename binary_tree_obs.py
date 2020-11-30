@@ -5,14 +5,12 @@ from collections import namedtuple
 
 import numpy as np
 
-from flatland.core.env import Environment
 from flatland.core.env_observation_builder import ObservationBuilder
-from flatland.core.grid.grid_utils import coordinate_to_position
-from flatland.utils.ordered_set import OrderedSet
-from flatland.envs.rail_env import RailAgentStatus
+
 
 import utils
-
+import env_utils
+import obs_normalization
 
 '''
 Observation:
@@ -41,10 +39,12 @@ Observation:
         8. Maximum number of malfunctioning turns of other agents (going in a direction
            different from mine), in each edge of the path
         9. Distances from the target, from each node in the path
-        10. Number of agents using the node to reach their target in the shortest path
-        11. Number of agents in deadlock in the previous path, assuming that all the
+        10. Path weights in turns to reach the given node from the root one
+        11. Number of agents using the node to reach their target in the shortest path
+        12. Number of agents in deadlock in the previous path, assuming that all the
             other agents follow their shortest path
-        12. How many turns before a possible deadlock
+        13. How many turns before a possible deadlock
+        14. If the node is a fork or not
 '''
 
 
@@ -68,7 +68,7 @@ class BinaryTreeObservator(ObservationBuilder):
         self.max_depth = max_depth
         self.predictor = predictor
         self.observations = dict()
-        self.observation_dim = 17
+        self.observation_dim = 14
 
     def _init_agents(self):
         '''
@@ -169,7 +169,9 @@ class BinaryTreeObservator(ObservationBuilder):
         return super().get_many(handles)
 
     def get(self, handle=0):
-        self.observations[handle] = np.full(
+        dim = sum(2**i for i in range(self.max_depth)) * self.observation_dim
+        self.observations[handle] = np.full(dim, obs_normalization.UNDER)
+        observation = np.full(
             (self.max_depth, self.max_depth, self.observation_dim), -np.inf
         )
         if self.predictions[handle] is not None and self.env.railway_encoding.is_real_decision(handle):
@@ -179,7 +181,7 @@ class BinaryTreeObservator(ObservationBuilder):
                 handle, shortest_path_prediction, packed_positions, packed_weights
             )
             prev_num_agents = shortest_feats[:, :4]
-            self.observations[handle][0, :, :] = shortest_feats
+            observation[0, :, :] = shortest_feats
             for i, deviation_prediction in enumerate(deviation_paths_prediction):
                 prev_deadlocks = 0
                 prev_num_agents_values = None
@@ -192,7 +194,16 @@ class BinaryTreeObservator(ObservationBuilder):
                     prev_deadlocks=prev_deadlocks, prev_num_agents=prev_num_agents_values,
                     deviation=True
                 )
-                self.observations[handle][i + 1, :, :] = dev_feats
+                observation[i + 1, :, :] = dev_feats
+            observation = obs_normalization.normalize_binary_tree_obs(
+                observation,
+                self.env.railway_encoding.remaining_agents(),
+                self.env.malfunction_generator.get_process_data().max_duration
+            )
+            tree_obs = self.get_agent_binary_tree(
+                handle, self.predictions[handle], observation)
+            self.observations[handle] = self.concat_nodes(tree_obs)
+
         return self.observations[handle]
 
     def _fill_path_values(self, handle, prediction, packed_positions, packed_weights,
@@ -258,11 +269,11 @@ class BinaryTreeObservator(ObservationBuilder):
             features=self.get_node_features(
                 prediction, features, choices, depth
             ),
-            left=get_binary_tree(
+            left=self.get_binary_tree(
                 children["left"], depth - 1, prediction, features,
                 choices=choices + [env_utils.RailEnvChoices.CHOICE_LEFT]
             ),
-            right=get_binary_tree(
+            right=self.get_binary_tree(
                 children["right"], depth - 1, prediction, features,
                 choices=choices + [env_utils.RailEnvChoices.CHOICE_RIGHT]
             )
@@ -273,22 +284,28 @@ class BinaryTreeObservator(ObservationBuilder):
         pos = self.max_depth - depth
         if pos == 0:
             return features[0, 0, :]
-        equals = [0] * self.max_depth
-        for d, choice in enumerate(choices):
-            if choice == sp_prediction.edges[d][2]['choice']:
-                equals[0] += 1
-            for i, dp_prediction in enumerate(dp_predictions[:d]):
-                if choice == dp_prediction.edges[d][2]['choice']:
-                    equals[i + 1] += 1
-        for j, e in enumerate(equals):
-            if e == pos:
-                return features[j, pos, :]
-        return None
+        sp_edges = [edge[2]['choice'] for edge in sp_prediction.edges[:pos]]
+        dp_edges = [[c for c in sp_edges[:i]] for i in range(len(sp_edges))]
+        for i, dp_prediction in enumerate(dp_predictions[:pos]):
+            for c in dp_prediction.edges[:pos-i]:
+                dp_edges[i].append(c[2]['choice'])
+
+        if choices == sp_edges:
+            return features[0, pos, :]
+        for i, dp in enumerate(dp_edges):
+            if choices == dp:
+                return features[i+1, pos-i, :]
+        return np.full(self.observation_dim, obs_normalization.UNDER)
 
     def get_agent_binary_tree(self, handle, prediction, features):
         position = self.env.railway_encoding.get_agent_cell(handle)
         node, _ = self.env.railway_encoding.next_node(position)
         return self.get_binary_tree(node, self.max_depth, prediction, features)
+
+    def concat_nodes(self, node):
+        if node is None:
+            return []
+        return np.concatenate((node.features, self.concat_nodes(node.left), self.concat_nodes(node.right)))
 
     def compute_is_fork(self, path):
         '''

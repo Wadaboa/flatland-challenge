@@ -50,7 +50,6 @@ class ReplayBuffer:
         states, choices, rewards, next_states, next_legal_choices, dones = zip(
             *random.sample(self.memory, k=self.batch_size)
         )
-
         # Check for PyTorch Geometric
         if isinstance(states[0], np.ndarray):
             states = torch.tensor(

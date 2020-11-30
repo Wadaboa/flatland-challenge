@@ -39,18 +39,18 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 5
+  max_depth: 4
 
 # Policy config
 policy:
   # Select policy type
   type:
     # GNN observation policy
-    graph: True
+    graph: False
     # Standard tree observation policy
     tree: False
     # Binary tree observation policy
-    binary_tree: False
+    binary_tree: True
     # Random policy
     random: False
 
@@ -167,6 +167,10 @@ generic:
   fix_random: True
   # Random seed used when `fix_random` is True
   random_seed: 1
+  # Device config
+  use_gpu: False
+  # Enable wandb logging
+  enable_wandb: True
   # Checkpoint to save model to wandb
   wandb_checkpoint: 500
   # Enable gradients logging in wandb

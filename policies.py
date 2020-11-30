@@ -97,11 +97,11 @@ class DQNPolicy(Policy):
 
         # Parameters
         self.device = torch.device("cpu")
-        if torch.cuda.is_available():
+        if self.params.generic.use_gpu and torch.cuda.is_available():
             self.device = torch.device("cuda:0")
             print("🐇 Using GPU")
 
-        # Q-Network
+            # Q-Network
         net = DuelingDQN if self.params.model.dueling else DQN
         self.qnetwork_local = net(
             self.state_size, CHOICE_SIZE, hidden_sizes=self.params.model.hidden_sizes,
@@ -120,11 +120,6 @@ class DQNPolicy(Policy):
             self.memory = ReplayBuffer(
                 CHOICE_SIZE, self.params.replay_buffer.batch_size,
                 self.params.replay_buffer.size, self.device
-            )
-            # Log gradients to wandb
-            wandb.watch(
-                self.qnetwork_local, self.criterion,
-                log="all", log_freq=1
             )
 
     def enable_wandb(self):
@@ -222,7 +217,7 @@ class DQNPolicy(Policy):
         self.optimizer.step()
 
         # Log loss to wandb
-        if self.params.generic.wandb_gradients:
+        if self.params.generic.enable_wandb and self.params.generic.wandb_gradients:
             wandb.log({"loss": self.loss})
 
         # Update target network

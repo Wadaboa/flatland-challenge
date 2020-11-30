@@ -24,7 +24,7 @@ def dumb_normalization(observation):
     return normalized_observation
 
 
-def normalize_graph_obs(observation, remaining_agents, max_malfunction):
+def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction):
     '''
     Normalize the given observations by performing min-max scaling
     over individual features
@@ -39,7 +39,6 @@ def normalize_graph_obs(observation, remaining_agents, max_malfunction):
     deadlocks = normalized_observation[:, :, 11]
     deadlock_distances = normalized_observation[:, :, 12]
     are_forks = normalized_observation[:, :, 13]
-    choices = normalized_observation[:, :, 14:17]
 
     # Normalize number of agents in path
     num_agents = utils.min_max_scaling(
