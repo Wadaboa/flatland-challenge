@@ -106,10 +106,8 @@ class EpsilonGreedyActionSelector(ActionSelector):
         self.epsilon = decay_schedule.parameter_start
 
     def select(self, actions, legal_actions=None, training=False):
-        legal_actions = (
-            np.ones_like(actions, dtype=bool) if legal_actions is None
-            else legal_actions
-        )
+        if legal_actions is None:
+            legal_actions = np.ones_like(actions, dtype=bool)
         max_action = model_utils.masked_argmax(actions, legal_actions, dim=0)
         if not training:
             return max_action, True
@@ -150,10 +148,8 @@ class BoltzmannActionSelector(ActionSelector):
         self.temperature = decay_schedule.parameter_start
 
     def select(self, actions, legal_actions=None, training=False):
-        legal_actions = (
-            np.ones_like(actions, dtype=bool) if legal_actions is None
-            else legal_actions
-        )
+        if legal_actions is None:
+            legal_actions = np.ones_like(actions, dtype=bool)
         max_action = model_utils.masked_argmax(actions, legal_actions, dim=0)
         if not training:
             return max_action, True

@@ -1,7 +1,7 @@
 # Environment cofiguration
 env:
   # Random seed used to generate rails
-  seed: 15
+  seed: 14
   # Number of trains to spawn
   num_trains: 1
   # Environment width
@@ -34,12 +34,12 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 4
+  max_depth: 5
 
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 4
+  max_depth: 5
 
 # Policy config
 policy:
@@ -89,7 +89,7 @@ parameter_decay:
 # Learning config
 learning:
   # Learning rate
-  learning_rate: !!float 0.1e-3
+  learning_rate: !!float 0.5e-4
   # Weight multiplier for target network soft update
   tau: !!float 1e-3
   # Discount multiplier for expected Q-value of targets
@@ -109,9 +109,9 @@ learning:
     # Maximum symmetrical limit for the values of the gradients
     value_limit: 1
     # Clip the norm of the gradients (`max_grad_norm`)
-    clip_norm: False
+    clip_norm: True
     # Clamp the gradient itself (-`grad_value_limit`, `grad_value_limit`)
-    clamp_values: True
+    clamp_values: False
 
 # Model config
 model:
@@ -179,7 +179,7 @@ generic:
 # Training config
 training:
   # Checkpoint interval (how often to evaluate and save the model)
-  checkpoint: 100
+  checkpoint: 200
 
   # Train enviroment config
   train_env:
@@ -202,13 +202,13 @@ training:
   # Renderer config
   renderer:
     # Render episodes during training
-    training: True
+    training: False
     # How often to render an episode in training
     train_checkpoint: 150
     # Render episodes during evaluation
     evaluation: True
     # How often to render an episode in evaluation
-    eval_checkpoint: 5
+    eval_checkpoint: 10
 
 testing:
   # Path to the environment file

@@ -5,22 +5,23 @@ from flatland.envs.rail_env import RailAgentStatus
 
 import utils
 
+
 ####################################################################
-################## Graph Obs Normalization #########################
+#################### Binary tree observation #######################
 ####################################################################
 
-LOWER, UPPER = -1, 1
-UNDER, OVER = -2, 2
+BT_LOWER, BT_UPPER = -1, 1
+BT_UNDER, BT_OVER = -2, 2
 
 
-def dumb_normalization(observation):
+def dumb_normalize_binary_tree_obs(observation):
     '''
     Substitute infinite values with a lower bound (e.g. -1),
     but avoid scaling observations
     '''
     normalized_observation = observation.copy()
-    normalized_observation[normalized_observation == -np.inf] = LOWER
-    normalized_observation[normalized_observation == np.inf] = LOWER
+    normalized_observation[normalized_observation == -np.inf] = BT_LOWER
+    normalized_observation[normalized_observation == np.inf] = BT_LOWER
     return normalized_observation
 
 
@@ -42,42 +43,42 @@ def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction):
 
     # Normalize number of agents in path
     num_agents = utils.min_max_scaling(
-        num_agents, LOWER, UPPER, UNDER, OVER,
+        num_agents, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
         known_min=0, known_max=remaining_agents
     )
 
     # Normalize malfunctions
     malfunctions = utils.min_max_scaling(
-        malfunctions, LOWER, UPPER, UNDER, OVER,
+        malfunctions, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
         known_min=0, known_max=max_malfunction
     )
 
     # Normalize common nodes
     c_nodes = utils.min_max_scaling(
-        c_nodes, LOWER, UPPER, UNDER, OVER,
+        c_nodes, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
         known_min=0, known_max=remaining_agents
     )
 
     # Normalize deadlocks
     deadlocks = utils.min_max_scaling(
-        deadlocks, LOWER, UPPER, UNDER, OVER,
+        deadlocks, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
         known_min=0, known_max=remaining_agents
     )
 
     # Normalize distances
     agent_distances = utils.min_max_scaling(
-        agent_distances, LOWER, UPPER, UNDER, OVER
+        agent_distances, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER
     )
     target_distances = utils.min_max_scaling(
-        target_distances, LOWER, UPPER, UNDER, OVER,
+        target_distances, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
         known_min=0
     )
     turns_to_node = utils.min_max_scaling(
-        turns_to_node, LOWER, UPPER, UNDER, OVER,
+        turns_to_node, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
         known_min=0
     )
     deadlock_distances = utils.min_max_scaling(
-        deadlock_distances, LOWER, UPPER, UNDER, OVER
+        deadlock_distances, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER
     )
 
     # Build the normalized observation
@@ -91,26 +92,31 @@ def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction):
     normalized_observation[:, :, 12] = deadlock_distances
 
     # Sanity check
-    normalized_observation[normalized_observation == -np.inf] = UNDER
-    normalized_observation[normalized_observation == np.inf] = OVER
+    normalized_observation[normalized_observation == -np.inf] = BT_UNDER
+    normalized_observation[normalized_observation == np.inf] = BT_OVER
 
-    # Check if the output is in range [UNDER, OVER]
+    # Check if the output is in range [BT_UNDER, BT_OVER]
     assert np.logical_and(
-        normalized_observation >= UNDER,
-        normalized_observation <= OVER
+        normalized_observation >= BT_UNDER,
+        normalized_observation <= BT_OVER
     ).all(), (observation, normalized_observation)
+
     return normalized_observation
 
+
 ####################################################################
-################## Tree Obs Normalization ##########################
+######################## Tree observation ##########################
 ####################################################################
+
+T_CLIP_MIN, T_CLIP_MAX = -1, 1
+T_OBS_RADIUS = 10
 
 
 def max_lt(seq, val):
-    """
+    '''
     Return greatest item in seq for which item < val applies.
     None is returned if seq was empty or all items in seq were >= val.
-    """
+    '''
     max = 0
     idx = len(seq) - 1
     while idx >= 0:
@@ -121,10 +127,10 @@ def max_lt(seq, val):
 
 
 def min_gt(seq, val):
-    """
+    '''
     Return smallest item in seq for which item > val applies.
     None is returned if seq was empty or all items in seq were >= val.
-    """
+    '''
     min = np.inf
     idx = len(seq) - 1
     while idx >= 0:
@@ -135,19 +141,15 @@ def min_gt(seq, val):
 
 
 def norm_obs_clip(obs, clip_min=-1, clip_max=1, fixed_radius=0, normalize_to_range=False):
-    """
+    '''
     This function returns the difference between min and max value of an observation
-    :param obs: Observation that should be normalized
-    :param clip_min: min value where observation will be clipped
-    :param clip_max: max value where observation will be clipped
-    :return: returnes normalized and clipped observatoin
-    """
+    '''
     if fixed_radius > 0:
         max_obs = fixed_radius
     else:
         max_obs = max(1, max_lt(obs, 1000)) + 1
 
-    min_obs = 0  # min(max_obs, min_gt(obs, 0))
+    min_obs = 0
     if normalize_to_range:
         min_obs = min_gt(obs, 0)
     if min_obs > max_obs:
@@ -159,10 +161,11 @@ def norm_obs_clip(obs, clip_min=-1, clip_max=1, fixed_radius=0, normalize_to_ran
 
 
 def _split_node_into_feature_groups(node):
+    '''
+    This function separates features of the given node into logical groups
+    '''
+    # Data features
     data = np.zeros(6)
-    distance = np.zeros(1)
-    agent_data = np.zeros(4)
-
     data[0] = node.dist_own_target_encountered
     data[1] = node.dist_other_target_encountered
     data[2] = node.dist_other_agent_encountered
@@ -170,8 +173,12 @@ def _split_node_into_feature_groups(node):
     data[4] = node.dist_unusable_switch
     data[5] = node.dist_to_next_branch
 
+    # Distance features
+    distance = np.zeros(1)
     distance[0] = node.dist_min_to_target
 
+    # Agent data features
+    agent_data = np.zeros(4)
     agent_data[0] = node.num_agents_same_direction
     agent_data[1] = node.num_agents_opposite_direction
     agent_data[2] = node.num_agents_malfunctioning
@@ -180,21 +187,27 @@ def _split_node_into_feature_groups(node):
     return data, distance, agent_data
 
 
-def _split_subtree_into_feature_groups(node, current_tree_depth: int, max_tree_depth: int):
+def _split_subtree_into_feature_groups(node, current_tree_depth, max_tree_depth):
+    '''
+    This function recursively extracts information starting from the given node
+    '''
     if node == -np.inf:
         remaining_depth = max_tree_depth - current_tree_depth
-        # reference: https://stackoverflow.com/questions/515214/total-number-of-nodes-in-a-tree-data-structure
         num_remaining_nodes = int((4 ** (remaining_depth + 1) - 1) / (4 - 1))
-        return [-np.inf] * num_remaining_nodes * 6, [-np.inf] * num_remaining_nodes, [-np.inf] * num_remaining_nodes * 4
+        return (
+            [-np.inf] * num_remaining_nodes * 6,
+            [-np.inf] * num_remaining_nodes,
+            [-np.inf] * num_remaining_nodes * 4
+        )
 
     data, distance, agent_data = _split_node_into_feature_groups(node)
-
     if not node.childs:
         return data, distance, agent_data
 
     for direction in TreeObsForRailEnv.tree_explored_actions_char:
         sub_data, sub_distance, sub_agent_data = _split_subtree_into_feature_groups(
-            node.childs[direction], current_tree_depth + 1, max_tree_depth)
+            node.childs[direction], current_tree_depth + 1, max_tree_depth
+        )
         data = np.concatenate((data, sub_data))
         distance = np.concatenate((distance, sub_distance))
         agent_data = np.concatenate((agent_data, sub_agent_data))
@@ -202,15 +215,16 @@ def _split_subtree_into_feature_groups(node, current_tree_depth: int, max_tree_d
     return data, distance, agent_data
 
 
-def split_tree_into_feature_groups(tree, max_tree_depth: int):
-    """
+def split_tree_into_feature_groups(tree, max_tree_depth):
+    '''
     This function splits the tree into three difference arrays of values
-    """
+    '''
     data, distance, agent_data = _split_node_into_feature_groups(tree)
 
     for direction in TreeObsForRailEnv.tree_explored_actions_char:
         sub_data, sub_distance, sub_agent_data = _split_subtree_into_feature_groups(
-            tree.childs[direction], 1, max_tree_depth)
+            tree.childs[direction], 1, max_tree_depth
+        )
         data = np.concatenate((data, sub_data))
         distance = np.concatenate((distance, sub_distance))
         agent_data = np.concatenate((agent_data, sub_agent_data))
@@ -218,16 +232,24 @@ def split_tree_into_feature_groups(tree, max_tree_depth: int):
     return data, distance, agent_data
 
 
-def normalize_tree_obs(observation, tree_depth: int, observation_radius=0):
-    """
+def normalize_tree_obs(observation, tree_depth):
+    '''
     This function normalizes the observation used by the RL algorithm
-    """
+    '''
     data, distance, agent_data = split_tree_into_feature_groups(
-        observation, tree_depth)
+        observation, tree_depth
+    )
 
-    data = norm_obs_clip(data, fixed_radius=observation_radius)
-    distance = norm_obs_clip(distance, normalize_to_range=True)
-    agent_data = np.clip(agent_data, -1, 1)
+    data = norm_obs_clip(
+        data, clip_min=T_CLIP_MIN, clip_max=T_CLIP_MAX,
+        fixed_radius=T_OBS_RADIUS
+    )
+    distance = norm_obs_clip(
+        distance, clip_min=T_CLIP_MIN, clip_max=T_CLIP_MAX,
+        normalize_to_range=True
+    )
+    agent_data = np.clip(agent_data, T_CLIP_MIN, T_CLIP_MAX)
     normalized_obs = np.concatenate(
-        (np.concatenate((data, distance)), agent_data))
+        (np.concatenate((data, distance)), agent_data)
+    )
     return normalized_obs

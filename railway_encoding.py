@@ -1,5 +1,7 @@
 '''
+Encoding of the railway environment as a cell orientation graph
 '''
+
 
 import itertools
 from collections import namedtuple
@@ -35,13 +37,17 @@ class CellOrientationGraph():
         self._dead_ends = set()
         self._straight_rails = set()
 
+        # For each target position, store associated agents
         self._targets = dict()
         for agent in agents:
             self._targets.setdefault(agent.target, []).append(agent.handle)
 
+        # Build the packed and unpacked graphs
         self._generate_graph()
 
-        self.node_to_index, self.index_to_node = self.build_vocab(
+        # Store the node to index and index to node mappings of
+        # the packed graph
+        self.node_to_index, self.index_to_node = self._build_vocab(
             unpacked=False
         )
 
@@ -214,6 +220,16 @@ class CellOrientationGraph():
                     fork_positions.add(node)
         return fork_positions, join_positions
 
+    def _build_vocab(self, unpacked=False):
+        '''
+        Build a vocabulary, mapping nodes to indexes and vice-versa
+        '''
+        graph = self.graph if not unpacked else self._unpacked_graph
+        nodes = sorted(list(graph.nodes()))
+        node_to_index = {node: i for i, node in enumerate(nodes)}
+        index_to_node = {i: node for i, node in enumerate(nodes)}
+        return node_to_index, index_to_node
+
     def is_straight_rail(self, cell):
         '''
         Check if the given cell is a straight rail
@@ -246,6 +262,9 @@ class CellOrientationGraph():
         return node in graph.nodes
 
     def get_edge_data(self, u, v, t, unpacked=False):
+        '''
+        Return the feature `t` in edge `(u, v)`
+        '''
         graph = self.graph if not unpacked else self._unpacked_graph
         assert (u, v) in graph.edges
         edge_data = graph.get_edge_data(u, v)
@@ -355,7 +374,7 @@ class CellOrientationGraph():
 
     def map_choice_to_action(self, choice, actions):
         '''
-        Map the given RailEnvChoices action to a RailEnvActions action
+        Map the given RailEnvChoices choice to a RailEnvActions action
         '''
         # If CHOICE_LEFT, then priorities are MOVE_LEFT, MOVE_FORWARD, MOVE_RIGHT
         if choice == env_utils.RailEnvChoices.CHOICE_LEFT.value:
@@ -378,6 +397,9 @@ class CellOrientationGraph():
         return RailEnvActions.DO_NOTHING.value
 
     def map_action_to_choice(self, action, actions):
+        '''
+        Map the given RailEnvActions action to a RailEnvChoices choice
+        '''
         if action == RailEnvActions.MOVE_LEFT and RailEnvActions.MOVE_LEFT in actions:
             return env_utils.RailEnvChoices.CHOICE_LEFT
         if action == RailEnvActions.MOVE_RIGHT and RailEnvActions.MOVE_RIGHT in actions:
@@ -394,6 +416,9 @@ class CellOrientationGraph():
         return env_utils.RailEnvChoices.STOP
 
     def get_possible_choices(self, position, actions):
+        '''
+        Map the given RailEnvActions actions to a list of RailEnvChoices
+        '''
         # If only one agent, stop moving is not legal
         possible_moves = {
             env_utils.RailEnvChoices.CHOICE_LEFT: False,
@@ -419,7 +444,8 @@ class CellOrientationGraph():
 
     def get_legal_choices(self, handle, actions):
         '''
-        Map the given RailEnvActions actions to a list of RailEnvChoices
+        Map the given RailEnvActions actions to a list of RailEnvChoices,
+        by considering the position of the agent
         '''
         # If the agent is arrived, only stop moving is possible
         # (necessary because of flatland bug)
@@ -459,16 +485,25 @@ class CellOrientationGraph():
         return actions
 
     def is_fork(self, position):
+        '''
+        Return True iff the given position is a fork
+        '''
         if position in self.graph.nodes:
             return self.graph.nodes[position]['is_fork']
         return False
 
     def is_join(self, position):
+        '''
+        Return True iff the given position is a join
+        '''
         if position in self.graph.nodes and self.graph.nodes[position]['is_join']:
             return True
         return False
 
     def is_before_join(self, position):
+        '''
+        Return True iff the given position is before a join cell
+        '''
         successors = self.get_successors(position, unpacked=True)
         for succ in successors:
             if self.is_join(succ):
@@ -488,6 +523,10 @@ class CellOrientationGraph():
         return self.is_before_join(self.get_agent_cell(handle))
 
     def remaining_agents(self):
+        '''
+        Return the number of remaining agents in the rail,
+        considering the ones that already reached their target
+        '''
         done_agents = sum([
             self.is_done(agent) for agent in range(len(self.agents))
         ])
@@ -528,6 +567,10 @@ class CellOrientationGraph():
         return self.get_actions(self.get_agent_cell(handle))
 
     def action_from_positions(self, source, dest, unpacked=True):
+        '''
+        Return the action that an agent has to make to transition
+        from the `source` node to the `dest` node
+        '''
         graph = self._unpacked_graph if unpacked else self.graph
         if (source, dest) in graph.edges:
             return graph.get_edge_data(source, dest)['action']
@@ -626,25 +669,28 @@ class CellOrientationGraph():
         )
 
     def get_adjacency_matrix(self, unpacked=False):
+        '''
+        Return the adjacency matrix of the specified graph,
+        as a SciPy sparse COO matrix
+        '''
         graph = self.graph if not unpacked else self._unpacked_graph
         return graph.to_scipy_sparse_matrix(
             dtype=np.dtype('long'), weight='weight', format='coo'
         )
 
     def get_graph_edges(self, unpacked=False, data=False):
+        '''
+        Return edges and associated features of the specified graph
+        '''
         graph = self.graph if not unpacked else self._unpacked_graph
         return graph.edges(data=data)
 
     def get_graph_nodes(self, unpacked=False, data=False):
+        '''
+        Return nodes and associated features of the specified graph
+        '''
         graph = self.graph if not unpacked else self._unpacked_graph
         return graph.nodes(data=data)
-
-    def build_vocab(self, unpacked=False):
-        graph = self.graph if not unpacked else self._unpacked_graph
-        nodes = sorted(list(graph.nodes()))
-        node_to_index = {node: i for i, node in enumerate(nodes)}
-        index_to_node = {i: node for i, node in enumerate(nodes)}
-        return node_to_index, index_to_node
 
     def edges_from_path(self, path):
         '''
@@ -703,6 +749,9 @@ class CellOrientationGraph():
         return nodes
 
     def no_successors_nodes(self, unpacked=False):
+        '''
+        Return a list of nodes that have no successors in the graph
+        '''
         graph = self._unpacked_graph if unpacked else self.graph
         no_succ = []
         for node in graph.nodes:

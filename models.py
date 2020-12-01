@@ -115,6 +115,8 @@ class DQNGNN(DQN):
                 self.embedding_size
             ), dtype=torch.float
         )
+
+        # For each graph in the batch
         for i, graph in enumerate(graphs):
             x, edge_index, edge_weight, pos = (
                 graph.x, graph.edge_index, graph.edge_weight, graph.pos
@@ -138,5 +140,5 @@ class DQNGNN(DQN):
                     embs[i, j] = emb[p.item()]
 
         # Call the DQN with a tensor of shape
-        # (batch_size, action_size, embedding_size)
+        # (batch_size, pos_size, embedding_size)
         return super().forward(embs)

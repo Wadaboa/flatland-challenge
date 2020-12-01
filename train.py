@@ -1,4 +1,5 @@
 import time
+import os
 from datetime import datetime
 
 import yaml
@@ -379,7 +380,7 @@ def train_agents(args, writer):
         )
 
     # Print final training info
-    print("\n\r🏁 Training Ended \tTrained {} trains on {}x{} grid for {} episodes \t Evaluated on {} episodes every {} episodes".format(
+    print("\n\r🏁 Training ended \tTrained {} trains on {}x{} grid for {} episodes \t Evaluated on {} episodes every {} episodes".format(
         args.env.num_trains,
         args.env.width, args.env.height,
         args.training.train_env.episodes,
@@ -452,8 +453,9 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
                             agent, legal_actions
                         )
                         choice, is_best = policy.act(
-                            obs[agent], legal_choices[agent], training=False
+                            obs[agent], legal_choices, training=False
                         )
+                        assert is_best == True
                         choices_taken.append(choice)
                         action = env.railway_encoding.map_choice_to_action(
                             choice, legal_actions
@@ -506,7 +508,7 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
             '\t 🏆 Score: {:+4.3f}'
             '\t 💯 Done: {:7.2%}'
             '\t 🦶 Steps: {:4n}'
-            '\t 🤔 Choices taken {:3n}'.format(
+            '\t 🤔 Choices: {:3n}'.format(
                 episode,
                 normalized_score,
                 completion,
@@ -516,8 +518,9 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
         )
 
     # Print validation results
+    print(choices_count)
     print(
-        '\r✅ Validation End'
+        '\r✅ Validation ended'
         '\t 🏆 Avg score: {:+1.3f}'
         '\t 💯 Avg done: {:7.1%}%'
         '\t 🦶 Avg steps: {:5.2f}'
@@ -552,6 +555,7 @@ def main():
     '''
     Train environment with custom observation and prediction
     '''
+    os.environ["WANDB_MODE"] = "dryrun"
     with open('parameters.yml', 'r') as conf:
         args = yaml.load(conf, Loader=yaml.FullLoader)
     if args["generic"]["enable_wandb"]:

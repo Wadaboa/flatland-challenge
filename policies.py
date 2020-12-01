@@ -151,11 +151,9 @@ class DQNPolicy(Policy):
             ).squeeze().detach().cpu().numpy()
 
         # Select a legal choice based on the action selector
-        legal_choices = np.full(
-            choice_values.shape, legal_choices, dtype=bool
-        )
+        legal_choices = np.array(legal_choices)
         return self.choice_selector.select(
-            choice_values, legal_choices, training=(training or self.training)
+            choice_values, legal_choices, training=(training and self.training)
         )
 
     def step(self, experience):
@@ -209,11 +207,9 @@ class DQNPolicy(Policy):
                 self.qnetwork_local.parameters(), self.params.learning.gradient.max_norm
             )
         elif self.params.learning.gradient.clamp_values:
-            for param in self.qnetwork_local.parameters():
-                param.grad.data.clamp_(
-                    -self.params.learning.gradient.value_limit,
-                    self.params.learning.gradient.value_limit
-                )
+            nn.utils.clip_grad.clip_grad_value_(
+                self.qnetwork_local.parameters(), self.params.learning.gradient.value_limit
+            )
         self.optimizer.step()
 
         # Log loss to wandb
