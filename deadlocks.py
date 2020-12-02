@@ -10,12 +10,14 @@ class DeadlocksDetector:
 
     def __init__(self):
         self.deadlocks = dict()
+        self.deadlock_turns = dict()
 
     def reset(self, num_agents):
         '''
         Reset deadlock counters
         '''
         self.deadlocks = {a: False for a in range(num_agents)}
+        self.deadlock_turns = {a: None for a in range(num_agents)}
 
     def step(self, env):
         '''
@@ -31,10 +33,12 @@ class DeadlocksDetector:
                     )
                 if not self.deadlocks[a]:
                     del agents[-1]
+                elif self.deadlock_turns[a] is None:
+                    self.deadlock_turns[a] = env._elapsed_steps - 1
             else:
                 self.deadlocks[a] = False
 
-        return self.deadlocks
+        return self.deadlocks, self.deadlock_turns
 
     def _check_feasible_transitions(self, pos, env):
         '''

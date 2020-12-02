@@ -2,55 +2,46 @@ import numpy as np
 import numpy.ma as ma
 
 
-def masked_softmax(vec, mask, dim=1, fill_value=0, temperature=1):
+def masked_softmax(vec, mask, dim=1, temperature=1):
     '''
     Softmax only on valid outputs
     '''
     assert vec.shape == mask.shape
-    assert np.all(mask.any(axis=dim))
+    assert np.all(mask.astype(bool).any(axis=dim)), mask
 
+    exps = vec.copy()
     exps = np.exp(vec / temperature)
-    masked_arr = ma.masked_array(
-        exps, mask=np.invert(mask), fill_value=fill_value
-    )
-    res = masked_arr / masked_arr.sum(axis=dim, keepdims=True)
-    res[res.mask] = fill_value
-    return res.data
+    exps[~mask.astype(bool)] = 0
+    return exps / exps.sum(axis=dim, keepdims=True)
 
 
-def masked_max(vec, mask, dim=1, fill_value=0):
+def masked_max(vec, mask, dim=1):
     '''
     Max only on valid outputs
     '''
     assert vec.shape == mask.shape
-    assert np.all(mask.any(axis=dim))
+    assert np.all(mask.astype(bool).any(axis=dim)), mask
 
-    masked_arr = ma.masked_array(
-        vec, mask=np.invert(mask), fill_value=fill_value
-    )
-    masked_max_arr = masked_arr.max(
-        axis=dim, keepdims=True
-    )
-    return masked_max_arr.data
+    res = vec.copy()
+    res[~mask.astype(bool)] = np.nan
+    return np.nanmax(res, axis=dim, keepdims=True)
 
 
-def masked_argmax(vec, mask, dim=1, fill_value=np.nan):
+def masked_argmax(vec, mask, dim=1):
     '''
     Argmax only on valid outputs
     '''
     assert vec.shape == mask.shape
-    assert np.all(mask.any(axis=dim)), mask
+    assert np.all(mask.astype(bool).any(axis=dim)), mask
 
-    masked_arr = ma.masked_array(
-        vec, mask=np.invert(mask), fill_value=fill_value
-    )
-    masked_argmax_arr = masked_arr.argmax(axis=dim)
+    res = vec.copy()
+    res[~mask.astype(bool)] = np.nan
+    argmax_arr = np.nanargmax(res, axis=dim)
 
-    # Argmax on masked arrays returns a plain numpy array,
-    # so we have to reshape it
+    # Argmax has no keepdims argument
     if dim > 0:
-        new_shape = list(vec.shape)
+        new_shape = list(res.shape)
         new_shape[dim] = 1
-        masked_argmax_arr = masked_argmax_arr.reshape(tuple(new_shape))
+        argmax_arr = argmax_arr.reshape(tuple(new_shape))
 
-    return masked_argmax_arr
+    return argmax_arr

@@ -364,6 +364,24 @@ class CellOrientationGraph():
             )
         return position
 
+    def worst_successor(self, handle):
+        '''
+        Return the successor of the position of the given agent
+        in the packed graph which has the highest weighted edge
+        '''
+        position = self.get_agent_cell(handle)
+        node, weight = self.next_node(position)
+        successors = self.get_successors(node, unpacked=False)
+        max_weight, max_succ = weight, node
+        for succ in successors:
+            succ_weight = self.get_edge_data(
+                node, succ, 'weight', unpacked=False
+            )
+            if succ_weight > max_weight:
+                max_weight = succ_weight
+                max_succ = succ
+        return (max_succ, max_weight + weight)
+
     def is_done(self, handle):
         '''
         Returns True if an agent arrived at its target
@@ -450,7 +468,7 @@ class CellOrientationGraph():
         # If the agent is arrived, only stop moving is possible
         # (necessary because of flatland bug)
         if self.is_done(handle):
-            return [False, False, True]
+            return env_utils.RailEnvChoices.default_choices()
 
         return self.get_possible_choices(self.get_agent_cell(handle), actions)
 

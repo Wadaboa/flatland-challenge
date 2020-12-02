@@ -1,4 +1,5 @@
 import os
+import copy
 
 import numpy as np
 
@@ -21,12 +22,15 @@ class RailEnvWrapper(RailEnv):
     Railway environment wrapper, to handle custom logic
     '''
 
-    def __init__(self, *args, normalize=True, **kwargs):
+    def __init__(self, params, *args, normalize=True, **kwargs):
         super(RailEnvWrapper, self).__init__(*args, **kwargs)
+        self.params = params
         self.railway_encoding = None
         self.normalize = normalize
         self.state_size = self._get_state_size()
         self.deadlocks_detector = DeadlocksDetector()
+        self.partial_rewards = dict()
+        self.arrived_turns = dict()
 
     def _get_state_size(self):
         '''
@@ -136,7 +140,7 @@ class RailEnvWrapper(RailEnv):
             (self.height, self.width), -1, dtype=int
         )
         self.reset_agents()
-        for agent in self.agents:
+        for i, agent in enumerate(self.agents):
             if activate_agents:
                 self.set_agent_active(agent)
             self._break_agent(agent)
@@ -144,12 +148,16 @@ class RailEnvWrapper(RailEnv):
                 agent.speed_data['transition_action_on_cellexit'] = RailEnvActions.DO_NOTHING
             self._fix_agent_after_malfunction(agent)
 
+            # Reset partial rewards
+            self.partial_rewards[i] = 0.0
+
         # Reset common variables
         self.num_resets += 1
         self._elapsed_steps = 0
         self.dones = dict.fromkeys(
             list(range(self.get_num_agents())) + ["__all__"], False
         )
+        self.arrived_turns = [None] * self.get_num_agents()
 
         # Build the cell orientation graph
         self.railway_encoding = CellOrientationGraph(
@@ -175,7 +183,7 @@ class RailEnvWrapper(RailEnv):
         # Build the info dict
         info_dict = {
             'action_required': {}, 'malfunction': {}, 'speed': {},
-            'status': {}, 'deadlocks': {}
+            'status': {}, 'deadlocks': {}, 'deadlock_turns': {}
         }
         for i, agent in enumerate(self.agents):
             info_dict['action_required'][i] = self.action_required(agent)
@@ -183,6 +191,7 @@ class RailEnvWrapper(RailEnv):
             info_dict['speed'][i] = agent.speed_data['speed']
             info_dict['status'][i] = agent.status
             info_dict["deadlocks"][i] = self.deadlocks_detector.deadlocks[i]
+            info_dict["deadlock_turns"][i] = self.deadlocks_detector.deadlock_turns[i]
 
         # Return the new observation vectors for each agent
         observation_dict = self._get_observations()
@@ -204,13 +213,81 @@ class RailEnvWrapper(RailEnv):
             "Could not invoke __call__ or generate on rail_generator"
         )
 
-    def step(self, *args, **kwargs):
+    def step(self, action_dict_):
         '''
         Perform a step in the environment
         '''
-        obs, rewards, dones, info = super().step(*args, **kwargs)
-        info["deadlocks"] = self.deadlocks_detector.step(self)
-        return (self._normalize_obs(obs), rewards, dones, info)
+        agents_in_decision_cells = self.agents_in_decision_cells()
+        obs, rewards, dones, info = super().step(action_dict_)
+        info["deadlocks"], info["deadlock_turns"] = self.deadlocks_detector.step(
+            self
+        )
+
+        # Update arrived agents turns
+        for agent in range(self.get_num_agents()):
+            if dones[agent] and self.arrived_turns[agent] is None:
+                self.arrived_turns[agent] = self._elapsed_steps - 1
+
+        # Compute custom rewards
+        custom_rewards = self._reward_shaping(
+            action_dict_, rewards, dones, info, agents_in_decision_cells
+        )
+
+        return (self._normalize_obs(obs), rewards, custom_rewards, dones, info)
+
+    def _reward_shaping(self, action_dict_, rewards, dones, info, agents_in_decision_cells):
+        '''
+        Apply custom reward functions
+        '''
+        # The step for which we are evaluating the rewards
+        # is the previous one
+        step = self._elapsed_steps - 1
+
+        custom_rewards = copy.deepcopy(rewards)
+        for agent in range(self.get_num_agents()):
+            # Return a positive reward equal to the maximum number of steps
+            # minus the current number of steps if the agent has arrived
+            if dones[agent] and self.arrived_turns[agent] == step:
+                done_reward = self.params.env.max_moves - step
+                custom_rewards[agent] = done_reward
+                self.partial_rewards[agent] = done_reward
+            # Return minus the maximum number of steps if the agent is in deadlock
+            elif info["deadlocks"][agent] and info["deadlock_turns"][agent] == step:
+                deadlock_penalty = -self.params.env.max_moves
+                custom_rewards[agent] = deadlock_penalty
+                self.partial_rewards[agent] = deadlock_penalty
+            # Accumulate rewards for choices if the agent is not in a decision cell
+            # and add other penalties, such as the stop moving one
+            else:
+                self.partial_rewards[agent] += custom_rewards[agent]
+                # If an agent performed a STOP action, give the agent a reward
+                # which is worse than the the reward it could have received
+                # by choosing any other action
+                if action_dict_[agent] == RailEnvActions.STOP_MOVING.value:
+                    _, weight = self.railway_encoding.worst_successor(agent)
+                    weight *= (1 / self.agents[agent].speed_data['speed'])
+                    self.partial_rewards[agent] += -(weight + 1)
+                custom_rewards[agent] = 0.0
+
+            # Reset the partial rewards counter when an agent is
+            # in a decision cell or in the last step
+            if agents_in_decision_cells[agent] or self._elapsed_steps == self.params.env.max_moves:
+                custom_rewards[agent] = self.partial_rewards[agent]
+                self.partial_rewards[agent] = 0.0
+
+            # Normalize rewards
+            custom_rewards[agent] /= self.params.env.max_moves
+
+        return custom_rewards
+
+    def agents_in_decision_cells(self):
+        '''
+        Return the agents that are on a decision cell
+        '''
+        return [
+            self.railway_encoding.is_real_decision(h)
+            for h in range(self.get_num_agents())
+        ]
 
     def _normalize_obs(self, obs):
         '''
@@ -224,7 +301,8 @@ class RailEnvWrapper(RailEnv):
                 # Normalize tree observation
                 if isinstance(self.obs_builder, TreeObsForRailEnv):
                     obs[handle] = obs_normalization.normalize_tree_obs(
-                        obs[handle], self.obs_builder.max_depth
+                        obs[handle], self.obs_builder.max_depth,
+                        self.params.observator.tree.radius
                     )
 
         return obs

@@ -10,8 +10,8 @@ from torch_geometric.data import Data, Batch
 
 Experience = namedtuple(
     "Experience", field_names=[
-        "state", "choice",
-        "reward", "next_state", "next_legal_choices", "done"
+        "state", "choice", "reward", "next_state",
+        "next_legal_choices", "inactive"
     ]
 )
 
@@ -34,11 +34,11 @@ class ReplayBuffer:
         '''
         Add a new experience to memory
         '''
-        state, choice, reward, next_state, next_legal_choices, done = experience
+        state, choice, reward, next_state, next_legal_choices, inactive = experience
         self.memory.append(
             Experience(
                 state, choice, reward,
-                next_state, next_legal_choices, done
+                next_state, next_legal_choices, inactive
             )
         )
 
@@ -47,7 +47,7 @@ class ReplayBuffer:
         Randomly sample a batch of experiences from memory.
         Each returned tensor has shape (batch_size, *)
         '''
-        states, choices, rewards, next_states, next_legal_choices, dones = zip(
+        states, choices, rewards, next_states, next_legal_choices, inactives = zip(
             *random.sample(self.memory, k=self.batch_size)
         )
         # Check for PyTorch Geometric
@@ -76,10 +76,10 @@ class ReplayBuffer:
         next_legal_choices = torch.tensor(
             next_legal_choices, dtype=torch.bool, device=self.device
         )
-        dones = torch.tensor(
-            dones, dtype=torch.uint8, device=self.device
+        inactives = torch.tensor(
+            inactives, dtype=torch.uint8, device=self.device
         ).reshape((self.batch_size, -1))
-        return states, choices, rewards, next_states, next_legal_choices, dones
+        return states, choices, rewards, next_states, next_legal_choices, inactives
 
     def can_sample(self):
         '''

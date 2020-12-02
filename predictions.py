@@ -193,7 +193,8 @@ class ShortestPathPredictor(PredictionBuilder):
             lenght=lenght, path=path[:self.max_depth], edges=edges, positions=pos
         )
         deviation_paths_prediction = self.get_deviation_paths(
-            handle, lenght, path)
+            handle, lenght, path
+        )
 
         # Update GUI
         visited = OrderedSet()

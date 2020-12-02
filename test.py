@@ -111,8 +111,8 @@ def test_agents(args):
 
     action_dict = dict()
     legal_choices = dict()
-    score = 0.0
-    for step in range(args.env.max_moves):
+    score, custom_score = 0.0, 0.0
+    for step in range(args.env.max_moves + 1):
         print(f"Iteration {step}")
 
         # Prioritize entry of faster agent in the environment
@@ -155,7 +155,7 @@ def test_agents(args):
             action_dict.update({agent: action})
 
         # Perform the computed action
-        obs, all_rewards, done, info = env.step(action_dict)
+        obs, rewards, custom_rewards, done, info = env.step(action_dict)
         env_renderer.render_env(
             show=True, show_observations=False, show_predictions=True, show_rowcols=True
         )
@@ -170,16 +170,24 @@ def test_agents(args):
 
         # Update agents score
         for handle in range(env.get_num_agents()):
-            score += all_rewards[handle]
+            score += rewards[handle]
+            custom_score += custom_rewards[handle]
+
+        # Print statistics
+        normalized_score = (
+            score / (args.env.max_moves * env.get_num_agents())
+        )
+        normalized_custom_score = custom_score / env.get_num_agents()
+        print(
+            f"Score: {round(normalized_score, 4)} / "
+            f"Custom score: {round(normalized_custom_score, 4)}"
+        )
+        print_agents_info(env)
+        print()
 
         # Check if every agent is arrived
         if done['__all__'] or env.check_if_all_blocked(info["deadlocks"]):
             break
-
-        # Print statistics
-        print(f"Score: {score}")
-        print_agents_info(env)
-        print()
 
 
 def main():

@@ -15,7 +15,6 @@ from models import DQN, DuelingDQN, DQNGNN
 from replay_buffers import ReplayBuffer
 
 
-CHOICE_SIZE = 3
 LOSSES = {
     "huber": nn.SmoothL1Loss(),
     "mse": nn.MSELoss()
@@ -55,7 +54,7 @@ class RandomPolicy(Policy):
     def __init__(self, params=None, state_size=None, choice_selector=None, training=False):
         self.action_selector = RandomActionSelector()
         super(RandomPolicy, self).__init__(
-            params, state_size, choice_size=CHOICE_SIZE,
+            params, state_size, choice_size=env_utils.RailEnvChoices.choice_size(),
             choice_selector=choice_selector, training=training
         )
 
@@ -88,7 +87,7 @@ class DQNPolicy(Policy):
         Initialize DQNPolicy object
         '''
         super(DQNPolicy, self).__init__(
-            params, state_size, choice_size=CHOICE_SIZE,
+            params, state_size, choice_size=env_utils.RailEnvChoices.choice_size(),
             choice_selector=choice_selector, training=training
         )
         assert isinstance(
@@ -104,7 +103,8 @@ class DQNPolicy(Policy):
             # Q-Network
         net = DuelingDQN if self.params.model.dueling else DQN
         self.qnetwork_local = net(
-            self.state_size, CHOICE_SIZE, hidden_sizes=self.params.model.hidden_sizes,
+            self.state_size, env_utils.RailEnvChoices.choice_size(),
+            hidden_sizes=self.params.model.hidden_sizes,
             nonlinearity=self.params.model.nonlinearity.get_true_key()
         ).to(self.device)
 
@@ -118,7 +118,7 @@ class DQNPolicy(Policy):
             self.criterion = LOSSES[self.params.learning.loss.get_true_key()]
             self.loss = torch.tensor(0.0)
             self.memory = ReplayBuffer(
-                CHOICE_SIZE, self.params.replay_buffer.batch_size,
+                env_utils.RailEnvChoices.choice_size(), self.params.replay_buffer.batch_size,
                 self.params.replay_buffer.size, self.device
             )
 
@@ -164,11 +164,15 @@ class DQNPolicy(Policy):
 
         # Save experience in replay memory
         self.memory.add(experience)
+        print()
+        print(experience)
+        print()
 
         # Learn every `checkpoint` time steps
         # (if enough samples are available in memory, get random subset and learn)
         self.time_step = (
-            self.time_step + 1) % self.params.replay_buffer.checkpoint
+            self.time_step + 1
+        ) % self.params.replay_buffer.checkpoint
         if self.time_step == 0 and self.memory.can_sample():
             self.qnetwork_local.train()
             self._learn()
@@ -179,7 +183,7 @@ class DQNPolicy(Policy):
         '''
         # Sample a batch of experiences
         experiences = self.memory.sample()
-        states, choices, rewards, next_states, next_legal_choices, dones = experiences
+        states, choices, rewards, next_states, next_legal_choices, inactives = experiences
 
         # Get expected Q-values from local model
         q_expected = self.qnetwork_local(states).gather(1, choices)
@@ -194,7 +198,8 @@ class DQNPolicy(Policy):
         # Compute Q-targets for current states
         q_targets = (
             rewards + (
-                self.params.learning.discount * q_targets_next * (1 - dones)
+                self.params.learning.discount *
+                q_targets_next * (1 - inactives)
             )
         )
 
@@ -323,7 +328,7 @@ class DQNGNNPolicy(DQNPolicy):
 
         # Q-Network
         self.qnetwork_local = DQNGNN(
-            state_size, CHOICE_SIZE,
+            state_size, env_utils.RailEnvChoices.choice_size(),
             self.params.model.gnn.pos_size,
             self.params.model.gnn.embedding_size,
             hidden_sizes=self.params.model.hidden_sizes,

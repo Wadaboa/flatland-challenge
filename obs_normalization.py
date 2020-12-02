@@ -25,7 +25,7 @@ def dumb_normalize_binary_tree_obs(observation):
     return normalized_observation
 
 
-def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction):
+def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction, fixed_radius):
     '''
     Normalize the given observations by performing min-max scaling
     over individual features
@@ -43,42 +43,44 @@ def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction):
 
     # Normalize number of agents in path
     num_agents = utils.min_max_scaling(
-        num_agents, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
+        num_agents, BT_LOWER, BT_UPPER, BT_LOWER, BT_UPPER,
         known_min=0, known_max=remaining_agents
     )
 
     # Normalize malfunctions
     malfunctions = utils.min_max_scaling(
-        malfunctions, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
+        malfunctions, BT_LOWER, BT_UPPER, BT_LOWER, BT_UPPER,
         known_min=0, known_max=max_malfunction
     )
 
     # Normalize common nodes
     c_nodes = utils.min_max_scaling(
-        c_nodes, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
+        c_nodes, BT_LOWER, BT_UPPER, BT_LOWER, BT_UPPER,
         known_min=0, known_max=remaining_agents
     )
 
     # Normalize deadlocks
     deadlocks = utils.min_max_scaling(
-        deadlocks, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
+        deadlocks, BT_LOWER, BT_UPPER, BT_LOWER, BT_UPPER,
         known_min=0, known_max=remaining_agents
     )
 
     # Normalize distances
     agent_distances = utils.min_max_scaling(
-        agent_distances, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER
+        agent_distances, BT_LOWER, BT_UPPER, BT_LOWER, BT_UPPER,
+        known_min=-fixed_radius, known_max=fixed_radius
     )
     target_distances = utils.min_max_scaling(
-        target_distances, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
-        known_min=0
+        target_distances, BT_LOWER, BT_UPPER, BT_LOWER, BT_UPPER,
+        known_min=0, known_max=fixed_radius
     )
     turns_to_node = utils.min_max_scaling(
-        turns_to_node, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER,
-        known_min=0
+        turns_to_node, BT_LOWER, BT_UPPER, BT_LOWER, BT_UPPER,
+        known_min=0, known_max=fixed_radius
     )
     deadlock_distances = utils.min_max_scaling(
-        deadlock_distances, BT_LOWER, BT_UPPER, BT_UNDER, BT_OVER
+        deadlock_distances, BT_LOWER, BT_UPPER, BT_LOWER, BT_UPPER,
+        known_min=-fixed_radius, known_max=fixed_radius
     )
 
     # Build the normalized observation
@@ -92,13 +94,16 @@ def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction):
     normalized_observation[:, :, 12] = deadlock_distances
 
     # Sanity check
-    normalized_observation[normalized_observation == -np.inf] = BT_UNDER
-    normalized_observation[normalized_observation == np.inf] = BT_OVER
+    normalized_observation[normalized_observation == -np.inf] = BT_LOWER
+    normalized_observation[normalized_observation == np.inf] = BT_UPPER
+    normalized_observation = np.clip(
+        normalized_observation, BT_LOWER, BT_UPPER
+    )
 
-    # Check if the output is in range [BT_UNDER, BT_OVER]
+    # Check if the output is in range [BT_LOWER, BT_UPPER]
     assert np.logical_and(
-        normalized_observation >= BT_UNDER,
-        normalized_observation <= BT_OVER
+        normalized_observation >= BT_LOWER,
+        normalized_observation <= BT_UPPER
     ).all(), (observation, normalized_observation)
 
     return normalized_observation
@@ -109,7 +114,6 @@ def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction):
 ####################################################################
 
 T_CLIP_MIN, T_CLIP_MAX = -1, 1
-T_OBS_RADIUS = 10
 
 
 def max_lt(seq, val):
@@ -232,7 +236,7 @@ def split_tree_into_feature_groups(tree, max_tree_depth):
     return data, distance, agent_data
 
 
-def normalize_tree_obs(observation, tree_depth):
+def normalize_tree_obs(observation, tree_depth, radius):
     '''
     This function normalizes the observation used by the RL algorithm
     '''
@@ -242,7 +246,7 @@ def normalize_tree_obs(observation, tree_depth):
 
     data = norm_obs_clip(
         data, clip_min=T_CLIP_MIN, clip_max=T_CLIP_MAX,
-        fixed_radius=T_OBS_RADIUS
+        fixed_radius=radius
     )
     distance = norm_obs_clip(
         distance, clip_min=T_CLIP_MIN, clip_max=T_CLIP_MAX,

@@ -1,9 +1,9 @@
 # Environment cofiguration
 env:
   # Random seed used to generate rails
-  seed: 14
+  seed: 15
   # Number of trains to spawn
-  num_trains: 3
+  num_trains: 2
   # Environment width
   width: 48
   # Environment height
@@ -34,12 +34,20 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 5
+  max_depth: 2
+  # Binary tree observation configs
+  binary_tree:
+    # Observation radius
+    radius: 30
+  # Tree observation configs
+  tree:
+    # Observation radius
+    radius: 10
 
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 5
+  max_depth: 2
 
 # Policy config
 policy:

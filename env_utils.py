@@ -57,6 +57,22 @@ class RailEnvChoices(IntEnum):
             for _, choice_type in RailEnvChoices.__members__.items()
         ]
 
+    @staticmethod
+    def choice_size():
+        '''
+        Return the number of values that can be assigned 
+        to a RailEnvChoices instance
+        '''
+        return len(RailEnvChoices.values())
+
+    @staticmethod
+    def default_choices():
+        '''
+        Return a mask of choices, s.t. the only choice that
+        can always be applied is STOP
+        '''
+        return [False, False, True]
+
 
 def create_rail_env(args, load_env=""):
     '''
@@ -106,6 +122,7 @@ def create_rail_env(args, load_env=""):
 
     # Build the environment
     return RailEnvWrapper(
+        params=args,
         width=args.env.width,
         height=args.env.height,
         rail_generator=rail_generator,

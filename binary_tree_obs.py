@@ -179,7 +179,7 @@ class BinaryTreeObservator(ObservationBuilder):
         )
 
         # Compute features if necessary
-        if self.predictions[handle] is not None and self.env.railway_encoding.is_real_decision(handle):
+        if self.predictions[handle] is not None:
             shortest_path_prediction, deviation_paths_prediction = self.predictions[handle]
             packed_positions, packed_weights = self._get_shortest_packed_positions()
             shortest_feats = self._fill_path_values(
@@ -207,7 +207,8 @@ class BinaryTreeObservator(ObservationBuilder):
             features = obs_normalization.normalize_binary_tree_obs(
                 features,
                 self.env.railway_encoding.remaining_agents(),
-                self.env.malfunction_generator.get_process_data().max_duration
+                self.env.malfunction_generator.get_process_data().max_duration,
+                self.env.params.observator.binary_tree.radius
             )
 
             # Build the binary tree
@@ -329,7 +330,7 @@ class BinaryTreeObservator(ObservationBuilder):
                 return features[i + 1, pos - i, :]
 
         # Fallback to default filling values
-        return np.full(self.observation_dim, obs_normalization.BT_UNDER)
+        return np.full(self.observation_dim, obs_normalization.BT_LOWER)
 
     def get_agent_binary_tree(self, handle, prediction, features):
         '''
