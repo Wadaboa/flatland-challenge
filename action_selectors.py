@@ -109,14 +109,10 @@ class EpsilonGreedyActionSelector(ActionSelector):
         if legal_actions is None:
             legal_actions = np.ones_like(actions, dtype=bool)
         max_action = model_utils.masked_argmax(actions, legal_actions, dim=0)
-        if not training:
+        if not training or random.random() > self.epsilon:
             return max_action, True
         random_action = random.choice(np.arange(actions.size)[legal_actions])
-        is_equal = max_action == random_action
-        return (
-            (max_action, is_equal) if random.random() > self.epsilon
-            else (random_action, is_equal)
-        )
+        return (random_action, max_action == random_action)
 
     def decay(self):
         self.epsilon = self.decay_schedule.decay(self.epsilon)

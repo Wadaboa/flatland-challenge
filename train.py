@@ -95,7 +95,7 @@ def train_agents(args, writer):
     policy = POLICIES[policy_type](
         args, train_env.state_size, action_selector, training=True
     )
-    if args.generic.enable_wandb and args.generic.wandb_gradients:
+    if args.generic.enable_wandb and args.generic.wandb_gradients.enabled:
         policy.enable_wandb()
 
     # Handle replay buffer
@@ -210,7 +210,7 @@ def train_agents(args, writer):
                         update_values[agent] = True
                         choices_count[choice] += 1
                         choices_taken.append(choice)
-                        num_exploration_choices[choice] += int(is_best)
+                        num_exploration_choices[choice] += int(not(is_best))
                         choice_dict.update({agent: choice})
                     else:
                         actions = train_env.railway_encoding.get_agent_actions(
@@ -267,7 +267,7 @@ def train_agents(args, writer):
 
             # Break if every agent arrived
             steps = step
-            if done['__all__'] or train_env.check_if_all_blocked():
+            if done['__all__'] or train_env.check_if_all_blocked(info["deadlocks"]):
                 break
 
         # Close window
@@ -310,10 +310,10 @@ def train_agents(args, writer):
             '\t 💯 Done: {:<7.2%}'
             ' Avg: {:>7.2%}'
             '\t 🦶 Steps: {:3n}'
-            '\t 🎲 Epsilon: {:4.3f} '
+            '\t 🎲 Exploration prob: {:4.3f} '
             '\t 🤔 Choices: {:3n}'
             '\t 🤠 Exploration: {:3n}'
-            '\t 🔀 Choices probabilities: {:^}'.format(
+            '\t 🔀 Choices probs: {:^}'.format(
                 episode,
                 normalized_score,
                 avg_score,
@@ -328,7 +328,10 @@ def train_agents(args, writer):
         )
 
         # Evaluate policy and log results at some interval
-        if episode > 0 and episode % args.training.checkpoint == 0 and args.training.eval_env.episodes > 0:
+        # (always evaluate the final episode)
+        if (args.training.eval_env.episodes > 0 and
+            ((episode > 0 and episode % args.training.checkpoint == 0) or
+             (episode == args.training.train_env.episodes))):
             eval_policy(args, writer, eval_env, policy, eval_seeds, episode)
 
         # Log training actions info to tensorboard

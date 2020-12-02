@@ -3,7 +3,7 @@ env:
   # Random seed used to generate rails
   seed: 14
   # Number of trains to spawn
-  num_trains: 1
+  num_trains: 3
   # Environment width
   width: 48
   # Environment height
@@ -132,9 +132,9 @@ model:
   # GNN configuration
   gnn:
     # Size of the hidden layers
-    hidden_size: 2
+    hidden_size: 8
     # Size of the output embedding
-    embedding_size: 1
+    embedding_size: 4
     # Number of embeddings to pass to the DQN
     pos_size: 3
     # Dropout value
@@ -173,8 +173,12 @@ generic:
   enable_wandb: True
   # Checkpoint to save model to wandb
   wandb_checkpoint: 500
-  # Enable gradients logging in wandb
-  wandb_gradients: True
+  # Gradients logging in wandb
+  wandb_gradients:
+    # Enable or disable logging
+    enabled: False
+    # How often to log gradients
+    checkpoint: 200
 
 # Training config
 training:
@@ -202,7 +206,7 @@ training:
   # Renderer config
   renderer:
     # Render episodes during training
-    training: False
+    training: True
     # How often to render an episode in training
     train_checkpoint: 150
     # Render episodes during evaluation
@@ -214,7 +218,7 @@ testing:
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: "checkpoints/gnn-4depth-1emb-500moves-onlydist"
+  model: "x"
   # Seconds to sleep between moves
   sleep: 0
   # Save intermediate renderer frames

@@ -10,6 +10,7 @@ from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 from flatland.core.grid.grid4_utils import get_new_position
 
 import obs_normalization
+from deadlocks import DeadlocksDetector
 from railway_encoding import CellOrientationGraph
 from binary_tree_obs import BinaryTreeObservator
 from graph_obs import GraphObservator
@@ -25,6 +26,7 @@ class RailEnvWrapper(RailEnv):
         self.railway_encoding = None
         self.normalize = normalize
         self.state_size = self._get_state_size()
+        self.deadlocks_detector = DeadlocksDetector()
 
     def _get_state_size(self):
         '''
@@ -63,44 +65,16 @@ class RailEnvWrapper(RailEnv):
             )
         return agents_with_same_start
 
-    def check_if_all_blocked(self):
+    def check_if_all_blocked(self, deadlocks):
         '''
         Checks whether all the agents are blocked (full deadlock situation)
         '''
-        # First build a map of agents in each position
-        location_has_agent = {}
-        for agent in self.agents:
-            if agent.status in [RailAgentStatus.ACTIVE, RailAgentStatus.DONE] and agent.position:
-                location_has_agent[tuple(agent.position)] = 1
-
-        # Looks for any agent that can still move
-        for handle in self.get_agent_handles():
-            agent = self.agents[handle]
-            if agent.status == RailAgentStatus.READY_TO_DEPART:
-                agent_virtual_position = agent.initial_position
-            elif agent.status == RailAgentStatus.ACTIVE:
-                agent_virtual_position = agent.position
-            elif agent.status == RailAgentStatus.DONE:
-                agent_virtual_position = agent.target
-            else:
-                continue
-
-            possible_transitions = self.rail.get_transitions(
-                *agent_virtual_position, agent.direction
-            )
-            orientation = agent.direction
-
-            for branch_direction in [(orientation + i) % 4 for i in range(-1, 3)]:
-                if possible_transitions[branch_direction]:
-                    new_position = get_new_position(
-                        agent_virtual_position, branch_direction
-                    )
-
-                    if new_position not in location_has_agent:
-                        return False
-
-        # Full deadlock
-        return True
+        remaining_agents = self.railway_encoding.remaining_agents_handles()
+        num_deadlocks = sum(
+            int(v) for k, v in deadlocks.items()
+            if k in remaining_agents
+        )
+        return num_deadlocks == len(remaining_agents)
 
     def save(self, path):
         '''
@@ -195,15 +169,20 @@ class RailEnvWrapper(RailEnv):
         # Empty the episode store of agent positions
         self.cur_episode = []
 
+        # Compute deadlocks
+        self.deadlocks_detector.reset(self.get_num_agents())
+
         # Build the info dict
         info_dict = {
-            'action_required': {}, 'malfunction': {}, 'speed': {}, 'status': {}
+            'action_required': {}, 'malfunction': {}, 'speed': {},
+            'status': {}, 'deadlocks': {}
         }
         for i, agent in enumerate(self.agents):
             info_dict['action_required'][i] = self.action_required(agent)
             info_dict['malfunction'][i] = agent.malfunction_data['malfunction']
             info_dict['speed'][i] = agent.speed_data['speed']
             info_dict['status'][i] = agent.status
+            info_dict["deadlocks"][i] = self.deadlocks_detector.deadlocks[i]
 
         # Return the new observation vectors for each agent
         observation_dict = self._get_observations()
@@ -230,6 +209,7 @@ class RailEnvWrapper(RailEnv):
         Perform a step in the environment
         '''
         obs, rewards, dones, info = super().step(*args, **kwargs)
+        info["deadlocks"] = self.deadlocks_detector.step(self)
         return (self._normalize_obs(obs), rewards, dones, info)
 
     def _normalize_obs(self, obs):

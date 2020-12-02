@@ -522,15 +522,22 @@ class CellOrientationGraph():
         '''
         return self.is_before_join(self.get_agent_cell(handle))
 
+    def remaining_agents_handles(self):
+        '''
+        Return the number of remaining agents in the rail,
+        considering the ones that already reached their target
+        '''
+        return {
+            agent for agent in range(len(self.agents))
+            if not self.is_done(agent)
+        }
+
     def remaining_agents(self):
         '''
         Return the number of remaining agents in the rail,
         considering the ones that already reached their target
         '''
-        done_agents = sum([
-            self.is_done(agent) for agent in range(len(self.agents))
-        ])
-        return len(self.agents) - done_agents
+        return len(self.remaining_agents_handles())
 
     def only_one_agent(self):
         '''

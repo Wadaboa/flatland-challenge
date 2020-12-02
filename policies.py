@@ -128,7 +128,7 @@ class DQNPolicy(Policy):
         '''
         wandb.watch(
             self.qnetwork_local, self.criterion,
-            log="all", log_freq=1
+            log="all", log_freq=self.params.generic.wandb_gradients.checkpoint
         )
 
     def act(self, state, legal_choices, training=False):
@@ -213,7 +213,7 @@ class DQNPolicy(Policy):
         self.optimizer.step()
 
         # Log loss to wandb
-        if self.params.generic.enable_wandb and self.params.generic.wandb_gradients:
+        if self.params.generic.enable_wandb and self.params.generic.wandb_gradients.enabled:
             wandb.log({"loss": self.loss})
 
         # Update target network

@@ -133,9 +133,10 @@ def test_agents(args):
                     legal_choices[agent] = env.railway_encoding.get_legal_choices(
                         agent, legal_actions
                     )
-                    choice, _ = policy.act(
+                    choice, is_best = policy.act(
                         obs[agent], legal_choices[agent], training=False
                     )
+                    assert is_best == True
                     action = env.railway_encoding.map_choice_to_action(
                         choice, legal_actions
                     )
@@ -143,7 +144,7 @@ def test_agents(args):
                         choice, legal_actions
                     )
                     print(
-                        f'Handle: {agent} - Choice {choice} - Action {action}'
+                        f'Handle: {agent} - Choice {choice} - Action {action} - Legal choices {legal_choices[agent]}'
                     )
                 else:
                     actions = env.railway_encoding.get_agent_actions(
@@ -172,7 +173,7 @@ def test_agents(args):
             score += all_rewards[handle]
 
         # Check if every agent is arrived
-        if done['__all__'] or env.check_if_all_blocked():
+        if done['__all__'] or env.check_if_all_blocked(info["deadlocks"]):
             break
 
         # Print statistics
