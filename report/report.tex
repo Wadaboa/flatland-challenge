@@ -42,42 +42,12 @@
 \addbibresource{references.bib}
 \graphicspath{ {./img/} }
 
-% Add X and check marks
-\newcommand{\cmark}{\ding{51}}%
-\newcommand{\xmark}{\ding{55}}%
-
-% Add subsubsubsection
-\titleclass{\subsubsubsection}{straight}[\subsubsection]
-
-\newcounter{subsubsubsection}[subsubsection]
-\renewcommand\thesubsubsubsection{\thesubsubsection.\arabic{subsubsubsection}}
-\renewcommand\theparagraph{\thesubsubsubsection.\arabic{paragraph}} % optional; useful if paragraphs are to be numbered
-
-\titleformat{\subsubsubsection}
-  {\normalfont\normalsize\bfseries}{\thesubsubsubsection}{1em}{}
-\titlespacing*{\subsubsubsection}
-{0pt}{3.25ex plus 1ex minus .2ex}{1.5ex plus .2ex}
-
-\makeatletter
-\renewcommand\paragraph{\@startsection{paragraph}{5}{\z@}%
-  {3.25ex \@plus1ex \@minus.2ex}%
-  {-1em}%
-  {\normalfont\normalsize\bfseries}}
-\renewcommand\subparagraph{\@startsection{subparagraph}{6}{\parindent}%
-  {3.25ex \@plus1ex \@minus .2ex}%
-  {-1em}%
-  {\normalfont\normalsize\bfseries}}
-\def\toclevel@subsubsubsection{4}
-\def\toclevel@paragraph{5}
-\def\toclevel@paragraph{6}
-\def\l@subsubsubsection{\@dottedtocline{4}{7em}{4em}}
-\def\l@paragraph{\@dottedtocline{5}{10em}{5em}}
-\def\l@subparagraph{\@dottedtocline{6}{14em}{6em}}
-\makeatother
-
 % Set TOC depth and sections numbering
 \setcounter{tocdepth}{3}
 \setcounter{secnumdepth}{3}
+
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries}{}{0pt}{\Large}
 
 
 \begin{document}
@@ -102,13 +72,42 @@
 \listoffigures
 \newpage
 
-\section*{Foreword}
+\chapter*{Foreword}
 
+\chapter{Introduction}
 
-\section{Introduction}
+\chapter{Background}
 
+\chapter{Railway encoding}
+\section{Cell orientation graph}
+\section{Shortest path computation}
 
-\section{Conclusions}
+\chapter{Observations}
+\section{Tree}
+\section{Binary tree}
+
+\chapter{Predictions}
+\section{Shortest path}
+
+\chapter{Action space}
+\section{Choices}
+\section{Masking}
+\section{Selection}
+
+\chapter{Rewards}
+\section{Shaping}
+
+\chapter{Models}
+\section{DQN}
+\section{DDQN}
+\section{DDDQN}
+\section{GNN}
+
+\chapter{Replay buffers}
+\section{Uniform}
+\section{Prioritized}
+
+\chapter{Conclusions}
 
 \printbibliography
 

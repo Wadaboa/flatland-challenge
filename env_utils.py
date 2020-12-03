@@ -81,7 +81,7 @@ def create_rail_env(args, load_env=""):
     '''
     # Check if an environment file is provided
     if load_env:
-        rail_generator = rail_from_file(env)
+        rail_generator = rail_from_file(load_env)
     else:
         rail_generator = sparse_rail_generator(
             max_num_cities=args.env.max_cities,
