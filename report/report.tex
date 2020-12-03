@@ -1,0 +1,115 @@
+\documentclass[a4paper,10pt]{report}
+\usepackage{titlesec}
+\usepackage{graphicx}
+\usepackage{svg}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{fancyvrb}
+\usepackage[english]{babel}
+\usepackage{hyperref}
+\hypersetup{
+   colorlinks=true,
+   linkcolor=blue,
+   urlcolor=cyan
+}
+\usepackage{tikz}
+\usepackage{amssymb}
+\usepackage{pifont}
+\usepackage{breqn}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{minted}
+\setminted{
+   numberblanklines=false, 
+   mathescape, 
+   texcomments, 
+   autogobble, 
+   breakanywhere, 
+   breakautoindent, 
+   breaklines,
+   frame=none
+}
+\setminted[python]{python3}
+\usepackage[
+   backend=biber,%
+   bibencoding=utf8,%
+   language=english,%
+   style=numeric-comp,%
+   sorting=nyt,%
+   maxbibnames=10,%
+   natbib=true%
+]{biblatex}
+\addbibresource{references.bib}
+\graphicspath{ {./img/} }
+
+% Add X and check marks
+\newcommand{\cmark}{\ding{51}}%
+\newcommand{\xmark}{\ding{55}}%
+
+% Add subsubsubsection
+\titleclass{\subsubsubsection}{straight}[\subsubsection]
+
+\newcounter{subsubsubsection}[subsubsection]
+\renewcommand\thesubsubsubsection{\thesubsubsection.\arabic{subsubsubsection}}
+\renewcommand\theparagraph{\thesubsubsubsection.\arabic{paragraph}} % optional; useful if paragraphs are to be numbered
+
+\titleformat{\subsubsubsection}
+  {\normalfont\normalsize\bfseries}{\thesubsubsubsection}{1em}{}
+\titlespacing*{\subsubsubsection}
+{0pt}{3.25ex plus 1ex minus .2ex}{1.5ex plus .2ex}
+
+\makeatletter
+\renewcommand\paragraph{\@startsection{paragraph}{5}{\z@}%
+  {3.25ex \@plus1ex \@minus.2ex}%
+  {-1em}%
+  {\normalfont\normalsize\bfseries}}
+\renewcommand\subparagraph{\@startsection{subparagraph}{6}{\parindent}%
+  {3.25ex \@plus1ex \@minus .2ex}%
+  {-1em}%
+  {\normalfont\normalsize\bfseries}}
+\def\toclevel@subsubsubsection{4}
+\def\toclevel@paragraph{5}
+\def\toclevel@paragraph{6}
+\def\l@subsubsubsection{\@dottedtocline{4}{7em}{4em}}
+\def\l@paragraph{\@dottedtocline{5}{10em}{5em}}
+\def\l@subparagraph{\@dottedtocline{6}{14em}{6em}}
+\makeatother
+
+% Set TOC depth and sections numbering
+\setcounter{tocdepth}{3}
+\setcounter{secnumdepth}{3}
+
+
+\begin{document}
+
+% First page
+\title{
+	{{\large{\textsc{Alma Mater Studiorum $\cdot$ University of Bologna}}}}
+	\rule{\textwidth}{0.4pt}\vspace{3mm}
+	\textbf{Flatland Challenge} 
+	\begin{figure}[!htb]
+		\centering
+		\includesvg[width = 200pt]{flatland-logo}
+	\end{figure} \\
+	Deep learning course final project
+}
+
+\author{Leonardo Calbi (\href{mailto:leonardo.calbi@studio.unibo.it}{leonardo.calbi@studio.unibo.it}) \\ Alessio Falai (\href{mailto:alessio.falai@studio.unibo.it}{alessio.falai@studio.unibo.it})}
+\date{\today}
+\maketitle
+\newpage
+\tableofcontents
+\listoffigures
+\newpage
+
+\section*{Foreword}
+
+
+\section{Introduction}
+
+
+\section{Conclusions}
+
+\printbibliography
+
+\end{document}
