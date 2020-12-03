@@ -166,6 +166,7 @@ def train_agents(args, writer):
             legal_choices[handle] = train_env.railway_encoding.get_legal_choices(
                 handle, train_env.railway_encoding.get_agent_actions(handle)
             )
+            choice_dict.update({handle: RailEnvChoices.CHOICE_LEFT.value})
             if obs[handle] is not None:
                 prev_obs[handle] = env_utils.copy_obs(obs[handle])
 
@@ -500,9 +501,9 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
 
         # Save final scores
         normalized_score = (
-            score / (args.env.max_moves * train_env.get_num_agents())
+            score / (args.env.max_moves * env.get_num_agents())
         )
-        normalized_custom_score = custom_score / train_env.get_num_agents()
+        normalized_custom_score = custom_score / env.get_num_agents()
         scores.append(normalized_score)
         custom_scores.append(normalized_custom_score)
         tasks_finished = sum(done[idx] for idx in env.get_agent_handles())
@@ -529,7 +530,6 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
         )
 
     # Print validation results
-    print(choices_count)
     print(
         '\r✅ Validation ended'
         '\t 🏆 Avg score: {:+1.3f}'

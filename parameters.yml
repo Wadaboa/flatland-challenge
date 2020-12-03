@@ -1,23 +1,26 @@
 # Environment cofiguration
 env:
   # Random seed used to generate rails
-  seed: 15
+  seed: 14
   # Number of trains to spawn
-  num_trains: 2
-  # Environment width
-  width: 48
-  # Environment height
-  height: 27
+  num_trains: 10
+  # Environment width: 48 Medium - 64 Big
+  width: 64
+  # Environment height: 27 Medium - 36 Big
+  height: 36
   # Maximum number of moves in an episode
   max_moves: 500
   # Maximum number of cities where agents can start or end
-  max_cities: 5
+  # 5 Medium - 9 Big
+  max_cities: 9
   # Type of city distribution
   grid: False
   # Maximum number of tracks allowed between cities
-  max_rails_between_cities: 2
+  # 2 Medium - 5 Big
+  max_rails_between_cities: 5
   # Maximum number of parallel tracks within a city
-  max_rails_in_cities: 3
+  # 3 Medium - 5 Big
+  max_rails_in_cities: 5
   # Enable variable speed
   variable_speed: False
   # Malfunctions config
@@ -34,7 +37,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 2
+  max_depth: 6
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -47,7 +50,7 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 2
+  max_depth: 6
 
 # Policy config
 policy:
@@ -207,7 +210,7 @@ training:
     # Path to the evaluation environment file
     load: ""
     # Number of evaluation episodes
-    episodes: 25
+    episodes: 1
     # Evaluate on random enviroments or on the same one
     all_random: False
 
@@ -220,13 +223,13 @@ training:
     # Render episodes during evaluation
     evaluation: True
     # How often to render an episode in evaluation
-    eval_checkpoint: 10
+    eval_checkpoint: 1
 
 testing:
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: "x"
+  model: ""
   # Seconds to sleep between moves
   sleep: 0
   # Save intermediate renderer frames

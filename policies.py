@@ -164,9 +164,6 @@ class DQNPolicy(Policy):
 
         # Save experience in replay memory
         self.memory.add(experience)
-        print()
-        print(experience)
-        print()
 
         # Learn every `checkpoint` time steps
         # (if enough samples are available in memory, get random subset and learn)
