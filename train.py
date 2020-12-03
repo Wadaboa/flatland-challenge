@@ -166,6 +166,7 @@ def train_agents(args, writer):
             legal_choices[handle] = train_env.railway_encoding.get_legal_choices(
                 handle, train_env.railway_encoding.get_agent_actions(handle)
             )
+            choice_dict.update({handle: RailEnvChoices.CHOICE_LEFT.value})
             if obs[handle] is not None:
                 prev_obs[handle] = env_utils.copy_obs(obs[handle])
 

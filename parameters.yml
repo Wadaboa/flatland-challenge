@@ -1,23 +1,28 @@
 # Environment cofiguration
 env:
   # Random seed used to generate rails
-  seed: 1
+  seed: 14
   # Number of trains to spawn
-  num_trains: 5
+  num_trains: 10
   # Environment width
-  width: 48
+  # (48 medium - 64 big)
+  width: 64
   # Environment height
-  height: 27
+  # (27 medium - 36 big)
+  height: 36
   # Maximum number of moves in an episode
   max_moves: 500
   # Maximum number of cities where agents can start or end
-  max_cities: 5
+  # (5 medium - 9 big)
+  max_cities: 9
   # Type of city distribution
   grid: False
   # Maximum number of tracks allowed between cities
-  max_rails_between_cities: 2
+  # (2 medium - 5 big)
+  max_rails_between_cities: 5
   # Maximum number of parallel tracks within a city
-  max_rails_in_cities: 3
+  # (3 medium - 5 big)
+  max_rails_in_cities: 5
   # Enable variable speed
   variable_speed: True
   # Malfunctions config
@@ -207,7 +212,7 @@ training:
     # Path to the evaluation environment file
     load: ""
     # Number of evaluation episodes
-    episodes: 2
+    episodes: 1
     # Evaluate on random enviroments or on the same one
     all_random: False
 
@@ -226,7 +231,7 @@ testing:
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: "x"
+  model: ""
   # Seconds to sleep between moves
   sleep: 0
   # Save intermediate renderer frames
