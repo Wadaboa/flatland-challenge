@@ -1,9 +1,9 @@
 # Environment cofiguration
 env:
   # Random seed used to generate rails
-  seed: 15
+  seed: 1
   # Number of trains to spawn
-  num_trains: 2
+  num_trains: 5
   # Environment width
   width: 48
   # Environment height
@@ -19,13 +19,13 @@ env:
   # Maximum number of parallel tracks within a city
   max_rails_in_cities: 3
   # Enable variable speed
-  variable_speed: False
+  variable_speed: True
   # Malfunctions config
   malfunctions:
     # Enable malfunctions
-    enabled: False
+    enabled: True
     # Malfunction rate
-    rate: !!float 1e-4
+    rate: !!float 0.0125
     # Malfunction minimum duration
     min_duration: 15
     # Malfunction maximum duration
@@ -34,7 +34,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 2
+  max_depth: 6
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -47,7 +47,7 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 2
+  max_depth: 6
 
 # Policy config
 policy:
@@ -193,7 +193,7 @@ training:
   # Checkpoint interval (how often to evaluate and save the model)
   checkpoint: 200
 
-  # Train enviroment config
+  # Train environment config
   train_env:
     # Path to the train environment file
     load: ""
@@ -202,12 +202,12 @@ training:
     # Train on random enviroments or on the same one
     all_random: False
 
-  # Evaluation enviroment config
+  # Evaluation environment config
   eval_env:
     # Path to the evaluation environment file
     load: ""
     # Number of evaluation episodes
-    episodes: 25
+    episodes: 2
     # Evaluate on random enviroments or on the same one
     all_random: False
 
@@ -220,7 +220,7 @@ training:
     # Render episodes during evaluation
     evaluation: True
     # How often to render an episode in evaluation
-    eval_checkpoint: 10
+    eval_checkpoint: 1
 
 testing:
   # Path to the environment file
