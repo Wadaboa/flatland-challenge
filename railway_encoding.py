@@ -364,23 +364,38 @@ class CellOrientationGraph():
             )
         return position
 
-    def worst_successor(self, handle):
+    def stop_moving_worst_alternative_weight(self, handle):
         '''
-        Return the successor of the position of the given agent
-        in the packed graph which has the highest weighted edge
+        Return the weight associated with the worst move alternative
+        to a stop choice, starting from the position of the agent
         '''
         position = self.get_agent_cell(handle)
         node, weight = self.next_node(position)
-        successors = self.get_successors(node, unpacked=False)
-        max_weight, max_succ = weight, node
-        for succ in successors:
-            succ_weight = self.get_edge_data(
-                node, succ, 'weight', unpacked=False
-            )
-            if succ_weight > max_weight:
-                max_weight = succ_weight
-                max_succ = succ
-        return (max_succ, max_weight + weight)
+        nodes = []
+        if self.is_join(node):
+            nodes = [(node, weight)]
+        else:
+            successors = self.get_successors(node, unpacked=True)
+            for succ in successors:
+                succ_weight = self.get_edge_data(
+                    node, succ, 'weight', unpacked=True
+                )
+                assert succ_weight == 1
+                if self.is_join(succ):
+                    nodes.append((succ, succ_weight + weight))
+
+        max_weight = 0
+        for start_node, start_weight in nodes:
+            successors = self.get_successors(start_node, unpacked=False)
+            for succ in successors:
+                succ_weight = self.get_edge_data(
+                    start_node, succ, 'weight', unpacked=False
+                )
+                if succ_weight > max_weight:
+                    max_weight = succ_weight + start_weight
+                    max_succ = succ
+
+        return max_weight
 
     def is_done(self, handle):
         '''

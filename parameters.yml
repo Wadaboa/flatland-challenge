@@ -1,17 +1,17 @@
 # Environment cofiguration
 env:
   # Random seed used to generate rails
+  # (14 medium - 14 big)
   seed: 14
   # Number of trains to spawn
-  num_trains: 1
+  # (3, 5, 7 medium - 5, 7, 10 big)
+  num_trains: 3
   # Environment width
   # (48 medium - 64 big)
   width: 48
   # Environment height
   # (27 medium - 36 big)
   height: 27
-  # Maximum number of moves in an episode
-  max_moves: 500
   # Maximum number of cities where agents can start or end
   # (5 medium - 9 big)
   max_cities: 5
@@ -30,7 +30,8 @@ env:
     # Enable malfunctions
     enabled: False
     # Malfunction rate
-    rate: !!float 0.0125
+    # (0.0125 medium - 0.0125 big)
+    rate: !!float 0.005
     # Malfunction minimum duration
     min_duration: 15
     # Malfunction maximum duration
@@ -205,16 +206,16 @@ training:
     # Number of training episodes to run
     episodes: 2500
     # Train on random enviroments or on the same one
-    all_random: False
+    all_random: True
 
   # Evaluation environment config
   eval_env:
     # Path to the evaluation environment file
     load: ""
     # Number of evaluation episodes
-    episodes: 1
+    episodes: 20
     # Evaluate on random enviroments or on the same one
-    all_random: False
+    all_random: True
 
   # Renderer config
   renderer:
@@ -225,14 +226,16 @@ training:
     # Render episodes during evaluation
     evaluation: True
     # How often to render an episode in evaluation
-    eval_checkpoint: 1
+    eval_checkpoint: 5
 
 testing:
   # Path to the environment file
-  load: "envs/6x4.pkl"
+  load: ""
   # Path to the model to load
   model: ""
   # Seconds to sleep between moves
   sleep: 0
   # Save intermediate renderer frames
-  save_frames: True
+  save_frames: False
+  # Number of episodes to run
+  episodes: 20

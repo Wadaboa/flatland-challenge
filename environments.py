@@ -248,12 +248,12 @@ class RailEnvWrapper(RailEnv):
             # Return a positive reward equal to the maximum number of steps
             # minus the current number of steps if the agent has arrived
             if dones[agent] and self.arrived_turns[agent] == step:
-                done_reward = self.params.env.max_moves - step
+                done_reward = self._max_episode_steps - step
                 custom_rewards[agent] = done_reward
                 self.partial_rewards[agent] = done_reward
             # Return minus the maximum number of steps if the agent is in deadlock
             elif info["deadlocks"][agent] and info["deadlock_turns"][agent] == step:
-                deadlock_penalty = -self.params.env.max_moves
+                deadlock_penalty = -self._max_episode_steps
                 custom_rewards[agent] = deadlock_penalty
                 self.partial_rewards[agent] = deadlock_penalty
             # Accumulate rewards for choices if the agent is not in a decision cell
@@ -264,19 +264,21 @@ class RailEnvWrapper(RailEnv):
                 # which is worse than the the reward it could have received
                 # by choosing any other action
                 if action_dict_[agent] == RailEnvActions.STOP_MOVING.value:
-                    _, weight = self.railway_encoding.worst_successor(agent)
+                    weight = self.railway_encoding.stop_moving_worst_alternative_weight(
+                        agent
+                    )
                     weight *= (1 / self.agents[agent].speed_data['speed'])
                     self.partial_rewards[agent] += -(weight + 1)
                 custom_rewards[agent] = 0.0
 
             # Reset the partial rewards counter when an agent is
             # in a decision cell or in the last step
-            if agents_in_decision_cells[agent] or self._elapsed_steps == self.params.env.max_moves:
+            if agents_in_decision_cells[agent] or self._elapsed_steps == self._max_episode_steps:
                 custom_rewards[agent] = self.partial_rewards[agent]
                 self.partial_rewards[agent] = 0.0
 
             # Normalize rewards
-            custom_rewards[agent] /= self.params.env.max_moves
+            custom_rewards[agent] /= self._max_episode_steps
 
         return custom_rewards
 

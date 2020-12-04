@@ -128,7 +128,7 @@ def train_agents(args, writer):
     print(f"\n🧠 Model with training id {training_id}\n")
 
     # Do the specified number of episodes
-    avg_score, avg_custom_score, avg_completion = 0.0, 0.0, 0.0
+    avg_score, avg_custom_score, avg_completion, avg_deadlocks = 0.0, 0.0, 0.0, 0.0
     for episode in range(args.training.train_env.episodes + 1):
         # Initialize timers
         step_timer = utils.Timer()
@@ -142,8 +142,7 @@ def train_agents(args, writer):
             obs, info = train_env.reset(random_seed=args.env.seed)
         else:
             obs, info = train_env.reset(
-                regenerate_rail=True, regenerate_schedule=True,
-                random_seed=env_utils.get_seed(train_env)
+                regenerate_rail=True, regenerate_schedule=True
             )
         reset_timer.end()
         if args.training.renderer.training and episode % args.training.renderer.train_checkpoint == 0:
@@ -171,7 +170,7 @@ def train_agents(args, writer):
                 prev_obs[handle] = env_utils.copy_obs(obs[handle])
 
         # Do an episode
-        for step in range(args.env.max_moves):
+        for step in range(train_env._max_episode_steps):
 
             # Prioritize entry of faster agents in the environment
             for position in agents_with_same_start:
@@ -275,15 +274,21 @@ def train_agents(args, writer):
         )
         completion = tasks_finished / train_env.get_num_agents()
         normalized_score = (
-            score / (args.env.max_moves * train_env.get_num_agents())
+            score / (train_env._max_episode_steps * train_env.get_num_agents())
         )
         normalized_custom_score = custom_score / train_env.get_num_agents()
+        deadlocks = sum(
+            int(v) for v in info["deadlocks"].values() if v == True
+        )
         avg_completion = (
             episode * avg_completion + completion
         ) / (episode + 1)
         avg_score = (episode * avg_score + normalized_score) / (episode + 1)
         avg_custom_score = (
             episode * avg_custom_score + normalized_custom_score
+        ) / (episode + 1)
+        avg_deadlocks = (
+            episode * avg_deadlocks + deadlocks
         ) / (episode + 1)
         choices_probs = choices_count / np.sum(choices_count)
 
@@ -303,10 +308,12 @@ def train_agents(args, writer):
             '\r🚂 Episode {:4n}'
             '\t 🏆 Score: {:<+5.4f}'
             ' Avg: {:>+5.4f}'
-            '\t 🏆 Custom score: {:<+5.4f}'
+            '\t 🏅 Custom score: {:<+5.4f}'
             ' Avg: {:>+5.4f}'
             '\t 💯 Done: {:<7.2%}'
             ' Avg: {:>7.2%}'
+            '\t 💀 Deadlocks: {:2n}'
+            ' Avg: {:>+5.4f}'
             '\t 🦶 Steps: {:3n}'
             '\t 🎲 Exploration prob: {:4.3f} '
             '\t 🤔 Choices: {:3n}'
@@ -319,6 +326,8 @@ def train_agents(args, writer):
                 avg_custom_score,
                 completion,
                 avg_completion,
+                deadlocks,
+                avg_deadlocks,
                 steps,
                 policy.choice_selector.epsilon,
                 np.sum(choices_count),
@@ -376,6 +385,7 @@ def train_agents(args, writer):
             writer, "training/buffer_size",
             len(policy.memory), episode
         )
+        tensorboard_log(writer, "training/deadlocks", deadlocks, episode)
 
         # Log training time info to tensorboard
         tensorboard_log(writer, "timer/reset", reset_timer.get(), episode)
@@ -415,12 +425,12 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
     in the specified environment
     '''
     action_dict = dict()
-    scores, custom_scores, completions, steps, choices_count = [], [], [], [], []
+    scores, custom_scores, completions, steps, choices_count, deadlocks = [], [], [], [], [], []
 
     # Do the specified number of episodes
     print('\nStarting validation:')
     for episode, seed in enumerate(eval_seeds):
-        score, custom_score = 0.0, 0.0
+        score, custom_score = 0.0, 0.0, 0.0
         final_step = 0
         choices_taken = []
 
@@ -430,7 +440,6 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
         else:
             obs, info = env.reset(
                 regenerate_rail=True, regenerate_schedule=True,
-                random_seed=seed
             )
         if args.training.renderer.evaluation and episode % args.training.renderer.eval_checkpoint == 0:
             env_renderer = env.get_renderer()
@@ -439,7 +448,7 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
         agents_with_same_start = env.get_agents_same_start()
 
         # Do an episode
-        for step in range(args.env.max_moves):
+        for step in range(env._max_episode_steps):
 
             # Prioritize enter of faster agent in the environment
             for position in agents_with_same_start:
@@ -501,7 +510,7 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
 
         # Save final scores
         normalized_score = (
-            score / (args.env.max_moves * env.get_num_agents())
+            score / (env._max_episode_steps * env.get_num_agents())
         )
         normalized_custom_score = custom_score / env.get_num_agents()
         scores.append(normalized_score)
@@ -511,19 +520,24 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
         completions.append(completion)
         steps.append(final_step)
         choices_count.append(len(choices_taken))
+        deadlocks.append(
+            sum(int(v) for v in info["deadlocks"].values() if v == True)
+        )
 
         # Print evaluation results on one episode
         print(
             '\r🚂 Validation {:3n}'
             '\t 🏆 Score: {:+5.4f}'
-            '\t 🏆 Custom score: {:+5.4f}'
+            '\t 🏅 Custom score: {:+5.4f}'
             '\t 💯 Done: {:7.2%}'
+            '\t 💀 Deadlocks: {:4n}'
             '\t 🦶 Steps: {:4n}'
             '\t 🤔 Choices: {:3n}'.format(
                 episode,
                 normalized_score,
                 normalized_custom_score,
                 completion,
+                deadlocks[-1],
                 final_step,
                 len(choices_taken)
             ), end="\n"
@@ -532,14 +546,16 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
     # Print validation results
     print(
         '\r✅ Validation ended'
-        '\t 🏆 Avg score: {:+1.3f}'
-        '\t 🏆 Avg custom score: {:+1.3f}'
+        '\t 🏆 Avg score: {:+5.2f}'
+        '\t 🏅 Avg custom score: {:+5.2f}'
         '\t 💯 Avg done: {:7.1%}%'
+        '\t 💀 Avg deadlocks: {:5.2f}'
         '\t 🦶 Avg steps: {:5.2f}'
         '\t 🤔 Avg choices taken {:5.2f}'.format(
             np.mean(scores),
             np.mean(custom_scores),
             np.mean(completions),
+            np.mean(deadlocks),
             np.mean(steps),
             np.mean(choices_count)
         ), end="\n\n"
@@ -556,6 +572,10 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
     )
     tensorboard_log(
         writer, "evaluation/completions", completions, train_episode,
+        plot=['mean', 'std', 'hist']
+    )
+    tensorboard_log(
+        writer, "evaluation/deadlocks", deadlocks, train_episode,
         plot=['mean', 'std', 'hist']
     )
     tensorboard_log(
