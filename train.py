@@ -430,7 +430,7 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
     # Do the specified number of episodes
     print('\nStarting validation:')
     for episode, seed in enumerate(eval_seeds):
-        score, custom_score = 0.0, 0.0, 0.0
+        score, custom_score = 0.0, 0.0
         final_step = 0
         choices_taken = []
 

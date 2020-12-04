@@ -204,7 +204,7 @@ training:
     # Path to the train environment file
     load: ""
     # Number of training episodes to run
-    episodes: 2500
+    episodes: 5000
     # Train on random enviroments or on the same one
     all_random: True
 
