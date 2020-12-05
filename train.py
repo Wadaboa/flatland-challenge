@@ -314,9 +314,9 @@ def train_agents(args, writer):
             ' Avg: {:>7.2%}'
             '\t 💀 Deadlocks: {:2n}'
             ' Avg: {:>+5.4f}'
-            '\t 🦶 Steps: {:3n}'
+            '\t 🦶 Steps: {:4n}/{:4n}'
             '\t 🎲 Exploration prob: {:4.3f} '
-            '\t 🤔 Choices: {:3n}'
+            '\t 🤔 Choices: {:4n}'
             '\t 🤠 Exploration: {:3n}'
             '\t 🔀 Choices probs: {:^}'.format(
                 episode,
@@ -329,6 +329,7 @@ def train_agents(args, writer):
                 deadlocks,
                 avg_deadlocks,
                 steps,
+                train_env._max_episode_steps,
                 policy.choice_selector.epsilon,
                 np.sum(choices_count),
                 np.sum(num_exploration_choices),
@@ -502,6 +503,7 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
             # Break if every agent arrived
             final_step = step
             if done['__all__']:
+                print('here')
                 break
 
         # Close window
@@ -520,9 +522,7 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
         completions.append(completion)
         steps.append(final_step)
         choices_count.append(len(choices_taken))
-        deadlocks.append(
-            sum(int(v) for v in info["deadlocks"].values() if v == True)
-        )
+        deadlocks.append(sum(int(v) for v in info["deadlocks"].values()))
 
         # Print evaluation results on one episode
         print(
@@ -530,15 +530,16 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
             '\t 🏆 Score: {:+5.4f}'
             '\t 🏅 Custom score: {:+5.4f}'
             '\t 💯 Done: {:7.2%}'
-            '\t 💀 Deadlocks: {:4n}'
-            '\t 🦶 Steps: {:4n}'
-            '\t 🤔 Choices: {:3n}'.format(
+            '\t 💀 Deadlocks: {:2n}'
+            '\t 🦶 Steps: {:4n}/{:4n}'
+            '\t 🤔 Choices: {:4n}'.format(
                 episode,
                 normalized_score,
                 normalized_custom_score,
                 completion,
                 deadlocks[-1],
                 final_step,
+                env._max_episode_steps,
                 len(choices_taken)
             ), end="\n"
         )
@@ -551,7 +552,7 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
         '\t 💯 Avg done: {:7.1%}%'
         '\t 💀 Avg deadlocks: {:5.2f}'
         '\t 🦶 Avg steps: {:5.2f}'
-        '\t 🤔 Avg choices taken {:5.2f}'.format(
+        '\t 🤔 Avg choices: {:5.2f}'.format(
             np.mean(scores),
             np.mean(custom_scores),
             np.mean(completions),

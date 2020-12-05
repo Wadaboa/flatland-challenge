@@ -5,7 +5,7 @@ env:
   seed: 14
   # Number of trains to spawn
   # (3, 5, 7 medium - 5, 7, 10 big)
-  num_trains: 3
+  num_trains: 5
   # Environment width
   # (48 medium - 64 big)
   width: 48
@@ -24,11 +24,11 @@ env:
   # (3 medium - 5 big)
   max_rails_in_cities: 3
   # Enable variable speed
-  variable_speed: False
+  variable_speed: True
   # Malfunctions config
   malfunctions:
     # Enable malfunctions
-    enabled: False
+    enabled: True
     # Malfunction rate
     # (0.0125 medium - 0.0125 big)
     rate: !!float 0.005

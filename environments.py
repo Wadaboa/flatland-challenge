@@ -223,10 +223,19 @@ class RailEnvWrapper(RailEnv):
             self
         )
 
-        # Update arrived agents turns
+        # Patch dones dict and update arrived agents turns
+        remove_all = False
         for agent in range(self.get_num_agents()):
+            if dones[agent] and not self.railway_encoding.is_done(agent):
+                dones[agent] = False
+                remove_all = True
             if dones[agent] and self.arrived_turns[agent] is None:
                 self.arrived_turns[agent] = self._elapsed_steps - 1
+
+        # If at least one agent is not at target, then
+        # the __all__ flag of dones should be False
+        if remove_all:
+            dones["__all__"] = False
 
         # Compute custom rewards
         custom_rewards = self._reward_shaping(
