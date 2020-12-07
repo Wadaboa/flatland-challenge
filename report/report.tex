@@ -52,9 +52,10 @@
 \setcounter{tocdepth}{3}
 \setcounter{secnumdepth}{3}
 
-% Remove chapters head
-\titleformat{\chapter}[display]
-  {\normalfont\bfseries}{}{0pt}{\Large}
+% Remove chapters head and reduce spacing
+\titleformat{\chapter}[hang]{\Large\bfseries}{\thechapter \hspace{2ex}}{0pt}{\Large}
+\titlespacing{\chapter}{0cm}{0cm}{0.5cm}
+\usepackage[parfill]{parskip}
 
 % Make quotes italic 
 \renewcommand{\mkbegdispquote}[2]{\itshape}
@@ -87,13 +88,13 @@
 \chapter*{Foreword}
 The Flatland challenge is a competition organized by AIcrowd \cite{aicrowd} with the help of SBB (Swiss Federal Railways) to foster innovation with what regards the scheduling of trains trajectories in a railway environment. 
 
-As reported on the official challenge website, SBB operates the densest mixed railway traffic in the world. It maintains and operates the biggest railway infrastructure in Switzerland. Today, there are more than $\num{10000}$ trains running each day, being routed over $\num{13000}$ switches and controlled by more than $\num{32000}$ signals. 
+As reported on the official challenge website, SBB operates the densest mixed railway traffic in the world. It maintains and operates the biggest railway infrastructure in Switzerland: today, as of \the\year, there are more than $\num{10000}$ trains running each day, being routed over $\num{13000}$ switches and controlled by more than $\num{32000}$ signals. 
 
 The Flatland challenge aims to address the vehicle rescheduling problem by providing a simplistic grid world environment and allowing for diverse solution approaches. In particular, the first edition of the challenge was hosted during 2019 and the submitted solutions were mainly based on OR (Operation Research) methodologies, while the second edition of the competition, i.e. the NeurIPS 2020 edition, had the goal of favoring the implementation of RL (Reinforcement Learning) based solutions.  
 
 
 \chapter{Introduction}
-At the core of this challenge lies the general vehicle re-scheduling problem (VRSP) proposed \citeauthor{vrsp} in \citeyear{vrsp} \cite{vrsp}:
+At the core of this challenge lies the general vehicle rescheduling problem (VRSP) proposed by \citeauthor{vrsp} in \citeyear{vrsp} \cite{vrsp}:
 \begin{displayquote}
 	The vehicle rescheduling problem (VRSP) arises when a previously assigned trip is disrupted. A traffic accident, a medical emergency, or a breakdown of a vehicle are examples of possible disruptions that demand the rescheduling of vehicle trips. The VRSP can be approached as a dynamic version of the classical vehicle scheduling problem (VSP) where assignments are generated dynamically.
 \end{displayquote}
@@ -104,7 +105,9 @@ The overall goal is to make all agents (trains) arrive at their target destinati
 
 
 \chapter{Background}
-As already pointed out, the Flatland environment is represented as a 2D grid and each cell can be one of many different types. The different types of cells can belong to the following categories: \texttt{rail} and \texttt{empty}.
+
+\subsubsection*{Railway}
+As already pointed out, the Flatland environment is represented as a 2D grid of dimension $W\times H$ and each cell in the grid can be one of many different types. The different types of cells can belong to the following categories: \texttt{rail} and \texttt{empty}.
 
 The \texttt{rail} cells are the most intricated of the two, in that there exists different types of them. In particular, figure \ref{fig:rail-cells} shows examples of possible \texttt{rail} cells that can be used to build up a railway environment in Flatland. Other than the ones shown in figure \ref{fig:rail-cells} there are also diamond crossings (i.e. two orthogonal straight rails crossing each other), single slip switches (i.e. the same as double slip switches but with a single choice) and symmetrical switches (which are special kinds of switches that bifurcate to a left and right branch). Moreover, every \texttt{rail} cell can be rotated by $90^{\circ}$ and mirrored along both axis, to allow more combinations between them to be made, in order to guarantee a great degree of diversity between different railways.
 
@@ -142,7 +145,7 @@ The \texttt{rail} cells are the most intricated of the two, in that there exists
 Moreover, \texttt{rail} cells can be occupied by the following entities (the ones shown in figure \ref{fig:agent-target}):
 \begin{itemize}
 	\item Agent: one \texttt{rail} cell can be seen as a resource with availability equal to one, so that in each time step only one agent can occupy it
-	\item Target: they represent the destination of one or more agents (different agents could have the same target) and the number of possible targets present in the environment is clearly limited by the number of agents
+	\item Target: each target is statically assigned to one \texttt{rail} cell. Target cells represent the destination of one or more agents (different agents could have the same target). Moreover, the number of possible targets present in the environment is clearly limited by the number of agents
 \end{itemize}
 
 \begin{figure}[h]
@@ -150,13 +153,13 @@ Moreover, \texttt{rail} cells can be occupied by the following entities (the one
 	\captionsetup[subfigure]{justification=centering}
 	\begin{subfigure}[t]{.25\linewidth}
 		\includegraphics[width=\textwidth]{agent.png}
-		\caption{Agent example}
+		\caption{Agent}
 		\label{fig:agent}
 	\end{subfigure}%
     ~
 	\begin{subfigure}[t]{.25\linewidth}
 		\includegraphics[width=\textwidth]{target.png}
-		\caption{Target example}
+		\caption{Target}
 		\label{fig:target}
 	\end{subfigure}%
 	\caption{Agents and targets}
@@ -175,6 +178,7 @@ In the end, the only cell types that we care about are the \texttt{rail} ones: t
 	\label{fig:env-example}
 \end{figure}
 
+\subsubsection*{Transitions}
 An agent in the Flatland environment is a train that starts from a random \texttt{rail} cell in the map and has to arrive to its assigned \texttt{target} cell in the minimum number of steps. To do so, the agent can only occupy \texttt{rail} cells. 
 
 To move from a cell to another one the agent has to make a choice and, depending on the cell type that they are on and on the connections between cells, an agent can transition from cell $i$, when looking towards direction $d_i$, to cell $j$, looking towards direction $d_j$, if and only if $T_i(d_i, d_j)=1$, where $T_i$ is the transition matrix associated to cell $i$, s.t. $T_i(d_i, d_j)=0$ means that the transition from cell $i$, direction $d_i$ to cell $j$, direction $d_j$ is forbidden (likewise $T_i(d_i, d_j)=1$ means that the transition is allowed). Directions $d_*$ are represented as the $4$ cardinal directions, i.e. North, East, South and West (N, E, S, W), so that each transition matrix $T_*$ can be characterized as a $4\times4$ binary matrix. For example, a deadend cell like the one reported in figure \ref{fig:rail-cell-deadend} would have a transition matrix like the one shown in figure \ref{fig:rail-cell-bitmap}.
@@ -199,7 +203,7 @@ To move from a cell to another one the agent has to make a choice and, depending
 			0000 \; 000\mathbf{1} \; 0000 \; 0000
 		\end{equation*}
 	\end{minipage}
-	\caption{Example of a \texttt{rail} cell transition matrix and bitmap}
+	\caption{Transition matrix and bitmap of a deadend}
 	\label{fig:rail-cell-bitmap}
 \end{figure}
 
@@ -207,16 +211,60 @@ As we can observe, only one entry in the matrix has value $1$, meaning that only
 
 In the Flatland library, a transition matrix is represented by a bitmap, which can be seen as a linearization by rows of the reported matrix (the mapping between the transition matrix of the deadend cell \ref{fig:rail-cell-deadend} and its bitmap is again shown in figure \ref{fig:rail-cell-bitmap}). In this way, by simply counting the number of true values in the bitmap, we can understand the type of \texttt{rail} cell that we are examining (e.g. only one true value indicates a deadend, while exactly two true values indicate a straight rail). 
 
+\subsubsection*{Actions}
 Flatland has a discrete action space, meaning that only $5$ possibilities have to be considered at each transition. In particular, Flatland uses the following convention:
 \begin{enumerate}
 	\item \texttt{MOVE_FORWARD}: the agent maintains the current movement direction, if possible (i.e. if it was heading North, it will continue heading North)
-	\item \texttt{MOVE_LEFT}: if the agent is at a switch with a transition to its left, the agent will choose the left path, otherwise the action has no effect
-	\item \texttt{MOVE_RIGHT}: if the agent is at a switch with a transition to its right, the agent will choose the right path, otherwise the action has no effect
+	\item \texttt{MOVE_LEFT}: if the agent is at a switch with a transition to its left, the agent will choose the left path, otherwise the action has no effect (e.g. if the agent was heading North, it will be directed towards East)
+	\item \texttt{MOVE_RIGHT}: if the agent is at a switch with a transition to its right, the agent will choose the right path, otherwise the action has no effect (e.g. if the agent was heading North, it will be directed towards West)
 	\item \texttt{STOP_MOVING}: the agent remains in the same cell
 	\item \texttt{DO_NOTHING}: the agent performs the same action as the last time step
 \end{enumerate}
 
 Usually, only a handful of the reported actions can be perfomed on a given cell, meaning that most of the times the actual number of choices is much less than $5$ (we will address this issue in chapter ??????????????????).
+
+\subsubsection*{Complications}
+The main complications of the Flatland challenge are given by speed profiles, conflicts and malfunctions. In particular, about speed profiles, each and every agent could have a different velocity. The standard speed (and the maximum one) is $1$, which means that the agent crosses one cell in one time step. Speeds can have values in range $(0, 1]$: if an agent has speed $s$, it means that it needs $\lceil\frac{1}{s}\rceil$ time steps to transition from one cell to the next one. 
+
+Speeds are assigned to agents based on a custom probability mass function, so that $P(S=s)$ represents the probability that the speed $S$ of an agent is equal to $s$. For example, we could have the following \textit{pmf} (representing a uniform distribution over values $\{\frac{1}{4}, \frac{1}{3}, \frac{1}{2}, 1\}$):
+
+\begin{equation}
+	\begin{cases} 
+		P(S=s) = 0.25 & \text{if } s \in \{\frac{1}{4}, \frac{1}{3}, \frac{1}{2}, 1\} \\
+		P(S=s) = 0 & \text{otherwise}
+	\end{cases}
+\end{equation}
+
+Clearly, the speed factor is a critical one to observe when trying to minimize the total number of time steps in a multi-agent scenario: for example, different agents have to understand that faster ones should go first if a decision has to be made. This is because we would like to avoid bottlenecks of any kind inside the railway network and slower agents can definitely become an issue in an environment with relatively long sequences of straight rails.
+
+About the second complications, i.e. malfunctions, agents can experience defects or failures which do not let them go on in their path towards the target. A malfunction in the Flatland environment is modeled by a Poisson distribution $1 - P_{\lambda}(n=0)=1 - \frac{\lambda^{n}}{n!}\cdot e^{-\lambda}=1 - e^{-\lambda}$, where $\lambda \in (0, 1]$ is the malfunction rate s.t. $\frac{1}{\lambda}$ represents the mean frequency of occurrence of malfunctioning events. For example, if malfunctions are to be expected once every $80$ time steps for an agent, then $\lambda=\frac{1}{80}=0.0125$ and the probability of a malfunction in each time step is equal to $1-e^{-0.0125}=0.01$, while if malfunctions are more rare (e.g. once every $200$ time steps), then we would have a probability value of $1-e^{-0.005}=0.004$. Once an agent is malfunctioning, it stays so for a random number of time steps, bounded by parameters indicating the minimum and maximum duration of a malfunction period.
+
+Again, the malfunction factor is critical, in that it could prevent one or more agents from reaching their targets in the minimum number of time steps. In this way, transitions in the environment become stochastic, thus leading to a slower and much more difficult optimization procedure.
+
+About the third complication, i.e. conflicts, we can define it as a state in which agents cannot perform any action, because they are "blocked" by one or more neighboring agents. Different conflicting situations can arise in practice, where the most basic one is given by two agents heading in different directions in a sequence of straight rails (see figure \ref{fig:two-deadlock}): this situation can in turn cause other deadlocks to happen, as shown in figure \ref{fig:three-deadlock}.
+
+\begin{figure}[h]
+	\centering
+	\captionsetup[subfigure]{justification=centering}
+	\begin{subfigure}[t]{.4\linewidth}
+		\includegraphics[width=\textwidth]{two-deadlock.png}
+		\caption{Two agents}
+		\label{fig:two-deadlock}
+	\end{subfigure}%
+    ~
+	\begin{subfigure}[t]{.4\linewidth}
+		\includegraphics[width=\textwidth]{three-deadlock.png}
+		\caption{Three agents}
+		\label{fig:three-deadlock}
+	\end{subfigure}%
+
+	\caption{Examples of deadlocks}
+	\label{fig:deadlocks}
+\end{figure}
+
+A full deadlock situation is a state in which every agent is in deadlock: in that case, no agent would be able to arrive at its target. These blocking situations are one of the most intricate and complex factors that should be addressed when designed autonomous agents in the Flatland environment, since they are quite frequent (and they get more frequent as the number of agents increases and the dimension of the grid decreases) and have disastrous consequences (at least in a real-world scenario).
+
+Differently from malfunctions, deadlocks totally prevent agents from reaching their destination: when a malfunction occurs, agents that could previously reach their targets will still be able to reach them once the malfunction period is over, while when a conflict occurs, at least two agents will never arrive at their targets.
 
 \chapter{Environment}
 \section{Railway encoding}
