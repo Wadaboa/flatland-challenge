@@ -93,7 +93,7 @@ As reported on the official challenge website, SBB operates the densest mixed ra
 The Flatland challenge aims to address the vehicle rescheduling problem by providing a simplistic grid world environment and allowing for diverse solution approaches. In particular, the first edition of the challenge was hosted during 2019 and the submitted solutions were mainly based on OR (Operation Research) methodologies, while the second edition of the competition, i.e. the NeurIPS 2020 edition, had the goal of favoring the implementation of RL (Reinforcement Learning) based solutions.  
 
 
-\chapter{Introduction}
+\chapter{Introduction}\label{chap:introduction}
 At the core of this challenge lies the general vehicle rescheduling problem (VRSP) proposed by \citeauthor{vrsp} in \citeyear{vrsp} \cite{vrsp}:
 \begin{displayquote}
 	The vehicle rescheduling problem (VRSP) arises when a previously assigned trip is disrupted. A traffic accident, a medical emergency, or a breakdown of a vehicle are examples of possible disruptions that demand the rescheduling of vehicle trips. The VRSP can be approached as a dynamic version of the classical vehicle scheduling problem (VSP) where assignments are generated dynamically.
@@ -104,7 +104,7 @@ The problem is formulated as a 2D grid environment with restricted transitions b
 The overall goal is to make all agents (trains) arrive at their target destination with a minimal travel time. In other words, we want to minimize the time steps (or wait time) that it takes for each agent in the group to reach its destination.
 
 
-\chapter{Background}
+\chapter{Background}\label{chap:background}
 
 \subsubsection*{Railway}
 As already pointed out, the Flatland environment is represented as a 2D grid of dimension $W\times H$ and each cell in the grid can be one of many different types. The different types of cells can belong to the following categories: \texttt{rail} and \texttt{empty}.
@@ -114,25 +114,25 @@ The \texttt{rail} cells are the most intricated of the two, in that there exists
 \begin{figure}[h]
 	\centering
 	\captionsetup[subfigure]{justification=centering}
-	\begin{subfigure}[t]{.25\linewidth}
+	\begin{subfigure}[t]{.20\linewidth}
 		\includegraphics[width=\textwidth]{straight-rail.png}
 		\caption{Straight}
 		\label{fig:rail-cell-straight}
 	\end{subfigure}%
     ~
-	\begin{subfigure}[t]{.25\linewidth}
+	\begin{subfigure}[t]{.20\linewidth}
 		\includegraphics[width=\textwidth]{simple-switch-rail.png}
 		\caption{Simple switch}
 		\label{fig:rail-cell-simple}
 	\end{subfigure}%
 	~ 
-	\begin{subfigure}[t]{.25\linewidth}
+	\begin{subfigure}[t]{.20\linewidth}
 		\includegraphics[width=\textwidth]{deadend-rail.png}
 		\caption{Deadend}
 		\label{fig:rail-cell-deadend}
 	\end{subfigure}%
 	~
-	\begin{subfigure}[t]{.25\linewidth}
+	\begin{subfigure}[t]{.20\linewidth}
 		\includegraphics[width=\textwidth]{double-slip-rail.png}
 		\caption{Double slip switch}
 		\label{fig:rail-cell-double}
@@ -170,7 +170,7 @@ An important fact about the different types of \texttt{rail} cells is that only 
 
 Finally, every cell that is not \texttt{rail} is \texttt{empty} and neither targets nor agents can fill it up. As shown in figure \ref{fig:env-example}, it is interesting to notice that Flatland is a very sparse environment, meaning that there are a lot more \texttt{empty} cells than \texttt{rail} ones: because of this, representing the environment as a simple dense matrix could lead to overheads and efficiency issues, especially when dealing with relatively big environments.
 
-In the end, the only cell types that we care about are the \texttt{rail} ones: the \texttt{empty} ones are useful only for visualization purposes. Because of this, we could think of representing the environment as a sparse matrix or as a graph containing only \texttt{rail} cells or a subset of them (we will address this issue in chapter ??????????????????).
+In the end, the only cell types that we care about are the \texttt{rail} ones: the \texttt{empty} ones are useful only for visualization purposes. Because of this, we could think of representing the environment as a sparse matrix or as a graph containing only \texttt{rail} cells or a subset of them (we will address this issue in section \ref{sec:railway-encoding}).
 
 \begin{figure}[h]
 	\includegraphics[width=\textwidth]{env.png}
@@ -221,7 +221,7 @@ Flatland has a discrete action space, meaning that only $5$ possibilities have t
 	\item \texttt{DO_NOTHING}: the agent performs the same action as the last time step
 \end{enumerate}
 
-Usually, only a handful of the reported actions can be perfomed on a given cell, meaning that most of the times the actual number of choices is much less than $5$ (we will address this issue in chapter ??????????????????).
+Usually, only a handful of the reported actions can be perfomed on a given cell, meaning that most of the times the actual number of choices is much less than $5$ (we will address this issue in section \ref{sec:choices}).
 
 \subsubsection*{Complications}
 The main complications of the Flatland challenge are given by speed profiles, conflicts and malfunctions. In particular, about speed profiles, each and every agent could have a different velocity. The standard speed (and the maximum one) is $1$, which means that the agent crosses one cell in one time step. Speeds can have values in range $(0, 1]$: if an agent has speed $s$, it means that it needs $\lceil\frac{1}{s}\rceil$ time steps to transition from one cell to the next one. 
@@ -267,13 +267,106 @@ A full deadlock situation is a state in which every agent is in deadlock: in tha
 Differently from malfunctions, deadlocks totally prevent agents from reaching their destination: when a malfunction occurs, agents that could previously reach their targets will still be able to reach them once the malfunction period is over, while when a conflict occurs, at least two agents will never arrive at their targets.
 
 \chapter{Environment}
-\section{Railway encoding}
+In this chapter we are going to explore better ways to encode the Flatland environment and how agents can interact with these representations.
+
+\section{Railway encoding}\label{sec:railway-encoding}
+As already described in chapter \ref{chap:background}, the default Flatland representation was not built with the goal of efficiency in mind, since it stores each and every cell of the 2D grid, while only \texttt{rail} cells are the ones that are actually used by agents. An alternative and more efficient representation could be to use some kind of sparse matrix implementation, where \texttt{empty} cells are not stored at all, but this would only be beneficial from the point of view of memory occupancy, while the usage of more specific data structures could also improve other aspects, like the computation of shortest paths from the agent's position to its target.
+
+In this work, we decided to rely on a graph structure. In particular, we were inspired by the great work described in \cite{jonas} where the author presents the so called Cell Orientation Graph (COG), in which nodes represent cells in the 2D grid as a triple $(x, y, d)$, where $(x, y)$ are the coordinates in the grid (origin in the top-left corner with x-axis looking right and y-axis looking down) and $d$ is one of the four cardinal directions (representing the direction of entrance in the cell). In this way, one \texttt{rail} cell is represented by at most $4$ nodes in the graph: this could seem like a major drawback, but in practice we can observe that the number of nodes is roughly equivalent to the number of cells in the corresponding grid, since we got rid of the \texttt{empty} ones. 
+
+Instead, edges in the graph are directed and represent legal transitions, so that no transition matrix or bitmap has to be stored in each node: it is simply encoded in the topology of the network. Moreover, the usage of directed edges greatly simplifies the computation of paths between nodes in the graph.
+
+In order to further simplify the representation of the Flatland environment, we decided to entirely delete nodes which represented straight rails (with the exception of keeping straight rails containing targets and deadends). In this way, what we end up with is something that could be defined a Cell Orientation Junction Graph (COJG), since the remaining nodes are the ones in which an agent either has to make a decision or finishes its trip.
+
+Because of the deletion of almost all nodes associated to straight rails, edges actually represent a connection between an interesting cell and another one (e.g. they link a junction to a target or a junction to a second junction). In order to maintain the same topology as before, the number of deleted straight rails between each pair of interesting nodes is used as the weight of the edge connecting them, so that the computation of shortest paths can automatically take that into account.
+
+Figure \ref{fig:grid-cog-cojg-32x16} shows the comparison, in terms of visual representations, of the standard grid environment and both COG and COJG graphs, in a $32\times 16$ map. In table \ref{table:grid-cog-cojg-32x16} we show the improvements that can be gained by leveraging the usage of the Cell Orientation Graph, and in particular of its modified version, i.e. the Cell Orientation Junction Graph, by computing the number of nodes, edges and \texttt{empty} cells in each representation, in the same $32\times 16$ map of figure \ref{fig:grid-cog-cojg-32x16}. 
+
+\begin{figure}[h]
+	\centering
+	\captionsetup[subfigure]{justification=centering}
+	\begin{subfigure}[b]{.8\linewidth}
+		\includegraphics[width=\textwidth]{grid-env-32x16.png}
+		\caption{Grid}
+		\label{fig:grid-env-32x16}
+	\end{subfigure}%
+    
+	\begin{subfigure}[b]{.8\linewidth}
+		\includegraphics[width=\textwidth]{cog-env.png}
+		\caption{COG}
+		\label{fig:cog-env-32x16}
+	\end{subfigure}%
+	
+	\begin{subfigure}[b]{.8\linewidth}
+		\includegraphics[width=\textwidth]{cojg-env.png}
+		\caption{COJG}
+		\label{fig:cojg-env-32x16}
+	\end{subfigure}%
+
+	\caption{Different railway encodings of a $32\times 16$ map}
+	\label{fig:grid-cog-cojg-32x16}
+\end{figure}
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{||c c c c||} 
+		\hline
+		& \textbf{Nodes} & \textbf{Edges} & \textbf{Empty} \\ [0.5ex] 
+		\hline\hline
+		\textbf{Grid} & 512 & - & \num{413} \\ 
+		\hline
+		\textbf{COG} & 226 & 254 & 0 \\
+		\hline
+		\textbf{COJG} & 78  & 106 & 0 \\
+		\hline
+   \end{tabular}
+   \caption{Grid, COG, COJG comparison in a $32\times 16$ map}
+   \label{table:grid-cog-cojg-32x16}
+\end{table}
+
+Since a $32x16$ map is too small to observe big improvements, in figure \ref{fig:grid-cog-cojg-128x64} we also report another example of a sparse grid environment of dimension $128\times64$ and we compare it with its encodings in table \ref{table:grid-cog-cojg-128x64}.
+
+\begin{figure}[h]
+	\includegraphics[width=\textwidth]{grid-env-128x64.png}
+	\caption{Sparse $128\times64$ grid environment}
+	\label{fig:grid-cog-cojg-128x64}
+\end{figure}
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{||c c c c||} 
+		\hline
+		& \textbf{Nodes} & \textbf{Edges} & \textbf{Empty} \\ [0.5ex] 
+		\hline\hline
+		\textbf{Grid} & \num{8192} & - & \num{7732} \\ 
+		\hline
+		\textbf{COG} & 1050 & 1096 & 0 \\
+		\hline
+		\textbf{COJG} & 136  & 182 & 0 \\
+		\hline
+   \end{tabular}
+   \caption{Grid, COG, COJG comparison in a $128\times 64$ map}
+   \label{table:grid-cog-cojg-128x64}
+\end{table}
+ 
+\section{Predictions}
+As reported in Flatland official FAQs, because railway traffic is limited to rails, many decisions that an agent has to take need to consider future situations and detect upcoming conflicts ahead of time. Therefore, Flatland provides the possibility of predictors that predict where agents will be in the future. The stock predictor simply assumes that each agent travels along its shortest path.
+
+\subsection{Shortest and deviation paths}
+One of the key advantages of COJG is that it enables us to apply standard shortest path algorithms on directed weighted graphs without any kind of overhead. In particular, we decided to use Dijkstra's algorithm since we do not have negatively weighted edges (in that case, Dijkstra's algorithm could get stuck in a cycle containing at least one edge with negative weight, since it may cycle an infinite number of times and sometimes go down with the total cost as much as it likes). 
+
+To build our predictor, we took inspiration from the standard predictor given by the Flatland library as a baseline, which computes shortest paths directly on the 2D grid representation. Our predictor instead takes into account two possibilities: an agent either follows its shortest path or deviates from it. The computation of shortest paths is incremental, meaning that once it is done it only gets updated (i.e. the first node is removed). The only event that causes a re-computation of the shortest path is when the agent makes a choice that does not follow the stored path.
+
+Deviation paths are instead computed on the fly and they represent alternatives from each node of the shortest path. The computation of deviation path $i$, given the shortest path $n_1, \dots, n_i, n_{i+1}, \dots, n_d$, is simply another call to the Dijkstra's routine, where edge $(n_i, n_{i+1})$ is forbidden. In this example, $d$ represents the maximum depth of both shortest and deviation paths.
+
+In this way, the prediction becomes a list of paths, where the first one is the shortest path, composed by at most $d$ nodes, and the following ones are $d-1$ deviation paths, still composed by at most $d$ nodes. When an agent is relatively close to its target (i.e. less than $d$ nodes away from it), the actual path could have a dimension which is less than $d$: to avoid troubles when dealing with dynamically sized vectors, paths are padded to the full depth with special symbols.
+
+In case an agent cannot reach its target anymore, the prediction only comprises a path of two nodes, i.e. the agent's position and the next node in the COJG graph. This mini-path is stored because predictions are used to compute possible deadlocks and, even if an agent cannot arrive at its target anymore, it is still present in the railway environment and it could be a possible source of conflicts.
+
 \section{Observations}
 \subsection{Tree}
 \subsection{Binary tree}
-\section{Predictions}
-\subsection{Shortest path}
-\section{Choices}
+\section{Choices}\label{sec:choices}
 \section{Rewards shaping}
 
 \chapter{Policy}
