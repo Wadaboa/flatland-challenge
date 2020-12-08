@@ -109,7 +109,7 @@ The overall goal is to make all agents (trains) arrive at their target destinati
 \subsubsection*{Railway}
 As already pointed out, the Flatland environment is represented as a 2D grid of dimension $W\times H$ and each cell in the grid can be one of many different types. The different types of cells can belong to the following categories: \texttt{rail} and \texttt{empty}.
 
-The \texttt{rail} cells are the most intricated of the two, in that there exists different types of them. In particular, figure \ref{fig:rail-cells} shows examples of possible \texttt{rail} cells that can be used to build up a railway environment in Flatland. Other than the ones shown in figure \ref{fig:rail-cells} there are also diamond crossings (i.e. two orthogonal straight rails crossing each other), single slip switches (i.e. the same as double slip switches but with a single choice) and symmetrical switches (which are special kinds of switches that bifurcate to a left and right branch). Moreover, every \texttt{rail} cell can be rotated by $90^{\circ}$ and mirrored along both axis, to allow more combinations between them to be made, in order to guarantee a great degree of diversity between different railways.
+The \texttt{rail} cells are the most intricated of the two, in that there exists different types of them. In particular, figure \ref{fig:rail-cells} shows examples of possible \texttt{rail} cells that can be used to build up a railway environment in Flatland. Other than the ones shown in figure \ref{fig:rail-cells} there are also diamond crossings (i.e. two orthogonal straight rails crossing each other), single slip switches (i.e. the same as double slip switches but with a single choice) and symmetrical switches (which are special kinds of switches that bifurcate to a left and right branch). Moreover, every \texttt{rail} cell can be rotated by $90^{\circ}$ and mirrored along both axis, to allow more combinations between them to be made, in order to guarantee a greater degree of diversity between different railways.
 
 \begin{figure}[h]
 	\centering
@@ -179,7 +179,7 @@ In the end, the only cell types that we care about are the \texttt{rail} ones: t
 \end{figure}
 
 \subsubsection*{Transitions}
-An agent in the Flatland environment is a train that starts from a random \texttt{rail} cell in the map and has to arrive to its assigned \texttt{target} cell in the minimum number of steps. To do so, the agent can only occupy \texttt{rail} cells. 
+An agent in the Flatland environment is a train that starts from a random \texttt{rail} cell in the map and has to arrive to its assigned target in the minimum number of steps. To do so, the agent can only occupy \texttt{rail} cells. 
 
 To move from a cell to another one the agent has to make a choice and, depending on the cell type that they are on and on the connections between cells, an agent can transition from cell $i$, when looking towards direction $d_i$, to cell $j$, looking towards direction $d_j$, if and only if $T_i(d_i, d_j)=1$, where $T_i$ is the transition matrix associated to cell $i$, s.t. $T_i(d_i, d_j)=0$ means that the transition from cell $i$, direction $d_i$ to cell $j$, direction $d_j$ is forbidden (likewise $T_i(d_i, d_j)=1$ means that the transition is allowed). Directions $d_*$ are represented as the $4$ cardinal directions, i.e. North, East, South and West (N, E, S, W), so that each transition matrix $T_*$ can be characterized as a $4\times4$ binary matrix. For example, a deadend cell like the one reported in figure \ref{fig:rail-cell-deadend} would have a transition matrix like the one shown in figure \ref{fig:rail-cell-bitmap}.
 
@@ -292,13 +292,13 @@ Figure \ref{fig:grid-cog-cojg-32x16} shows the comparison, in terms of visual re
 	\end{subfigure}%
     
 	\begin{subfigure}[b]{.8\linewidth}
-		\includegraphics[width=\textwidth]{cog-env.png}
+		\includegraphics[width=\textwidth]{cog-env-32x16.png}
 		\caption{COG}
 		\label{fig:cog-env-32x16}
 	\end{subfigure}%
 	
 	\begin{subfigure}[b]{.8\linewidth}
-		\includegraphics[width=\textwidth]{cojg-env.png}
+		\includegraphics[width=\textwidth]{cojg-env-32x16.png}
 		\caption{COJG}
 		\label{fig:cojg-env-32x16}
 	\end{subfigure}%
@@ -327,8 +327,19 @@ Figure \ref{fig:grid-cog-cojg-32x16} shows the comparison, in terms of visual re
 Since a $32x16$ map is too small to observe big improvements, in figure \ref{fig:grid-cog-cojg-128x64} we also report another example of a sparse grid environment of dimension $128\times64$ and we compare it with its encodings in table \ref{table:grid-cog-cojg-128x64}.
 
 \begin{figure}[h]
-	\includegraphics[width=\textwidth]{grid-env-128x64.png}
-	\caption{Sparse $128\times64$ grid environment}
+	\begin{subfigure}[b]{\linewidth}
+		\includegraphics[width=\textwidth]{grid-env-128x64.png}
+		\caption{Grid}
+		\label{fig:grid-env-128x64}
+	\end{subfigure}%
+    
+	\begin{subfigure}[b]{\linewidth}
+		\includegraphics[width=\textwidth]{cojg-env-128x64.png}
+	\caption{COJG}
+	\label{fig:cojg-env-128x64}
+	\end{subfigure}%
+
+	\caption{Grid and COJG comparison in a sparse $128\times64$ map}
 	\label{fig:grid-cog-cojg-128x64}
 \end{figure}
 
