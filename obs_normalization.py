@@ -40,6 +40,7 @@ def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction, fi
     deadlocks = normalized_observation[:, :, 11]
     deadlock_distances = normalized_observation[:, :, 12]
     are_forks = normalized_observation[:, :, 13]
+    stop_actions = normalized_observation[:, :, 14]
 
     # Normalize number of agents in path
     num_agents = utils.min_max_scaling(
@@ -83,6 +84,12 @@ def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction, fi
         known_min=-fixed_radius, known_max=fixed_radius
     )
 
+    # Normalize stop actions
+    stop_actions = utils.min_max_scaling(
+        stop_actions, BT_LOWER, BT_UPPER, BT_LOWER, BT_UPPER,
+        known_min=0, known_max=fixed_radius
+    )
+
     # Build the normalized observation
     normalized_observation[:, :, 0:4] = num_agents
     normalized_observation[:, :, 4:6] = agent_distances
@@ -92,6 +99,7 @@ def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction, fi
     normalized_observation[:, :, 10] = c_nodes
     normalized_observation[:, :, 11] = deadlocks
     normalized_observation[:, :, 12] = deadlock_distances
+    normalized_observation[:, :, 14] = stop_actions
 
     # Sanity check
     normalized_observation[normalized_observation == -np.inf] = BT_LOWER

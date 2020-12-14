@@ -503,7 +503,6 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
             # Break if every agent arrived
             final_step = step
             if done['__all__']:
-                print('here')
                 break
 
         # Close window

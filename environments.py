@@ -31,6 +31,7 @@ class RailEnvWrapper(RailEnv):
         self.deadlocks_detector = DeadlocksDetector()
         self.partial_rewards = dict()
         self.arrived_turns = dict()
+        self.stop_actions = dict()
 
     def _get_state_size(self):
         '''
@@ -158,6 +159,7 @@ class RailEnvWrapper(RailEnv):
             list(range(self.get_num_agents())) + ["__all__"], False
         )
         self.arrived_turns = [None] * self.get_num_agents()
+        self.stop_actions = [0] * self.get_num_agents()
 
         # Build the cell orientation graph
         self.railway_encoding = CellOrientationGraph(
@@ -223,7 +225,7 @@ class RailEnvWrapper(RailEnv):
             self
         )
 
-        # Patch dones dict and update arrived agents turns
+        # Patch dones dict, update arrived agents turns and stop actions
         remove_all = False
         for agent in range(self.get_num_agents()):
             if dones[agent] and not self.railway_encoding.is_done(agent):
@@ -231,6 +233,12 @@ class RailEnvWrapper(RailEnv):
                 remove_all = True
             if dones[agent] and self.arrived_turns[agent] is None:
                 self.arrived_turns[agent] = self._elapsed_steps - 1
+
+            # Store the number of consequent stop actions
+            if action_dict_[agent] == RailEnvActions.STOP_MOVING.value:
+                self.stop_actions[agent] += 1
+            else:
+                self.stop_actions[agent] = 0
 
         # If at least one agent is not at target, then
         # the __all__ flag of dones should be False

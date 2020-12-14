@@ -8,6 +8,7 @@ from collections import namedtuple
 import numpy as np
 
 from flatland.core.env_observation_builder import ObservationBuilder
+from flatland.envs.rail_env import RailAgentStatus
 
 import utils
 import env_utils
@@ -49,6 +50,7 @@ Observation:
             other agents follow their shortest path
         13. How many turns before a possible deadlock
         14. If the node is a fork or not
+        15. How many turns I've been repeatedly selecting the stop action
 '''
 
 # SpeedData:
@@ -71,7 +73,7 @@ class BinaryTreeObservator(ObservationBuilder):
         self.max_depth = max_depth
         self.predictor = predictor
         self.observations = dict()
-        self.observation_dim = 14
+        self.observation_dim = 15
 
     def _init_agents(self):
         '''
@@ -179,7 +181,9 @@ class BinaryTreeObservator(ObservationBuilder):
         )
 
         # Compute features if necessary
-        if self.predictions[handle] is not None:
+        if (self.predictions[handle] is not None and (
+                self.env.railway_encoding.is_real_decision(handle) or
+                self.env.agents[handle].status == RailAgentStatus.READY_TO_DEPART)):
             shortest_path_prediction, deviation_paths_prediction = self.predictions[handle]
             packed_positions, packed_weights = self._get_shortest_packed_positions()
             shortest_feats = self._fill_path_values(
@@ -256,12 +260,13 @@ class BinaryTreeObservator(ObservationBuilder):
             prev_deadlocks=prev_deadlocks
         )
         are_forks = self.compute_is_fork(path)
+        stop_actions = np.full(are_forks.shape, self.env.stop_actions[handle])
 
         # Build the feature matrix
         feature_matrix = np.vstack([
             num_agents, agent_distances, malfunctions,
             target_distances, path_weights, c_nodes, deadlocks, deadlock_distances,
-            are_forks
+            are_forks, stop_actions
         ]).T
 
         return feature_matrix

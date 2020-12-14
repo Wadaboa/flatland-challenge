@@ -47,6 +47,8 @@ def min_max_scaling(values, lower, upper, under, over, known_min=None, known_max
             )
         elif min_value != 0:
             values = values / min_value
+        else:
+            values = under
     except:
         pass
     values[values == -np.inf] = under

@@ -374,10 +374,12 @@ In this way, the prediction becomes a list of paths, where the first one is the 
 
 In case an agent cannot reach its target anymore, the prediction only comprises a path of two nodes, i.e. the agent's position and the next node in the COJG graph. This mini-path is stored because predictions are used to compute possible deadlocks and, even if an agent cannot arrive at its target anymore, it is still present in the railway environment and it could be a possible source of conflicts.
 
+\section{Choices}\label{sec:choices}
+Flatland uses a discrete action space composed of $5$ actions. Since our goal was to implement a RL solution, we decided to follow the guideline described in \cite{jonas}, where the author reports a smart action space reduction. In particular, the size of the action space is reduced from $5$ to $3$ and we called the 
+
 \section{Observations}
 \subsection{Tree}
 \subsection{Binary tree}
-\section{Choices}\label{sec:choices}
 \section{Rewards shaping}
 
 \chapter{Policy}
