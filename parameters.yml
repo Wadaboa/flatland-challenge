@@ -2,7 +2,7 @@
 env:
   # Random seed used to generate rails
   # (14 medium - 14 big)
-  seed: 35
+  seed: 14
   # Number of trains to spawn
   # (3, 5, 7 medium - 5, 7, 10 big)
   num_trains: 3
@@ -232,7 +232,7 @@ testing:
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: "checkpoints/20201204-185611-latest"
+  model: ""
   # Seconds to sleep between moves
   sleep: 0
   # Save intermediate renderer frames
