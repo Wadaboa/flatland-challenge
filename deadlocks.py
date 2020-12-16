@@ -45,13 +45,20 @@ class DeadlocksDetector:
         Function used to collect chains of blocked agents
         '''
         transitions = env.rail.get_transitions(*pos)
+        n_transitions = 0
+        occupied = 0
+        agent_in_path = None
         for direction, values in enumerate(MOVEMENT_ARRAY):
             if transitions[direction] == 1:
+                n_transitions += 1
                 new_position = get_new_position(pos, direction)
                 for agent in range(env.get_num_agents()):
                     if env.agents[agent].position == new_position:
-                        return agent
-        return None
+                        occupied += 1
+                        agent_in_path = agent
+        if n_transitions > occupied:
+            return None
+        return agent_in_path
 
     def _check_next_pos(self, agent, env):
         '''

@@ -5,7 +5,7 @@ env:
   seed: 14
   # Number of trains to spawn
   # (3, 5, 7 medium - 5, 7, 10 big)
-  num_trains: 3
+  num_trains: 5
   # Environment width
   # (48 medium - 64 big)
   width: 48
@@ -36,6 +36,8 @@ env:
     min_duration: 15
     # Malfunction maximum duration
     max_duration: 50
+  rewards:
+    stop_penalty: 2.0
 
 # Observator config
 observator:
@@ -109,7 +111,7 @@ learning:
   # Discount multiplier for expected Q-value of targets
   discount: !!float 0.99
   # Bellman fuction
-  softmax_bellman: False
+  softmax_bellman: True
   # Loss function
   loss:
     # Huber loss
@@ -140,9 +142,9 @@ model:
   # Non-linear function
   nonlinearity:
     # ReLU function
-    relu: True
+    relu: False
     # Tanh function
-    tanh: False
+    tanh: True
   # GNN configuration
   gnn:
     # Size of the hidden layers
@@ -182,7 +184,7 @@ generic:
   # Random seed used when `fix_random` is True
   random_seed: 1
   # Device config
-  use_gpu: False
+  use_gpu: True
   # Enable wandb logging
   enable_wandb: True
   # Checkpoint to save model to wandb
@@ -197,14 +199,14 @@ generic:
 # Training config
 training:
   # Checkpoint interval (how often to evaluate and save the model)
-  checkpoint: 200
+  checkpoint: 50
 
   # Train environment config
   train_env:
     # Path to the train environment file
     load: ""
     # Number of training episodes to run
-    episodes: 5000
+    episodes: 100
     # Train on random enviroments or on the same one
     all_random: True
 
@@ -220,22 +222,28 @@ training:
   # Renderer config
   renderer:
     # Render episodes during training
-    training: True
+    training: False
     # How often to render an episode in training
     train_checkpoint: 150
     # Render episodes during evaluation
-    evaluation: True
+    evaluation: False
     # How often to render an episode in evaluation
     eval_checkpoint: 5
 
 testing:
+  # Number of episodes to run
+  episodes: 500
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: ""
-  # Seconds to sleep between moves
-  sleep: 0
-  # Save intermediate renderer frames
-  save_frames: True
-  # Number of episodes to run
-  episodes: 20
+  model: "./checkpoints/20201216-010101-latest"
+  # Verbose option
+  verbose: False
+  # Renderer config
+  renderer:
+    # Enable renderer
+    enabled: False
+    # Seconds to sleep between moves
+    sleep: 0
+    # Save intermediate renderer frames
+    save_frames: True

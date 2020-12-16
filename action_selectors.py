@@ -98,6 +98,9 @@ class ActionSelector:
     def reset(self):
         return None
 
+    def get_parameter(self):
+        return None
+
 
 class EpsilonGreedyActionSelector(ActionSelector):
 
@@ -119,6 +122,9 @@ class EpsilonGreedyActionSelector(ActionSelector):
 
     def reset(self):
         self.epsilon = self.decay_schedule.parameter_start
+
+    def get_parameter(self):
+        return self.epsilon
 
 
 class RandomActionSelector(EpsilonGreedyActionSelector):
@@ -163,6 +169,9 @@ class BoltzmannActionSelector(ActionSelector):
 
     def reset(self):
         self.temperature = self.decay_schedule.parameter_start
+
+    def get_parameter(self):
+        return self.temperature
 
 
 class CategoricalActionSelector(BoltzmannActionSelector):

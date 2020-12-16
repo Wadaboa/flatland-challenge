@@ -79,7 +79,7 @@ class RailEnvWrapper(RailEnv):
             int(v) for k, v in deadlocks.items()
             if k in remaining_agents
         )
-        return num_deadlocks == len(remaining_agents)
+        return num_deadlocks == len(remaining_agents) and len(remaining_agents) > 0
 
     def save(self, path):
         '''
@@ -285,6 +285,10 @@ class RailEnvWrapper(RailEnv):
                         agent
                     )
                     weight *= (1 / self.agents[agent].speed_data['speed'])
+                    weight *= (
+                        self.stop_actions[agent] *
+                        self.params.env.rewards.stop_penalty
+                    )
                     self.partial_rewards[agent] += -(weight + 1)
                 custom_rewards[agent] = 0.0
 

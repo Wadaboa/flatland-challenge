@@ -296,6 +296,8 @@ class DQNPolicy(Policy):
                 self.qnetwork_target.load_state_dict(
                     torch.load(filename + ".target")
                 )
+        else:
+            print("Model not found - check given path")
 
     def save_replay_buffer(self, filename):
         '''
