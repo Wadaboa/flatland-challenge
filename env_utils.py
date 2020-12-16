@@ -1,3 +1,4 @@
+
 import os
 import copy
 from enum import IntEnum
@@ -14,6 +15,7 @@ from flatland.envs.predictions import ShortestPathPredictorForRailEnv
 from predictions import ShortestPathPredictor, NullPredictor
 from binary_tree_obs import BinaryTreeObservator
 from graph_obs import GraphObservator
+from fov_gnn_obs import FOVObservator
 from environments import RailEnvWrapper
 
 import utils
@@ -22,12 +24,14 @@ import utils
 OBSERVATORS = {
     "tree": TreeObsForRailEnv,
     "binary_tree": BinaryTreeObservator,
-    "graph": GraphObservator
+    "graph": GraphObservator,
+    "fov": FOVObservator
 }
 PREDICTORS = {
     "tree": ShortestPathPredictorForRailEnv,
     "binary_tree": ShortestPathPredictor,
-    "graph": ShortestPathPredictor
+    "graph": ShortestPathPredictor,
+    "fov": ShortestPathPredictor
 }
 
 
@@ -60,7 +64,7 @@ class RailEnvChoices(IntEnum):
     @staticmethod
     def choice_size():
         '''
-        Return the number of values that can be assigned 
+        Return the number of values that can be assigned
         to a RailEnvChoices instance
         '''
         return len(RailEnvChoices.values())

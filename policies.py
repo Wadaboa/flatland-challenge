@@ -346,5 +346,6 @@ POLICIES = {
     "tree": DQNPolicy,
     "binary_tree": DQNPolicy,
     "graph": DQNGNNPolicy,
+    "fov": RandomPolicy,
     "random": RandomPolicy
 }

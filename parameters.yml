@@ -5,7 +5,7 @@ env:
   seed: 14
   # Number of trains to spawn
   # (3, 5, 7 medium - 5, 7, 10 big)
-  num_trains: 5
+  num_trains: 7
   # Environment width
   # (48 medium - 64 big)
   width: 48
@@ -66,7 +66,9 @@ policy:
     # Standard tree observation policy
     tree: False
     # Binary tree observation policy
-    binary_tree: True
+    binary_tree: False
+    # FOV local observator policy
+    fov: True
     # Random policy
     random: False
 
@@ -199,14 +201,14 @@ generic:
 # Training config
 training:
   # Checkpoint interval (how often to evaluate and save the model)
-  checkpoint: 50
+  checkpoint: 200
 
   # Train environment config
   train_env:
     # Path to the train environment file
     load: ""
     # Number of training episodes to run
-    episodes: 100
+    episodes: 5000
     # Train on random enviroments or on the same one
     all_random: True
 
@@ -232,17 +234,17 @@ training:
 
 testing:
   # Number of episodes to run
-  episodes: 500
+  episodes: 1
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: "./checkpoints/20201216-010101-latest"
+  model: ""
   # Verbose option
   verbose: False
   # Renderer config
   renderer:
     # Enable renderer
-    enabled: False
+    enabled: True
     # Seconds to sleep between moves
     sleep: 0
     # Save intermediate renderer frames

@@ -56,6 +56,32 @@ def min_max_scaling(values, lower, upper, under, over, known_min=None, known_max
     return values
 
 
+def extract_fov(matrix, center_index, window_size, pad=0):
+    '''
+    Extract a patch of size window_size from the given matrix centered around
+    the specified position and pad external values with the given fill value
+    '''
+    # Window is entirely contained in the given matrix
+    m, n = matrix.shape
+    offset = window_size // 2
+    yl, yu = center_index[0] - offset, center_index[0] + offset
+    xl, xu = center_index[1] - offset, center_index[1] + offset
+    if xl >= 0 and xu < m and yl >= 0 and yu < n:
+        return np.array(matrix[yl: yu + 1, xl:xu + 1], dtype=matrix.dtype)
+
+    # Window has to be padded
+    window = np.full((window_size, window_size), pad, dtype=matrix.dtype)
+    c_yl, c_yu = np.clip(yl, 0, m), np.clip(yu, 0, m)
+    c_xl, c_xu = np.clip(xl, 0, n), np.clip(xu, 0, n)
+    sub = matrix[c_yl: c_yu + 1, c_xl:c_xu + 1]
+    w_yl = 0 if yl >= 0 else abs(yl)
+    w_yu = window_size if yu < m else window_size - (yu - m) - 1
+    w_xl = 0 if xl >= 0 else abs(xl)
+    w_xu = window_size if xu < n else window_size - (xu - n) - 1
+    window[w_yl:w_yu, w_xl:w_xu] = sub
+    return window
+
+
 def fix_random(seed):
     '''
     Fix all the possible sources of randomness
