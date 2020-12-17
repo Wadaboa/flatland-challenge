@@ -15,6 +15,7 @@
    urlcolor=cyan
 }
 \usepackage{tikz}
+\usetikzlibrary{arrows}
 \usepackage{amssymb}
 \usepackage[sc]{mathpazo}
 \linespread{1.05}
@@ -221,7 +222,7 @@ Flatland has a discrete action space, meaning that only $5$ possibilities have t
 	\item \texttt{DO_NOTHING}: the agent performs the same action as the last time step
 \end{enumerate}
 
-Usually, only a handful of the reported actions can be perfomed on a given cell, meaning that most of the times the actual number of choices is much less than $5$ (we will address this issue in section \ref{sec:choices}).
+Usually, only a handful of the reported actions can be perfomed on a given cell, meaning that most of the times the actual number of choices is much less than $5$ (we will address this issue in section \ref{sec:real-decisions-choices}).
 
 \subsubsection*{Complications}
 The main complications of the Flatland challenge are given by speed profiles, conflicts and malfunctions. In particular, about speed profiles, each and every agent could have a different velocity. The standard speed (and the maximum one) is $1$, which means that the agent crosses one cell in one time step. Speeds can have values in range $(0, 1]$: if an agent has speed $s$, it means that it needs $\lceil\frac{1}{s}\rceil$ time steps to transition from one cell to the next one.
@@ -282,7 +283,7 @@ Because of the deletion of almost all nodes associated to straight rails, edges 
 
 Figure \ref{fig:grid-cog-cojg-32x16} shows the comparison, in terms of visual representations, of the standard grid environment and both COG and COJG graphs, in a $32\times 16$ map. In table \ref{table:grid-cog-cojg-32x16} we show the improvements that can be gained by leveraging the usage of the Cell Orientation Graph, and in particular of its modified version, i.e. the Cell Orientation Junction Graph, by computing the number of nodes, edges and \texttt{empty} cells in each representation, in the same $32\times 16$ map of figure \ref{fig:grid-cog-cojg-32x16}.
 
-\begin{figure}[h]
+\begin{figure}[!h]
 	\centering
 	\captionsetup[subfigure]{justification=centering}
 	\begin{subfigure}[b]{.8\linewidth}
@@ -326,7 +327,7 @@ Figure \ref{fig:grid-cog-cojg-32x16} shows the comparison, in terms of visual re
 
 Since a $32x16$ map is too small to observe big improvements, in figure \ref{fig:grid-cog-cojg-128x64} we also report another example of a sparse grid environment of dimension $128\times64$ and we compare it with its encodings in table \ref{table:grid-cog-cojg-128x64}.
 
-\begin{figure}[h]
+\begin{figure}[!h]
 	\begin{subfigure}[b]{\linewidth}
 		\includegraphics[width=\textwidth]{grid-env-128x64.png}
 		\caption{Grid}
@@ -359,6 +360,7 @@ Since a $32x16$ map is too small to observe big improvements, in figure \ref{fig
 	\caption{Grid, COG, COJG comparison in a $128\times 64$ map}
 	\label{table:grid-cog-cojg-128x64}
 \end{table}
+\clearpage
 
 \section{Predictions}
 As reported in Flatland official FAQs, because railway traffic is limited to rails, many decisions that an agent has to take need to consider future situations and detect upcoming conflicts ahead of time. Therefore, Flatland provides the possibility of predictors that predict where agents will be in the future. The stock predictor simply assumes that each agent travels along its shortest path.
@@ -374,18 +376,102 @@ In this way, the prediction becomes a list of paths, where the first one is the 
 
 In case an agent cannot reach its target anymore, the prediction only comprises a path of two nodes, i.e. the agent's position and the next node in the COJG graph. This mini-path is stored because predictions are used to compute possible deadlocks and, even if an agent cannot arrive at its target anymore, it is still present in the railway environment and it could be a possible source of conflicts.
 
-\section{Real decisions}\label{sec:real-decisions}
-Flatland railway is structured in such a way that most of it is composed of straight rails, rails without any form of choice beside go and stop
+\section{Real decisions and choices}\label{sec:real-decisions-choices}
 
-Flatland uses a discrete action space composed of $5$ actions. Since our goal was to implement a RL solution, we decided to follow the guideline described in \cite{jonas}, where the author reports a smart action space reduction. In particular, the size of the action space is reduced from $5$ to $3$ and we named choices the new mapped actions.
+\subsection{Real decisions}\label{subsec:real-decisions}
+As already hinted in the previous sections, Flatland railway environments are structured in such a way that most of them are composed by long sequences of straight rails, where an agent does not have to commit to any thoughtful choice, but it simply has to follow the path on which it is positioned. The agent is instead required to make a decision in two simple cases: whenever it reaches a fork, i.e. a cell that has more than one successor, or immediately before a join, i.e. before entering another path that crosses its next cell.
 
-Choices are mapped in such a way that they correspond to the leftmost and rightmost directions available to the agent at each time-step. In particular an agent can only perform one decision at any given time, because the of how the Flatland rail environment is built
+Following the reasoning described in \cite{jonas}, we categorize as real decisions those times in which an agent has to select an action when it is positioned in a fork, before a join or in a combination of the two cases. An agent in a fork has to decide on which branch to go next (and ideally, it should not choose to stop on that cell), while an agent before a join has to decide if it wants to stop (maybe to let another agent pass through the join cell) or continue moving.
+
+This idea of introducing real decisions in the Flatland environment greatly reduces the number of calls to the model that is tasked to map states to actions, since the number of real decisions to take is much lower than the number of default actions that one has to provide in the standard framework. In particular, the default number of actions to select is equal to the number of steps that the agent performs in the environment, while the number of real decisions to take is entirely disentagled from the steps parameter, since it is completely dependent on the structure of the environment (i.e. sparser railways tend to have less real decisions w.r.t. denser ones, given the same grid size). 
+
+\subsection{Choices}\label{subsec:choices}
+Further analysis related to decisions, again presented in \cite{jonas}, shows a smart action space reduction that could be beneficial to reinforcement learning models. In particular, Flatland uses a discrete action space composed of $5$ actions, which can be reduced to a total of $3$. From now on, we will refer to elements of this new action space as "choices". 
+
+Choices are mapped in such a way that they correspond to the left-most and right-most directions available to the agent at each time-step. In this way, our model only has to predict whether the agent has to follow the track to its left or the track to its right or simply stop. After a choice is selected, it is mapped back to the initial action space, to ensure compatibility with the Flatland environment.
+
+The new action space is composed by the following choices:
+\begin{enumerate}
+	\item \texttt{CHOICE_LEFT}: 
+	\item \texttt{CHOICE_RIGHT}: 
+	\item \texttt{STOP}: as with the standard \texttt{STOP_MOVING} action, the agent decides to stand still (one-to-one mapping)
+\end{enumerate}
 
 \section{Observations}
+An observation is a representation of the environment in a particular state. Ideally, this snapshot should be rich enough to convey the right amount of information (so as to distinguish between different configurations), but also small enough that it would be efficient to compute it at any given time-step. An observation should also be able to integrate information from local (in our case a train) and global (in our case the grid and all the agents) perspectives.
+
+Flatland provides different observators out of the box (the ones roughly depicted in figure \ref{fig:default-obs}). In particular, the implemented global observation is composed of the following elements:
+\begin{itemize}
+	\item Transition map tensor with shape $(h, w, 16)$, assuming $16$ bits encoding of transitions
+	\item A tensor with shape $(h, w, 2)$, containing the position of the given agent's target in the first channel and the positions of the other agents' targets in the second channel (flag only, no counter)
+	\item A tensor of shape $(h, w, 5)$ with the following channels:
+	\begin{enumerate}
+		\item Agents position and direction
+		\item Other agents positions and direction
+		\item Agents malfunctions
+		\item Agents fractional speeds
+		\item Number of other agents ready to depart
+	\end{enumerate}
+\end{itemize}
+
+The implemented local observation should instead gather information of the rail environment around the given agent. This observation is composed of the following elements:
+\begin{itemize}
+	\item Transition map tensor of the local environment around the given agent, with shape $(v_h, 2\cdot v_w +1, 16)$, assuming $16$ bits encoding of transitions
+	\item A tensor with shape $(v_h, 2\cdot v_w + 1, 2)$ containing the target position of the given agent (if in the agent's vision range) in the first channel and the positions of the other agents' targets (again, if in the agent's vision range) in the second channel
+	\item A tensor $(v_h,2\cdot v_w+1, 4)$ containing the one-hot encoding of directions of the other agents at their position coordinates (if in the agent's vision range)
+	\item A $4$ elements array with a one-hot encoding of the current direction of the given agent
+\end{itemize}
+Here, the parameters $v_w$ and $v_h$ define the rectangular view of the agent (of dimension $v_w\times v_h$) around its position.
+One thing to notice about the standard local observation is that it does not contain any clues about the target location, if it's out of range: thus, navigation on maps where the radius of the observation does not guarantee a visible target at all times will become very difficult. 
+
+Moreover, Flatland discourages the use of both the given global and local observations, since the first one does not seem to encode enough information to be effective in a multi-agent scenario, while the second one is simply deprecated in the newest version of their Python library, which makes it practically useless. Because of this, more advanced observations must be used in order to achieve good results on a wide range of environments. In particular, in the following sections we will take a look at another observation present in Flatland library, i.e. the tree observation, and we will use it as the starting point to build our custom binary tree observation, which also integrates all the knowledge and findings that we described in the previous chapters.
+
+\begin{figure}[h]
+	\includegraphics[width=\textwidth]{default-obs.png}
+	\caption{Default observators}
+	\label{fig:default-obs}
+\end{figure}
+
 \subsection{Tree}
+The tree observation is the last one provided out of the box in the Flatland package and it's definitely the most effective overall (w.r.t. the already mentioned global and local ones). This observator builds a tree with arity $4$, s.t. the children of a node always follow a left, forward, right and backward ordering. In particular, a node in the tree represents a deadend, a switch, a target destination or a blank (meaning that no information is carried by that specific node). The children of a node represent its successor nodes when following the left/right/forward branch on a switch or the backward one on a deadend. The mentioned movements are sorted relative to the current orientation of the agent, rather than using standard transition directions (i.e. the four cardinal directions). Whenever a node does not have one of the mentioned successors, that branch becomes useless and gets filled with padding values.
+
+Figure \ref{fig:tree-obs} shows a mapping between a state and the corresponding tree observation, from the point of view of the agent represented by the red triangle. The colors in the figure illustrate what branch the cell belongs to (red means left, pink means forward, green means right and blue means backward). If there are multiple colors in a cell, then this cell will be present multiple times in the tree. The symbols in the figure have instead the following meaning:
+\begin{itemize}
+	\item Cross: no branch was built, i.e. the parent does not have a valid transition to represent the child
+	\item No children: the node is a terminal node (i.e. a deadend, a cell without possible transitions or a leaf of the tree, indicating that the maximum depth was reached)
+	\item Circle: a node filled with information
+\end{itemize}
+
+\begin{figure}[h]
+	\includegraphics[width=\textwidth]{tree-obs.png}
+	\caption{Tree observator}
+	\label{fig:tree-obs}
+\end{figure}
+
+Whenever a node is valid, it will be packed with the following features:
+\begin{enumerate}
+	\item If the target of the given agent lies on the explored branch, the current distance from the given agent (in number of cells) is stored
+	\item If another agent's target is detected, the distance in number of cells from the given agent's current location is stored
+	\item If another agent is detected, the distance in number of cells from the given agent's position is stored
+	\item If another agent predicts to pass along this cell at the same time as the given agent, the distance (in number of cells) from the given agent's position is stored
+	\item If an unusable switch is detected for the given agent, the current distance (in number of cells) from the given agent's position is stored
+	\item Distance in number of cells to the next branching
+	\item Minimum distance from the node to the given agent's target, considering the current direction of the agent
+	\item Number of agents present in the same direction as the given agent
+	\item Number of agents present in the opposite direction as the given agent
+	\item Number of time steps that the given agent remains blocked, if a malfunctioning agent is encountered
+	\item Slowest observed speed of agents in the same direction as the given agent
+	\item Number of agents ready to depart, but not yet active
+\end{enumerate}
+
+One key issue related to the described tree observation is related to efficiency. In particular, we mentioned a maximum depth parameter that controls how far the observation should reach, in terms of consecutive switches, targets and deadends visited. Clearly, since each node has $4$ children and the output of the observator should be consistent, running it requires to build a complete tree, which we know to have the following number of nodes:
+$$
+n = \sum_{d=0}^{h-1}4^i,
+$$
+where $h$ is the height of the tree (i.e. our maximum depth). Just to make a quick example, if $h=7$ then $n=4^0+4^1+4^2+4^3+4^4+4^5+4^6=\num{5461}$. In this way, in the worst case, for each time-step we would have to examine $t\cdot n$ nodes, where $t$ is the number of trains, since one observation is needed for each agent. Following the previous example, in a scenario with $t=10$ agents and a tree observation with depth $h=7$, the reported features should be computed for each of the $\num{5641}\cdot 10=\num{56410}$ analyzed nodes at each time-step. 
+
 \subsection{Binary tree}
 \section{Rewards shaping}
-
 \chapter{Policy}
 \section{Action masking}
 \section{Action selection}
