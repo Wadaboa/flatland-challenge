@@ -42,7 +42,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 7
+  max_depth: 6
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -55,20 +55,20 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 7
+  max_depth: 6
 
 # Policy config
 policy:
   # Select policy type
   type:
-    # GNN observation policy
-    graph: False
+    # Single agent graph observation policy
+    single_agent_graph: False
+    # Multi agent graph observation policy
+    multi_agent_graph: False
     # Standard tree observation policy
     tree: False
     # Binary tree observation policy
     binary_tree: True
-    # FOV local observator policy
-    fov: False
     # Random policy
     random: False
 

@@ -7,7 +7,7 @@ from flatland.core.env_observation_builder import ObservationBuilder
 from env import env_utils
 
 
-class GraphObservator(ObservationBuilder):
+class SingleAgentGraphObservator(ObservationBuilder):
 
     def __init__(self, max_depth, predictor):
         super().__init__()

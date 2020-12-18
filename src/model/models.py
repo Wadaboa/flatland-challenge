@@ -22,7 +22,12 @@ def get_linear(input_size, output_size, hidden_sizes, nonlinearity="tanh"):
     return nn.Sequential(*fc)
 
 
-def conv_bn_act(input_channels, output_channels, kernel_size=3, stride=1, padding=0, nonlinearity="relu"):
+def conv_bn_act(input_channels, output_channels, kernel_size=3,
+                stride=1, padding=0, nonlinearity="relu"):
+    '''
+    Returns a block composed by a convolutional layer and a batch norm one,
+    followed by a non-linearity (e.g. ReLU or Tanh)
+    '''
     return [
         nn.Conv2d(
             input_channels, output_channels,
@@ -33,7 +38,12 @@ def conv_bn_act(input_channels, output_channels, kernel_size=3, stride=1, paddin
     ]
 
 
-def conv_bn_act_maxpool(input_channels, output_channels, kernel_size=3, stride=1, padding=0, nonlinearity="relu"):
+def conv_bn_act_maxpool(input_channels, output_channels, kernel_size=3,
+                        stride=1, padding=0, nonlinearity="relu"):
+    '''
+    Returns a block composed by a convolutional layer and a batch norm one,
+    followed by a non-linearity (e.g. ReLU or Tanh), with a final max pooling layer
+    '''
     return (
         conv_bn_act(
             input_channels, output_channels, kernel_size=kernel_size,
@@ -46,6 +56,8 @@ def conv_bn_act_maxpool(input_channels, output_channels, kernel_size=3, stride=1
 def get_conv(input_channels, output_channels, hidden_channels,
              kernel_size=3, stride=1, padding=0, nonlinearity="relu", pool=False):
     '''
+    Returns a PyTorch Sequential object containing `conv_bn_act` or `conv_bn_act_pool` blocks,
+    by following the given input/hidden/output number of channels
     '''
     assert len(hidden_channels) >= 1
     conv_block = conv_bn_act if not pool else conv_bn_act_maxpool
@@ -69,14 +81,14 @@ def get_conv(input_channels, output_channels, hidden_channels,
     )
     return nn.Sequential(*conv)
 
+
 ######################################################################
 ################################# DQN ################################
 ######################################################################
 
-
 class DQN(nn.Module):
     '''
-    Deep Q-Network
+    Vanilla deep Q-Network
     '''
 
     def __init__(self, state_size, action_size, hidden_sizes=[128, 128], nonlinearity="tanh"):
@@ -122,12 +134,12 @@ class DuelingDQN(nn.Module):
 
 
 ######################################################################
-############################# DQN + GNN ##############################
+##################### Single agent DQN + GNN #########################
 ######################################################################
 
 class SingleDQNGNN(DQN):
     '''
-    DQN + GNN
+    Single agent DQN + GNN
     '''
 
     def __init__(self, state_size, action_size, pos_size, embedding_size,
@@ -191,14 +203,14 @@ class SingleDQNGNN(DQN):
         # (batch_size, pos_size, embedding_size)
         return super().forward(embs)
 
-######################################################################
-############################# DQN + GNN ##############################
-######################################################################
 
+######################################################################
+###################### Multi agent DQN + GNN #########################
+######################################################################
 
 class MultiDQNGNN(DQN):
     '''
-    DQN + GNN
+    Multi agent DQN + GNN
     '''
 
     def __init__(self, action_size, input_width, input_height, input_channels, output_channels,

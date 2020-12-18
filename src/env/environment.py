@@ -13,7 +13,7 @@ from obs import normalization
 from env.deadlocks import DeadlocksDetector
 from env.railway_encoding import CellOrientationGraph
 from obs.binary_tree import BinaryTreeObservator
-from obs.graph import GraphObservator
+from obs.single_agent_graph import SingleAgentGraphObservator
 
 
 class RailEnvWrapper(RailEnv):
@@ -44,7 +44,7 @@ class RailEnvWrapper(RailEnv):
             )
         elif isinstance(self.obs_builder, BinaryTreeObservator):
             n_nodes = sum(2 ** i for i in range(self.obs_builder.max_depth))
-        elif isinstance(self.obs_builder, GraphObservator):
+        elif isinstance(self.obs_builder, SingleAgentGraphObservator):
             n_nodes = 1
         return n_features_per_node * n_nodes
 

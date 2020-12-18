@@ -11,7 +11,7 @@ from torch_geometric.data import Data, Batch
 from env import env_utils
 from model import model_utils
 from policy.action_selectors import ActionSelector, RandomActionSelector
-from model.models import DQN, DuelingDQN, DQNGNN
+from model.models import DQN, DuelingDQN, SingleDQNGNN, MultiDQNGNN
 from policy.replay_buffers import ReplayBuffer
 
 
@@ -314,19 +314,19 @@ class DQNPolicy(Policy):
 
 class SingleAgentDQNGNNPolicy(DQNPolicy):
     '''
-    DQN + GNN policy
+    Single agent DQN + GNN policy
     '''
 
     def __init__(self, params, state_size, choice_selector, training=False):
         '''
-        Initialize DQNGNNPolicy object
+        Initialize SingleAgentDQNGNNPolicy object
         '''
         super(SingleAgentDQNGNNPolicy, self).__init__(
             params, state_size, choice_selector, training=training
         )
 
         # Q-Network
-        self.qnetwork_local = DQNGNN(
+        self.qnetwork_local = SingleDQNGNN(
             state_size, env_utils.RailEnvChoices.choice_size(),
             self.params.model.gnn.pos_size,
             self.params.model.gnn.embedding_size,
@@ -344,12 +344,12 @@ class SingleAgentDQNGNNPolicy(DQNPolicy):
 
 def MultiAgentDQNGNNPolicy(DQNPolicy):
     '''
-    DQN + GNN policy
+    Multi agent DQN + GNN policy
     '''
 
     def __init__(self, params, state_size, choice_selector, training=False):
         '''
-        Initialize DQNGNNPolicy object
+        Initialize MultiAgentDQNGNNPolicy object
         '''
         super(MultiAgentDQNGNNPolicy, self).__init__(
             params, state_size, choice_selector, training=training
@@ -359,7 +359,7 @@ def MultiAgentDQNGNNPolicy(DQNPolicy):
 POLICIES = {
     "tree": DQNPolicy,
     "binary_tree": DQNPolicy,
-    "graph": SingleAgentDQNGNNPolicy,
-    "fov": RandomPolicy,
+    "single_agent_graph": SingleAgentDQNGNNPolicy,
+    "multi_agent_graph": MultiAgentDQNGNNPolicy,
     "random": RandomPolicy
 }

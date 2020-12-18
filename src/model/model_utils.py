@@ -48,6 +48,11 @@ def masked_argmax(vec, mask, dim=1):
 
 
 def conv_block_output_size(modules, input_width, input_height):
+    '''
+    Given a sequence of PyTorch modules (e.g. Python list, PyTorch Sequential/ModuleList)
+    containing convolution related layers (currently only Conv2d and MaxPool2d are supported),
+    returns the output size of the input tensor, after it passes through all the given layers
+    '''
     output_width, output_height = input_width, input_height
     for module in modules:
         kernel_size = module.kernel_size
