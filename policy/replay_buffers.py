@@ -1,6 +1,5 @@
 import random
 import pickle
-
 from collections import namedtuple, deque
 
 import numpy as np

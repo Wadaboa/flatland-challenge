@@ -1,5 +1,4 @@
 
-import os
 import copy
 from enum import IntEnum
 
@@ -13,12 +12,10 @@ from flatland.envs.observations import TreeObsForRailEnv
 from flatland.envs.predictions import ShortestPathPredictorForRailEnv
 
 from predictions import ShortestPathPredictor, NullPredictor
-from binary_tree_obs import BinaryTreeObservator
-from graph_obs import GraphObservator
-from fov_gnn_obs import FOVObservator
-from environments import RailEnvWrapper
-
-import utils
+from obs.binary_tree import BinaryTreeObservator
+from obs.graph import GraphObservator
+from obs.fov import FOVObservator
+from env.environment import RailEnvWrapper
 
 
 OBSERVATORS = {

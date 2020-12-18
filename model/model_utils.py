@@ -1,5 +1,5 @@
 import numpy as np
-import numpy.ma as ma
+import torch.nn as nn
 
 
 def masked_softmax(vec, mask, dim=1, temperature=1):
@@ -45,3 +45,20 @@ def masked_argmax(vec, mask, dim=1):
         argmax_arr = argmax_arr.reshape(tuple(new_shape))
 
     return argmax_arr
+
+
+def conv_block_output_size(modules, input_width, input_height):
+    output_width, output_height = input_width, input_height
+    for module in modules:
+        kernel_size = module.kernel_size
+        stride = module.stride
+        padding = module.padding
+        dilation = module.dilation
+        if type(module) in (nn.Conv2d, nn.MaxPool2d):
+            output_width = np.floor((
+                output_width + 2 * padding - dilation * (kernel_size - 1) - 1
+            ) / stride + 1)
+            output_height = np.floor((
+                output_height + 2 * padding - dilation * (kernel_size-1) - 1
+            ) / stride + 1)
+    return output_width, output_height

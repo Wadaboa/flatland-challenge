@@ -11,8 +11,8 @@ from flatland.core.env_observation_builder import ObservationBuilder
 from flatland.envs.rail_env import RailAgentStatus
 
 import utils
-import env_utils
-import obs_normalization
+from env import env_utils
+from obs import normalization
 
 
 '''
@@ -175,7 +175,7 @@ class BinaryTreeObservator(ObservationBuilder):
 
     def get(self, handle=0):
         dim = sum(2 ** i for i in range(self.max_depth)) * self.observation_dim
-        self.observations[handle] = np.full(dim, obs_normalization.BT_UNDER)
+        self.observations[handle] = np.full(dim, normalization.BT_UNDER)
         features = np.full(
             (self.max_depth, self.max_depth, self.observation_dim), -np.inf
         )
@@ -208,7 +208,7 @@ class BinaryTreeObservator(ObservationBuilder):
                 features[i + 1, :, :] = dev_feats
 
             # Normalize features
-            features = obs_normalization.normalize_binary_tree_obs(
+            features = normalization.normalize_binary_tree_obs(
                 features,
                 self.env.railway_encoding.remaining_agents(),
                 self.env.malfunction_generator.get_process_data().max_duration,
@@ -335,7 +335,7 @@ class BinaryTreeObservator(ObservationBuilder):
                 return features[i + 1, pos - i, :]
 
         # Fallback to default filling values
-        return np.full(self.observation_dim, obs_normalization.BT_LOWER)
+        return np.full(self.observation_dim, normalization.BT_LOWER)
 
     def get_agent_binary_tree(self, handle, prediction, features):
         '''

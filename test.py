@@ -9,9 +9,9 @@ from tabulate import tabulate
 from flatland.envs.rail_env import RailEnvActions, RailAgentStatus
 
 import utils
-import env_utils
-from policies import POLICIES
-from action_selectors import PARAMETER_DECAYS, ACTION_SELECTORS
+from env import env_utils
+from policy.policies import POLICIES
+from policy.action_selectors import PARAMETER_DECAYS, ACTION_SELECTORS
 
 
 def print_agents_info(env, info, actions):

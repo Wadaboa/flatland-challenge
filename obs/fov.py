@@ -172,20 +172,24 @@ class FOVObservator(ObservationBuilder):
                 )
                 # Cell of the rail in shortest path in the agent's FOV
                 path_fov = self.extract_path_fov(
-                    shortest_pred.positions, pad=-1, fill_value=1)
+                    shortest_pred.positions, pad=-1, fill_value=1
+                )
                 # Distance map in direction and FOV of the agent
                 distance_fov = utils.extract_fov(
-                    self.env.distance_map.get(
-                    )[handle, :, :, agent_position[2]], agent_position, self.max_depth, -1
+                    self.env.distance_map.get()[handle, :, :, agent_position[2]],
+                    agent_position, self.max_depth, -1
                 )
                 distance_fov[distance_fov == np.inf] = -1
                 # Other agents positions in the agent's FOV (direction of each agent)
                 agents_fov = utils.extract_fov(
-                    self.agent_positions, agent_position, self.max_depth, -1)
+                    self.agent_positions, agent_position, self.max_depth, -1
+                )
 
                 # Agents targets in the agent's FOV (1 agent target, 0 other agent, -1 otherwise)
                 targets_fov = utils.extract_fov(
-                    self.agent_targets[handle, :, :], agent_position, self.max_depth, -1)
+                    self.agent_targets[handle, :, :],
+                    agent_position, self.max_depth, -1
+                )
 
                 self.observations[handle][0] = cell_type
                 self.observations[handle][1] = cell_orientation

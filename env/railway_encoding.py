@@ -4,7 +4,6 @@ Encoding of the railway environment as a cell orientation graph
 
 
 import itertools
-from collections import namedtuple
 
 import numpy as np
 import networkx as nx
@@ -14,7 +13,7 @@ from flatland.core.grid.grid4 import Grid4TransitionsEnum
 from flatland.core.grid.grid4_utils import get_new_position
 from flatland.envs.rail_env import RailEnvActions, RailAgentStatus
 
-import env_utils
+from env import env_utils
 
 
 TRANS = [

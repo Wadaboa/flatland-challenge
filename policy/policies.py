@@ -8,11 +8,11 @@ import torch.nn as nn
 import wandb
 from torch_geometric.data import Data, Batch
 
-import env_utils
-import model_utils
-from action_selectors import ActionSelector, RandomActionSelector
-from models import DQN, DuelingDQN, DQNGNN
-from replay_buffers import ReplayBuffer
+from env import env_utils
+from model import model_utils
+from policy.action_selectors import ActionSelector, RandomActionSelector
+from model.models import DQN, DuelingDQN, DQNGNN
+from policy.replay_buffers import ReplayBuffer
 
 
 LOSSES = {
@@ -100,7 +100,7 @@ class DQNPolicy(Policy):
             self.device = torch.device("cuda:0")
             print("🐇 Using GPU")
 
-            # Q-Network
+        # Q-Network
         net = DuelingDQN if self.params.model.dueling else DQN
         self.qnetwork_local = net(
             self.state_size, env_utils.RailEnvChoices.choice_size(),
@@ -312,7 +312,7 @@ class DQNPolicy(Policy):
         self.memory.load(filename)
 
 
-class DQNGNNPolicy(DQNPolicy):
+class SingleAgentDQNGNNPolicy(DQNPolicy):
     '''
     DQN + GNN policy
     '''
@@ -321,7 +321,7 @@ class DQNGNNPolicy(DQNPolicy):
         '''
         Initialize DQNGNNPolicy object
         '''
-        super(DQNGNNPolicy, self).__init__(
+        super(SingleAgentDQNGNNPolicy, self).__init__(
             params, state_size, choice_selector, training=training
         )
 
@@ -342,10 +342,24 @@ class DQNGNNPolicy(DQNPolicy):
             self.qnetwork_target = copy.deepcopy(self.qnetwork_local)
 
 
+def MultiAgentDQNGNNPolicy(DQNPolicy):
+    '''
+    DQN + GNN policy
+    '''
+
+    def __init__(self, params, state_size, choice_selector, training=False):
+        '''
+        Initialize DQNGNNPolicy object
+        '''
+        super(MultiAgentDQNGNNPolicy, self).__init__(
+            params, state_size, choice_selector, training=training
+        )
+
+
 POLICIES = {
     "tree": DQNPolicy,
     "binary_tree": DQNPolicy,
-    "graph": DQNGNNPolicy,
+    "graph": SingleAgentDQNGNNPolicy,
     "fov": RandomPolicy,
     "random": RandomPolicy
 }

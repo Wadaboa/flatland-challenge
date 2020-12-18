@@ -2,7 +2,7 @@ import random
 
 import numpy as np
 
-import model_utils
+from model import model_utils
 
 
 class ParameterDecay:

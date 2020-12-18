@@ -383,7 +383,7 @@ As already hinted in the previous sections, Flatland railway environments are st
 
 Following the reasoning described in \cite{jonas}, we categorize as real decisions those times in which an agent has to select an action when it is positioned in a fork, before a join or in a combination of the two cases. An agent in a fork has to decide on which branch to go next (and ideally, it should not choose to stop on that cell), while an agent before a join has to decide if it wants to stop (maybe to let another agent pass through the join cell) or continue moving.
 
-This idea of introducing real decisions in the Flatland environment greatly reduces the number of calls to the model that is tasked to map states to actions, since the number of real decisions to take is much lower than the number of default actions that one has to provide in the standard framework. In particular, the default number of actions to select is equal to the number of steps that the agent performs in the environment, while the number of real decisions to take is entirely disentagled from the steps parameter, since it is completely dependent on the structure of the environment (i.e. sparser railways tend to have less real decisions w.r.t. denser ones, given the same grid size).
+This idea of introducing real decisions in the Flatland environment greatly reduces the number of calls to the model that is tasked to map states to actions, since the number of real decisions to take is much lower than the number of default actions that one has to provide in the standard framework. In particular, the default number of actions to select is equal to the number of steps that the agent performs in the environment, while the number of real decisions to take is entirely disentagled from the steps parameter, since it is completely dependent on the structure of the environment (e.g. sparser railways tend to have less real decisions w.r.t. denser ones, given the same grid size).
 
 The concept of real decisions leads to a modification in the structure of the COJG graph reported in section \ref{sec:railway-encoding}, so that both types of decisions are encoded as nodes. In particular, COJG is missing most nodes related to cells before a join, since they are usually part of straight rails. Currently, our implementation patches the COJG graph, but a cleaner choice would be to actually add the before join nodes from the start of the building process, which could be something to try for future improvements. 
 
@@ -525,7 +525,7 @@ Because of this, we resorted to the same idea that was presented in \ref{subsec:
 
 Since the resulting tree has half the arity of the one given by Flatland, but we also need a complete tree for consistency, let's consider again the example reported in \ref{subsec:tree-obs} to roughly check for efficiency improvements, where a maximum depth of $d=7$ was chosen, with $t=10$ trains. Our complete binary tree would have $n=2^0+2^1+2^2+2^3+2^4+2^5+2^6=\num{127}$ nodes (compared to $\num{5641}$) and the number of total nodes for which features would have to be computed at each time-step would be around $\num{127}\cdot 10=\num{1270}$ (compared to $\num{56410}$). Moreover, the reported number ($\num{1270}$) is an upper bound on the actual number of nodes that should be analyzed, since different time-steps will require different agents to compute an observation, i.e. only those agents that find themselves in a real decision cell.
 
-To sum up efficiency improvements, each feature is built from scratch, by leveraging the performance gains obtained with the COJG graph. Moreover, the observation needs to be computed only when the agent faces a real decision (as described in section \ref{subsec:real-decisions}), since in every other scenario the action that the agent should take is implicit. By combining this with the much lower size of the tree (compared to Flatland's implementation), we are able to compute more observations with less resources overall. Table \ref{table:tree-bt-48x27} shows a comparison of the standard tree observation and our custom binary tree one, in terms of both running times and memory occupancy for a single observation. As we can see, the binary tree observation is around $6$ times faster on average and occupies $60$ times less memory on average than the tree one.
+To sum up efficiency improvements, each feature is built from scratch, by leveraging the performance gains obtained with the COJG graph. Moreover, the observation needs to be computed only when the agent faces a real decision (as described in section \ref{subsec:real-decisions}), since in every other scenario the action that the agent should take is implicit. By combining this with the much lower size of the tree (compared to Flatland's implementation), we are able to compute more observations with less resources overall. Table \ref{table:tree-bt-48x27} shows a comparison of the standard tree observation and our custom binary tree one, in terms of both running times and memory occupancy for a single observation. As we can see, the binary tree observation is around $6$ times faster on average and occupies $30$ times less memory on average than the tree one.
 
 \begin{table}[h]
 	\center
@@ -536,12 +536,16 @@ To sum up efficiency improvements, each feature is built from scratch, by levera
 		\hline\hline
 		\textbf{Tree} & 0.1978 & 0.0199 & 0.4806 & 0.0 \\
 		\hline
-		\textbf{Binary tree} & 0.0321 & 0.0090 & 0.0076 & 0.0 \\
+		\textbf{Binary tree} & 0.0335 & 0.0124 & 0.0153 & 0.0 \\
 		\hline       
 	\end{tabular}
 	\caption{Tree vs. binary tree efficiency in a $48\times 27$ map, with $d=7$}
 	\label{table:tree-bt-48x27}
 \end{table}
+
+
+DIRE PATH NULLI PER VIA DELLA COSTRUZIONE DAL DEVIATION
+PARLARE DELLA NORMALIZZAZIONE
 
 \section{Rewards shaping}
 

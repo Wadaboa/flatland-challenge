@@ -11,10 +11,10 @@ from torch.utils.tensorboard import SummaryWriter
 from flatland.envs.rail_env import RailEnvActions
 
 import utils
-import env_utils
-from action_selectors import ACTION_SELECTORS, PARAMETER_DECAYS
-from env_utils import RailEnvChoices
-from policies import POLICIES
+from env import env_utils
+from policy.action_selectors import ACTION_SELECTORS, PARAMETER_DECAYS
+from env.env_utils import RailEnvChoices
+from policy.policies import POLICIES
 
 
 def tensorboard_log(writer, name, x, y, plot=['min', 'max', 'mean', 'std', 'hist']):

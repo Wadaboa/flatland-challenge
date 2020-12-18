@@ -4,17 +4,16 @@ import copy
 import numpy as np
 
 from flatland.envs.observations import TreeObsForRailEnv
-from flatland.envs.rail_env import RailEnv, RailEnvActions, RailAgentStatus
+from flatland.envs.rail_env import RailEnv, RailEnvActions
 from flatland.envs.agent_utils import EnvAgent
 from flatland.envs.persistence import RailEnvPersister
 from flatland.utils.rendertools import RenderTool, AgentRenderVariant
-from flatland.core.grid.grid4_utils import get_new_position
 
-import obs_normalization
-from deadlocks import DeadlocksDetector
-from railway_encoding import CellOrientationGraph
-from binary_tree_obs import BinaryTreeObservator
-from graph_obs import GraphObservator
+from obs import normalization
+from env.deadlocks import DeadlocksDetector
+from env.railway_encoding import CellOrientationGraph
+from obs.binary_tree import BinaryTreeObservator
+from obs.graph import GraphObservator
 
 
 class RailEnvWrapper(RailEnv):
@@ -289,7 +288,10 @@ class RailEnvWrapper(RailEnv):
                         self.stop_actions[agent] *
                         self.params.env.rewards.stop_penalty
                     )
-                    self.partial_rewards[agent] += -(weight + 1)
+                    # Clip stop reward to be at maximum equal to the deadlock penalty
+                    self.partial_rewards[agent] += np.clip(
+                        -weight, -self._max_episode_steps, 0
+                    )
                 custom_rewards[agent] = 0.0
 
             # Reset the partial rewards counter when an agent is
@@ -323,7 +325,7 @@ class RailEnvWrapper(RailEnv):
             if obs[handle] is not None:
                 # Normalize tree observation
                 if isinstance(self.obs_builder, TreeObsForRailEnv):
-                    obs[handle] = obs_normalization.normalize_tree_obs(
+                    obs[handle] = normalization.normalize_tree_obs(
                         obs[handle], self.obs_builder.max_depth,
                         self.params.observator.tree.radius
                     )

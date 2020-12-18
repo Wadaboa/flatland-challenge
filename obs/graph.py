@@ -4,7 +4,7 @@ from torch_geometric.data import Data
 
 from flatland.core.env_observation_builder import ObservationBuilder
 
-import env_utils
+from env import env_utils
 
 
 class GraphObservator(ObservationBuilder):
