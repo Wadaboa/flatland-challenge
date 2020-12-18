@@ -64,11 +64,11 @@ policy:
     # GNN observation policy
     graph: False
     # Standard tree observation policy
-    tree: False
+    tree: True
     # Binary tree observation policy
     binary_tree: False
     # FOV local observator policy
-    fov: True
+    fov: False
     # Random policy
     random: False
 

@@ -383,22 +383,47 @@ As already hinted in the previous sections, Flatland railway environments are st
 
 Following the reasoning described in \cite{jonas}, we categorize as real decisions those times in which an agent has to select an action when it is positioned in a fork, before a join or in a combination of the two cases. An agent in a fork has to decide on which branch to go next (and ideally, it should not choose to stop on that cell), while an agent before a join has to decide if it wants to stop (maybe to let another agent pass through the join cell) or continue moving.
 
-This idea of introducing real decisions in the Flatland environment greatly reduces the number of calls to the model that is tasked to map states to actions, since the number of real decisions to take is much lower than the number of default actions that one has to provide in the standard framework. In particular, the default number of actions to select is equal to the number of steps that the agent performs in the environment, while the number of real decisions to take is entirely disentagled from the steps parameter, since it is completely dependent on the structure of the environment (i.e. sparser railways tend to have less real decisions w.r.t. denser ones, given the same grid size). 
+This idea of introducing real decisions in the Flatland environment greatly reduces the number of calls to the model that is tasked to map states to actions, since the number of real decisions to take is much lower than the number of default actions that one has to provide in the standard framework. In particular, the default number of actions to select is equal to the number of steps that the agent performs in the environment, while the number of real decisions to take is entirely disentagled from the steps parameter, since it is completely dependent on the structure of the environment (i.e. sparser railways tend to have less real decisions w.r.t. denser ones, given the same grid size).
+
+The concept of real decisions leads to a modification in the structure of the COJG graph reported in section \ref{sec:railway-encoding}, so that both types of decisions are encoded as nodes. In particular, COJG is missing most nodes related to cells before a join, since they are usually part of straight rails. Currently, our implementation patches the COJG graph, but a cleaner choice would be to actually add the before join nodes from the start of the building process, which could be something to try for future improvements. 
 
 \subsection{Choices}\label{subsec:choices}
 Further analysis related to decisions, again presented in \cite{jonas}, shows a smart action space reduction that could be beneficial to reinforcement learning models. In particular, Flatland uses a discrete action space composed of $5$ actions, which can be reduced to a total of $3$. From now on, we will refer to elements of this new action space as "choices". 
 
-Choices are mapped in such a way that they correspond to the left-most and right-most directions available to the agent at each time-step. In this way, our model only has to predict whether the agent has to follow the track to its left or the track to its right or simply stop. After a choice is selected, it is mapped back to the initial action space, to ensure compatibility with the Flatland environment.
+Choices are mapped in such a way that they correspond to the left-most and right-most directions available to the agent at each time-step. In this way, our model only has to predict whether the agent has to follow the track to its left or the track to its right or simply stop. After a choice is selected, it is mapped back to the initial action space by looking at the type of cell the agent is currently on, to ensure compatibility with the Flatland environment.
 
-The new action space is composed by the following choices:
+The new action space is composed by the choices \texttt{CHOICE_LEFT}, \texttt{CHOICE_RIGHT} and \texttt{STOP}.
+
+So, we have to specify two different mappings, the forward and the backward one. The action to choice mapping works as follows:
 \begin{enumerate}
-	\item \texttt{CHOICE_LEFT}: 
-	\item \texttt{CHOICE_RIGHT}: 
-	\item \texttt{STOP}: as with the standard \texttt{STOP_MOVING} action, the agent decides to stand still (one-to-one mapping)
+	\item If the selected action is \texttt{MOVE_LEFT} and that action is legal from the current cell of the agent, then return \texttt{CHOICE_LEFT}
+	\item If the selected action is \texttt{MOVE_RIGHT} and that action is legal from the current cell of the agent, then
+	\begin{enumerate}
+		\item If only \texttt{MOVE_RIGHT} can be perfomed, then \texttt{CHOICE_LEFT} is returned
+		\item Otherwise, \texttt{CHOICE_RIGHT} is returned
+	\end{enumerate}
+	\item If the selected action is \texttt{MOVE_FORWARD} and that action is legal from the current cell of the agent, then
+	\begin{enumerate}
+		\item If \texttt{MOVE_LEFT} can be perfomed, then \texttt{CHOICE_RIGHT} is returned
+		\item Otherwise, if \texttt{MOVE_RIGHT} can be perfomed, then \texttt{CHOICE_LEFT} is returned
+		\item Otherwise, the last resort is \texttt{CHOICE_LEFT}
+	\end{enumerate}
+	\item If \texttt{STOP_MOVING}, we have a one-to-one mapping with the \texttt{STOP} choice, so that the agent decides to stand still
 \end{enumerate}
 
+Instead, the choice to action mapping works as follows:
+\begin{enumerate}
+	\item If \texttt{CHOICE_LEFT}, then priorities are \texttt{MOVE_LEFT}, \texttt{MOVE_FORWARD}, \texttt{MOVE_RIGHT}
+	\item If \texttt{CHOICE_RIGHT}, then priorities are \texttt{MOVE_RIGHT}, \texttt{MOVE_FORWARD}
+	\item If \texttt{STOP}, then the only possible outcome is \texttt{STOP_MOVING}
+	\item Otherwise, last resort is \texttt{DO_NOTHING}
+\end{enumerate}
+
+In the previous bullet points, the word "priority" represents the sequential way in which actions should be selected. For example, if a \texttt{CHOICE_RIGHT} has to be mapped back and \texttt{MOVE_RIGHT} is a legal action from the current cell of the agent, then that action would be selected, otherwise \texttt{MOVE_FORWARD} would be chosen (again, if legal).
+
+
 \section{Observations}
-An observation is a representation of the environment in a particular state. Ideally, this snapshot should be rich enough to convey the right amount of information (so as to distinguish between different configurations), but also small enough that it would be efficient to compute it at any given time-step. An observation should also be able to integrate information from local (in our case a train) and global (in our case the grid and all the agents) perspectives.
+An observation is a representation of the environment in a particular state. Ideally, this snapshot should be rich enough to convey the right amount of information (so as to distinguish between different configurations), but also small enough that it would be efficient to compute at any given time-step. An observation should also be able to integrate information from local (in our case a train) and global (in our case the grid and all the agents) perspectives.
 
 Flatland provides different observators out of the box (the ones roughly depicted in figure \ref{fig:default-obs}). In particular, the implemented global observation is composed of the following elements:
 \begin{itemize}
@@ -421,7 +446,7 @@ The implemented local observation should instead gather information of the rail 
 	\item A tensor $(v_h,2\cdot v_w+1, 4)$ containing the one-hot encoding of directions of the other agents at their position coordinates (if in the agent's vision range)
 	\item A $4$ elements array with a one-hot encoding of the current direction of the given agent
 \end{itemize}
-Here, the parameters $v_w$ and $v_h$ define the rectangular view of the agent (of dimension $v_w\times v_h$) around its position.
+Here, the parameters $v_w$ and $v_h$ define the rectangular view of the agent (of dimension $(2\cdot v_w + 1)\times v_h$) around its position.
 One thing to notice about the standard local observation is that it does not contain any clues about the target location, if it's out of range: thus, navigation on maps where the radius of the observation does not guarantee a visible target at all times will become very difficult. 
 
 Moreover, Flatland discourages the use of both the given global and local observations, since the first one does not seem to encode enough information to be effective in a multi-agent scenario, while the second one is simply deprecated in the newest version of their Python library, which makes it practically useless. Because of this, more advanced observations must be used in order to achieve good results on a wide range of environments. In particular, in the following sections we will take a look at another observation present in Flatland library, i.e. the tree observation, and we will use it as the starting point to build our custom binary tree observation, which also integrates all the knowledge and findings that we described in the previous chapters.
@@ -432,7 +457,7 @@ Moreover, Flatland discourages the use of both the given global and local observ
 	\label{fig:default-obs}
 \end{figure}
 
-\subsection{Tree}
+\subsection{Tree}\label{subsec:tree-obs}
 The tree observation is the last one provided out of the box in the Flatland package and it's definitely the most effective overall (w.r.t. the already mentioned global and local ones). This observator builds a tree with arity $4$, s.t. the children of a node always follow a left, forward, right and backward ordering. In particular, a node in the tree represents a deadend, a switch, a target destination or a blank (meaning that no information is carried by that specific node). The children of a node represent its successor nodes when following the left/right/forward branch on a switch or the backward one on a deadend. The mentioned movements are sorted relative to the current orientation of the agent, rather than using standard transition directions (i.e. the four cardinal directions). Whenever a node does not have one of the mentioned successors, that branch becomes useless and gets filled with padding values.
 
 Figure \ref{fig:tree-obs} shows a mapping between a state and the corresponding tree observation, from the point of view of the agent represented by the red triangle. The colors in the figure illustrate what branch the cell belongs to (red means left, pink means forward, green means right and blue means backward). If there are multiple colors in a cell, then this cell will be present multiple times in the tree. The symbols in the figure have instead the following meaning:
@@ -464,14 +489,62 @@ Whenever a node is valid, it will be packed with the following features:
 	\item Number of agents ready to depart, but not yet active
 \end{enumerate}
 
-One key issue related to the described tree observation is related to efficiency. In particular, we mentioned a maximum depth parameter that controls how far the observation should reach, in terms of consecutive switches, targets and deadends visited. Clearly, since each node has $4$ children and the output of the observator should be consistent, running it requires to build a complete tree, which we know to have the following number of nodes:
+One key issue related to the described tree observation is related to both time and memory efficiency. In particular, we mentioned a maximum depth parameter that controls how far the observation should reach, in terms of consecutive switches, targets and deadends visited. Clearly, since each node has $4$ children and the output of the observator should be consistent, running it requires to build a complete tree, which we know to have a number of nodes equal to:
 $$
-n = \sum_{d=0}^{h-1}4^i,
+n = \sum_{i=0}^{d-1}a^i,
 $$
-where $h$ is the height of the tree (i.e. our maximum depth). Just to make a quick example, if $h=7$ then $n=4^0+4^1+4^2+4^3+4^4+4^5+4^6=\num{5461}$. In this way, in the worst case, for each time-step we would have to examine $t\cdot n$ nodes, where $t$ is the number of trains, since one observation is needed for each agent. Following the previous example, in a scenario with $t=10$ agents and a tree observation with depth $h=7$, the reported features should be computed for each of the $\num{5641}\cdot 10=\num{56410}$ analyzed nodes at each time-step. 
+where $d$ is the height of the tree (i.e. our maximum depth) and the arity $a$ is equal to $4$. Just to make a quick example, if $d=7$ then $n=4^0+4^1+4^2+4^3+4^4+4^5+4^6=\num{5461}$. In this way, in the worst case, for each time-step we would have to examine $t\cdot n$ nodes, where $t$ is the number of trains, since one observation is needed for each agent. Following the previous example, in a scenario with $t=10$ agents and a tree observation with depth $d=7$, the reported features should be computed for each of the $\num{5641}\cdot 10=\num{56410}$ analyzed nodes at every time-step. 
 
 \subsection{Binary tree}
+In order to exploit what we've built so far and have an hopefully more efficient computation of each observation, a new observator was created, starting from the same notions described in section \ref{subsec:tree-obs}. 
+
+In particular, our observator builds a feature tensor of shape $(d, d, f)$, where $d$ is the maximum number of hops in the COJG graph to consider and $f$ is the total amount of features for each node. This tensor contains the features of the nodes in the shortest path as the first row and the features of the nodes in the deviation paths (which are exactly $d-1$) as the following rows.
+
+Each node has the following features:
+\begin{enumerate}
+	\item Number of agents (going in the same direction as the one of the given agent) identified in the subpath from the root up to each node in the path
+	\item Number of agents (going in a direction different from the one of the given agent) identified in the subpath from the root up to each node in the path
+ 	\item Number of malfunctioning agents (going in the same direction as the one of the given agent) identified in the subpath from the root up to each node in the path
+	\item Number of malfunctioning agents (going in a direction different from the one of the given agent) identified in the subpath from the root up to each node in the path
+	\item Minimum distances from an agent to other agents (going in the same direction as the one of the given agent), in each edge of the path
+	\item Minimum distances from an agent to other agents (going in a direction different from the one of the given agent), in each edge of the path
+	\item Maximum number of malfunctioning turns of other agents (going in the same direction as the one of the given agent), in each edge of the path
+	\item Maximum number of malfunctioning turns of other agents (going in a direction different from the one of the given agent), in each edge of the path
+ 	\item Distances from the target, from each node in the path
+ 	\item Path weights (in number of turns) to reach the given node from the root one
+ 	\item Number of agents using the node to reach their target in the shortest path
+ 	\item Number of agents in deadlock in the previous path, assuming that all the other agents follow their shortest path
+ 	\item How many turns before a possible deadlock
+ 	\item If the node is a fork or not
+ 	\item How many turns the current agent has been repeatedly selecting the stop action
+\end{enumerate}
+
+Initially, we tried to use the feature tensor as our final observation. In particular, we linearized it as a $d\times d \times f$ vector and fed it into one of the neural models that will be described in the next chapters. Clearly, the model was not converging, since we were ignoring the fact that different inputs for neural networks should be consistent, meaning that each and every input neuron should always represent the same measure. Instead, since our feature tensor was built by simply considering paths in the environment, one specific node could have represented either the left or the right branch being taken from the previous node, in different runs. This was definitely confusing the agents, so that no convergence was reached. 
+
+Because of this, we resorted to the same idea that was presented in \ref{subsec:tree-obs}, but, thanks to the new action space introduced in \ref{subsec:choices}, we were able to shape the feature tensor like a binary tree (i.e. a tree with arity $a=2$), where branches identify choices, i.e. \texttt{CHOICE_LEFT} or \texttt{CHOICE_RIGHT}.
+
+Since the resulting tree has half the arity of the one given by Flatland, but we also need a complete tree for consistency, let's consider again the example reported in \ref{subsec:tree-obs} to roughly check for efficiency improvements, where a maximum depth of $d=7$ was chosen, with $t=10$ trains. Our complete binary tree would have $n=2^0+2^1+2^2+2^3+2^4+2^5+2^6=\num{127}$ nodes (compared to $\num{5641}$) and the number of total nodes for which features would have to be computed at each time-step would be around $\num{127}\cdot 10=\num{1270}$ (compared to $\num{56410}$). Moreover, the reported number ($\num{1270}$) is an upper bound on the actual number of nodes that should be analyzed, since different time-steps will require different agents to compute an observation, i.e. only those agents that find themselves in a real decision cell.
+
+To sum up efficiency improvements, each feature is built from scratch, by leveraging the performance gains obtained with the COJG graph. Moreover, the observation needs to be computed only when the agent faces a real decision (as described in section \ref{subsec:real-decisions}), since in every other scenario the action that the agent should take is implicit. By combining this with the much lower size of the tree (compared to Flatland's implementation), we are able to compute more observations with less resources overall. Table \ref{table:tree-bt-48x27} shows a comparison of the standard tree observation and our custom binary tree one, in terms of both running times and memory occupancy for a single observation. As we can see, the binary tree observation is around $6$ times faster on average and occupies $60$ times less memory on average than the tree one.
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{||c c c c c||}
+		\hline
+					& \multicolumn{2}{c}{\textbf{Time (s)}} & \multicolumn{2}{c||}{\textbf{Memory (MB)}} \\  [0.5ex]
+					& \textbf{Avg}         & \textbf{Std}        & \textbf{Avg}          & \textbf{Std} \\  [0.5ex]
+		\hline\hline
+		\textbf{Tree} & 0.1978 & 0.0199 & 0.4806 & 0.0 \\
+		\hline
+		\textbf{Binary tree} & 0.0321 & 0.0090 & 0.0076 & 0.0 \\
+		\hline       
+	\end{tabular}
+	\caption{Tree vs. binary tree efficiency in a $48\times 27$ map, with $d=7$}
+	\label{table:tree-bt-48x27}
+\end{table}
+
 \section{Rewards shaping}
+
 \chapter{Policy}
 \section{Action masking}
 \section{Action selection}

@@ -35,9 +35,9 @@ Observation:
            from the root up to each node in the path
         4. Number of malfunctioning agents (going in a direction different from mine) identified
            in the subpath from the root up to each node in the path
-        5. Minimum distances from an agent to other agent's (going in my direction)
+        5. Minimum distances from an agent to other agents (going in my direction)
            in each edge of the path
-        6. Minimum distances from an agent to other agent's (going in a direction
+        6. Minimum distances from an agent to other agents (going in a direction
            different than mine) in each edge of the path
         7. Maximum number of malfunctioning turns of other agents (going in my direction),
            in each edge of the path
