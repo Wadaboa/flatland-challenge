@@ -5,6 +5,7 @@
 \usepackage{svg}
 \usepackage{amsmath}
 \usepackage{amsthm}
+\usepackage{mathtools}
 \usepackage{fancyvrb}
 \usepackage[english]{babel}
 \usepackage{csquotes}
@@ -60,6 +61,10 @@
 
 % Make quotes italic
 \renewcommand{\mkbegdispquote}[2]{\itshape}
+
+% Define argmax and softmax
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\softmax}{soft\,max}
 
 
 \begin{document}
@@ -556,7 +561,7 @@ Normalization enables us to exploit domain knowledge in order to infer ranges fo
 
 \chapter{Reinforcement learning setting}
 \subsubsection*{Introduction}
-In a single-agent standard reinforcement learning scenario (see figure \ref{fig:rl-single-agent}), the problem is modeled as an MDP (Markov Decision Process), where at each discrete time-step $t$ the agent observes the environment's state $s_t$ (where $s_t \in S$ and $S$ is the whole state space) and takes an action $a_t$ (where $a_t \in A$ and $A$ is the whole action space) that brings it to a new state $s_{t+1}$. Moreover, the agent receives a reward $r_t$ proportional to the quality of taking action $a_t$ in state $s_t$. Usually, rewards are local, meaning that only the given $(s_t, a_t)$ pair should be considered when computing them. Then, the agent should learn a policy, i.e. a function $\pi: S\times A \rightarrow [0,1]$, that maximizes the expected cumulative return, i.e. $R=\sum_{t=1}^{\infty}\gamma^t r_t$, where $\gamma\in(0,1)$ is the discount rate (a parameter that intuitively encodes how much importance should be given to immediate or future rewards, s.t. $\gamma \rightarrow 0$ favors the former while $\gamma \rightarrow 1$ favors the latter).
+In a single-agent standard reinforcement learning scenario (see figure \ref{fig:rl-single-agent}), the problem is modeled as an MDP (Markov Decision Process), where at each discrete time-step $t$ the agent observes the environment's state $s_t$ (where $s_t \in S$ and $S$ is the whole state space) and takes an action $a_t$ (where $a_t \in A$ and $A$ is the whole action space) that brings it to a new state $s_{t+1}$. Moreover, the agent receives a reward $r_{t+1}$ proportional to the quality of taking action $a_t$ in state $s_t$. Usually, rewards are local, meaning that only the given $(s_t, a_t)$ pair should be considered when computing them. Then, the agent should learn a policy, i.e. a function $\pi: S\times A \rightarrow [0,1]$, that maximizes the expected cumulative return, i.e. $R=\sum_{t=1}^{\infty}\gamma^t r_t$, where $\gamma\in(0,1)$ is the discount rate (a parameter that intuitively encodes how much importance should be given to immediate or future rewards, s.t. $\gamma \rightarrow 0$ favors the former while $\gamma \rightarrow 1$ favors the latter).
 
 \tikzset{
   frame/.style={
@@ -592,25 +597,43 @@ In a single-agent standard reinforcement learning scenario (see figure \ref{fig:
 	\label{fig:rl-single-agent}
 \end{figure}
 
-Since Flatland is actually a multi-agent environment, the formal definition of the reinforcement learning scenario slightly changes, but the main ideas still hold. As reported in \cite{marl-medium}, MARL (Multi-Agent Reinforcement Learning) typically represents the environment as a stochastic game. While the name is different, it’s fairly similar to an MDP. States become joint states of all the agents, with different rewards corresponding to each possible joint action. Transition functions remain analogous to the single-agent case, replacing states and actions accordingly. The main challenge related to MARL is the one of non-stationary transitions, i.e. given a distinct state and action pair, the transition probabilities to other states are not constant (state transitions become dependent on the joint actions of all the agents).
+Since Flatland is actually a multi-agent environment, the formal definition of the reinforcement learning scenario slightly changes, but the main ideas still hold. As reported in \cite{marl-medium}, MARL (Multi-Agent Reinforcement Learning) typically represents the environment as a stochastic game. While the name is different, it’s fairly similar to an MDP. States become joint states of all the agents, with different rewards corresponding to each possible joint action. Transition functions remain analogous to the single-agent case, replacing states and actions accordingly. 
+
+One of the main challenges of MARL is related to non-stationary transitions, i.e. given a distinct state and action pair, the transition probabilities to other states are not constant (state transitions become dependent on the joint actions of all the agents).
 
 \subsubsection*{Value functions}
-As reported in \cite{sutton-barto}, almost all reinforcement learning algorithms involve estimating value functions, i.e. functions of states (or of state–action pairs) that estimate how good it is for the agent to be in a given state (or how good it is to perform a given action in a given state). The notion of “how good” here is defined in terms of future rewards that can be expected, or, to be precise, in terms of expected return. Of course the rewards the agent can expect to receive in the future depend on what actions it will take. Accordingly, value functions are defined with respect to particular ways of acting, called policies (which we already introduced in the previous section).
+As reported in \cite{sutton-barto}, almost all reinforcement learning algorithms involve estimating value functions, i.e. functions of states (or of state-action pairs) that estimate how good it is for the agent to be in a given state (or how good it is to perform a given action in a given state). The notion of “how good” here is defined in terms of future rewards that can be expected, or, to be precise, in terms of expected return. Of course the rewards the agent can expect to receive in the future depend on what actions it will take. Accordingly, value functions are defined with respect to particular ways of acting, called policies (which we already introduced in the previous section).
 
-Formally, the value function of a state $s$ under a policy $\pi$, denoted $V_\pi(s)$, is the expected return when starting in $s$ and following $\pi$ thereafter. For MDPs, we can define $v_\pi$ formally by
+Formally, the value function of a state $s$ under a policy $\pi$, denoted $V_\pi(s)$, is the expected return when starting in $s$ and following $\pi$ thereafter. For MDPs, we can define $V_\pi$ formally by
 $$
-V_\pi(s) = \mathbb{E}_\pi[G_t\mid s_t=s],
+V_\pi(s) = \mathbb{E}_\pi\left[G_t\mid s_t=s\right],
 $$
 where $G_t=\sum_{k=0}^{T}\gamma^{k}r_{t+k+1}$ is the discounted return at time-step $t$ and $E_\pi[\cdot]$ denotes the expected value of a random variable given that the agent follows policy $\pi$.
 
 Moreover, we can also define the value of taking action $a$ in state $s$ under a policy $\pi$, denoted $Q_\pi(s,a)$, as the expected return starting from $s$, taking the action $a$, and thereafter following policy $\pi$:
 $$
-Q_\pi(s, a) = \mathbb{E}_\pi[G_t\mid s_t=s, a_t=a],
+Q_\pi(s, a) = \mathbb{E}_\pi\left[G_t\mid s_t=s, a_t=a\right],
 $$
 
 The relationship between the $V$ and $Q$ functions is as follows:
 $$
 V_\pi(s)=\sum_a\pi(s,a)\cdot Q_\pi(s,a)
+$$
+
+\subsubsection*{Optimal policy}
+The main goal of reinforcement learning approaches is to find an optimal policy $\pi^*=\argmax_\pi R$. To do so, different types of algorithms could be employed:
+\begin{itemize}
+	\item Model-based: the agent tries to understand the world and create a model to represent it, so that, after learning, it could make predictions about what the next state and next reward will be before taking an action
+	\item Model-free: they rely on real samples from the environment and never use generated predictions of next state and next reward to alter behaviour
+	\begin{itemize}
+		\item Value-based: the policy is implicit, so that at each time-step the agent chooses the action that brings it to the next state which has the best evaluation
+		\item Policy-based: it avoids forming both the MDP and the value functions, and instead tries to directly learn the (optimal) policy
+	\end{itemize}
+\end{itemize}
+
+In this work we mainly focused on model-free, value-based techniques. Their goal is to implicitly find the optimal policy, by sequentially pushing the related value functions towards higher quality ones. In this regard, the final aim of our RL agents is to find the optimal action-value function (also called $Q$ function), by leveraging Bellman's optimality equation:
+$$
+Q^*(s,a)=\max_\pi\mathbb{E}\left[G_t\mid s_t=s,a_t=a,\pi\right]
 $$
 
 \section{Rewards and shaping}
@@ -647,7 +670,7 @@ The $\epsilon$-greedy action selector is a standard one in the RL community. It 
 In practical terms, given a random number $r\in[0,1]$ sampled from a uniform distribution and the set of possible actions $A$, the action $a_t$ that is selected at time $t$ is the following:
 \[a_t = \left\{
 \begin{array}{ll}
-      \max Q_{\pi_t}(s,a) & \text{if } r \ge \epsilon \\
+      \max_{a\in A} Q_{\pi_t}(s_t,a) & \text{if } r \ge \epsilon \\
       \texttt{random_choice}(A) & \text{if } r < \epsilon \\
 \end{array} 
 \right., \]
@@ -655,25 +678,70 @@ where \texttt{random_choice} is a routine that samples from the given set, with 
 
 By tweaking a little bit the $\epsilon$-greedy selector we could also get two others selectors:
 \begin{itemize}
-	\item Greedy: set $\epsilon=0$ and avoid decaying it
-	\item Random: set $\epsilon=1$ and avoid decaying it
+	\item Greedy: set $\epsilon=0$ and avoid decaying it (always select the best action)
+	\item Random: set $\epsilon=1$ and avoid decaying it (always select a random action)
 \end{itemize}
 
 \subsection{Boltzmann}
+The Boltzmann action selector is less common in the RL community. It works by computing a modified softmax of the values associated to actions and using the resulting probability distribution to sample an available action. The balance between exploration and exploitation is controlled by the temperature parameter $\tau$ (which should be in range $[0,1]$), so that higher values of $\tau$ will result in higher exploitation. 
+
+In practical terms, we have to model the probability of each action $a_i$ being selected at time $t$ with the following equation:
+$$
+P_\tau(a_i) = \frac{exp(Q_{\pi_t}(s_t,a_i) / \tau)}{\sum_{a}exp(Q_{\pi_t}(s_t,a) / \tau)}
+$$
+
+Then, a sample is drawn from the set of actions $A$, so that the probability of selecting action $i$ is equal to the previously computed value $P_\tau(a_i)$.
+
+By tweaking a little bit the Boltzmann selector we could also obtain the so-called Categorical action selector, where $\tau=1$ and no decaying is applied to it. In this way, the probability of choosing an action is given by a default softmax over the obtained $Q$ function values.
 
 \section{Action masking}
-\section{Replay buffers}
-\subsection{Uniform}
-\subsection{Prioritized}
+One important problem that we faced while implementing our agents was related to differenting legal and illegal moves in the learning process. In particular, in the Flatland environment the set of available choices at each time-step is strictly related to the position of the agent: for example, an agent in a straight rail can only decide to follow the path over which it is placed (so only one action would be legal), while an agent that finds itself in a fork would have more than one available actions to choose from.
+
+Computing legal and illegal actions is not a problem in the Flatland environment, since it is fully observable, but injecting this knowledge in the reinforcement learning scheme, so that the agent can learn to avoid illegal moves, is not straightforward. A simple way to do so would be to add a penalty term in the reward, but in this way you are not completely guaranteed that agents will never select an illegal action, because that step would be part of the learning process (i.e. agents would have to learn to avoid those actions).
+
+A more all-round solution would instead completely prevent agents to pick a move that is not available (i.e. agents should directly ignore those actions). To do so, we decided to mask out illegal moves whenever the algorithm has to do some kind of computation or selection on the set of actions. Specifically, in the action selectors we replaced every instance of the $\max$, $\argmax$ and $\softmax$ operator with their ad-hoc masked counterparts and we did the same when computing Bellman optimality.
 
 \chapter{DQN}
-\section{Architectures}
-\subsection{Vanilla}
+A DQN (Deep $Q$-Network), as was first presented in \cite{atari-dqn}, leverages neural networks from the point of view of universal function approximators, to estimate the optimal $Q^*$ state-action function. 
+
+The main idea behind DQN is to estimate $Q^*$ with $Q_\theta$ and use the Bellman equation to update the weights $\theta$ of the network so that $Q_\theta\rightarrow Q^*$. In particular, we will use a regression loss (e.g. MSE or Huber) like the following to minimize the so-called TD (Temporal Difference) error:
+$$
+L(\theta)=\mathbb{E}_{(s_t,a_t,r_{t+1},s_{t+1})}\left[\left(\underbrace{r_{t+1}+\gamma\max_{a_{t+1}}Q_\theta(s_{t+1}, a_{t+1}) - Q_\theta(s_t, a_t)}_{TD}\right)^2\right]
+$$
+
+About the network architecture, the literature does not follow a clear definition, so that the term DQN is mostly linked to the whole training pipeline required to reach good estimates of the optimal $Q$ function. For example, in the original paper \cite{atari-dqn} DeepMind researchers use an initial CNN (Convolutional Neural Network), since their input is represented by videogame frames, followed by a sequence of MLPs (Multi-Layer Perceptron).   
+
+Another thing to notice is that the weights used for the target versus the current (presumably non-optimal) $Q$-values are different. In practical terms, a separate network is used to estimate the TD target. This target network has the same architecture as the function approximator but with frozen parameters. Every $T$ steps (a hyperparameter) the parameters from the $Q$-network are copied to the target network. This leads to more stable training because it keeps the target function fixed (for a while). Because of this, assuming $\theta_i$ to represent the current network weights and $\theta_i^{-}$ the target network weights, the loss function is updated as follows:
+$$
+L(\theta_i)=\mathbb{E}_{(s_t,a_t,r_{t+1},s_{t+1})}\left[\left(r_{t+1}+\gamma\max_{a_{t+1}}Q_{\theta_i^{-}}(s_{t+1}, a_{t+1}) - Q_{\theta_i}(s_t, a_t)\right)^2\right]
+$$
+
+There are two main ways two copy the weights from the current to the target network:
+\begin{enumerate}
+	\item Hard update: every $T$ steps, the current network is cloned into the target network
+	\item Soft update (or Polyak average): at every time-step a portion of the current weights are shifted onto the target ones, so that at step $i$ we have $\theta_i^{-}=\tau \cdot \theta_i + (1-\tau)\cdot \theta_i^{-}$, where $\tau$ is an hyperparameter that controls the weight transfer amount 
+\end{enumerate}
+
+\section{Experience replay}
+We already mentioned the problem of non-stationarity related to MARL, when agents have to deal with a stochastic environment, but in practice that same problem is also present in simpler RL algorithms, since the data distribution still changes as the agent learns new behaviours (which is in contrast with the standard assumption of a fixed underlying distribution of deep learning methods). Moreover, we know that supervised learning algorithms assume samples in a dataset to be \textit{i.i.d.} (independent and identically distributed), so that if we model the RL problem as a supervised one (e.g. a DQN can be framed as a regression problem that minimizes the distance from the optimal $Q$ function) we break the independence assumption since sequences of states are usually highly correlated. 
+
+To alleviate the problems of correlated data and non-stationary distributions, in the original DQN formulation \cite{atari-dqn} DeepMind researchers report the use of a data structure named experience replay (also known as replay buffer in the literature) , which randomly samples previous transitions, and thereby smooths the training distribution over many past behaviors. In this way, the $(s_t, a_t, r_{t+1}, s_{t+1})$ tuple shown in the previous loss equations should be considered as a sample extracted from the current replay buffer.
+
+In practical terms, there are two main ways to implement an experience replay $E$:
+\begin{itemize}
+	\item Uniform \cite{atari-dqn}: previous experiences are drawn from a uniform distribution $\sim U(E)$
+	\item Prioritized \cite{per}: authors propose to more frequently replay transitions with high expected learning progress, as measured by the magnitude of their TD error
+\end{itemize}
+
+\section{Improvements}
 \subsection{Double}
+One important issue of standard DQNs is that they tend to overestimate $Q$-values (which is mostly due to the $\max$ operator in the Bellman optimality equation), leading to unstable training and low quality policies. In order to mitigate the issue, in \cite{double-dqn} they propose to decouple the selection of an action from its evaluation. From a practical point of view, we only have to change how the TD error is computed:
+$$
+L(\theta)=\mathbb{E}_{(s_t,a_t,r_{t+1},s_{t+1})}\left[\left(r_{t+1}+\gamma Q_{\theta^-}(s_{t+1},\argmax_{a \in A}Q_\theta(s_{t+1},a)) - Q_{\theta}(s_t, a_t)\right)^2\right]
+$$
+
 \subsection{Dueling}
-\section{Bellman equation}
-\subsection{Max}
-\subsection{Softmax}
+\subsection{Softmax Bellman}
 
 \chapter{GNN}
 
