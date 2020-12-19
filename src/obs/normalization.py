@@ -99,6 +99,7 @@ def normalize_binary_tree_obs(observation, remaining_agents, max_malfunction, fi
     normalized_observation[:, :, 10] = c_nodes
     normalized_observation[:, :, 11] = deadlocks
     normalized_observation[:, :, 12] = deadlock_distances
+    normalized_observation[:, :, 13] = are_forks
     normalized_observation[:, :, 14] = stop_actions
 
     # Sanity check

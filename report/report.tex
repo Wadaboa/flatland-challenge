@@ -519,11 +519,11 @@ Each node has the following features:
  	\item How many turns the current agent has been repeatedly selecting the stop action
 \end{enumerate}
 
-Initially, we tried to use the feature tensor as our final observation. In particular, we linearized it as a $d\times d \times f$ vector and fed it into one of the neural models that will be described in the next chapters. Clearly, the model was not converging, since we were ignoring the fact that different inputs for neural networks should be consistent, meaning that each and every input neuron should always represent the same measure. Instead, since our feature tensor was built by simply considering paths in the environment, one specific node could have represented either the left or the right branch being taken from the previous node, in different runs. This was definitely confusing the agents, so that no convergence was reached. 
+Initially, we tried to use the feature tensor as our final observation. In particular, we linearized it as a $d\times d \times f$ vector and fed it into one of the neural models that will be described in the next chapters. In this way, the model was not converging to reasonable solutions, since we were ignoring consistency, meaning that in neural models each and every input neuron should always represent the same measure. Instead, since our feature tensor was built by simply considering paths in the environment, one specific node could have represented either the left or the right branch being taken from the previous node, in different runs. This was definitely confusing the agents, so that no convergence was reached.
 
-Because of this, we resorted to the same idea that was presented in \ref{subsec:tree-obs}, but, thanks to the new action space introduced in \ref{subsec:choices}, we were able to shape the feature tensor like a binary tree (i.e. a tree with arity $a=2$), where branches identify choices, i.e. \texttt{CHOICE_LEFT} or \texttt{CHOICE_RIGHT}.
+Because of this, we resorted to the same idea that was presented in \ref{subsec:tree-obs}, but, thanks to the new action space introduced in \ref{subsec:choices}, we were able to shape the feature tensor like a binary tree (i.e. a tree with arity $a=2$), where branches identify choices, i.e. \texttt{CHOICE_LEFT} or \texttt{CHOICE_RIGHT}. One key difference that our custom binary tree has w.r.t. the standard tree observation is the injection of prior knowledge: this is done by filling in values of features that are only related to nodes present either in the shortest or in one of the deviation paths. In this way, the binary tree contains only information about paths that could lead to the agent's target, by completely disregarding the ones that could not. 
 
-Since the resulting tree has half the arity of the one given by Flatland, but we also need a complete tree for consistency, let's consider again the example reported in \ref{subsec:tree-obs} to roughly check for efficiency improvements, where a maximum depth of $d=7$ was chosen, with $t=10$ trains. Our complete binary tree would have $n=2^0+2^1+2^2+2^3+2^4+2^5+2^6=\num{127}$ nodes (compared to $\num{5641}$) and the number of total nodes for which features would have to be computed at each time-step would be around $\num{127}\cdot 10=\num{1270}$ (compared to $\num{56410}$). Moreover, the reported number ($\num{1270}$) is an upper bound on the actual number of nodes that should be analyzed, since different time-steps will require different agents to compute an observation, i.e. only those agents that find themselves in a real decision cell.
+Since the resulting tree has half the arity of the one given by Flatland and we still need a complete tree for consistency reasons, let's consider again the example reported in \ref{subsec:tree-obs} to roughly check for efficiency improvements, where a maximum depth of $d=7$ was chosen, with $t=10$ trains. Our complete binary tree would have $n=2^0+2^1+2^2+2^3+2^4+2^5+2^6=\num{127}$ nodes (compared to $\num{5641}$) and the number of total nodes for which features would have to be computed at each time-step would be around $\num{127}\cdot 10=\num{1270}$ (compared to $\num{56410}$). Moreover, the reported number ($\num{1270}$) is an upper bound on the actual number of nodes that should be analyzed, since different time-steps will require different agents to compute an observation, i.e. only those agents that find themselves in a real decision cell.
 
 To sum up efficiency improvements, each feature is built from scratch, by leveraging the performance gains obtained with the COJG graph. Moreover, the observation needs to be computed only when the agent faces a real decision (as described in section \ref{subsec:real-decisions}), since in every other scenario the action that the agent should take is implicit. By combining this with the much lower size of the tree (compared to Flatland's implementation), we are able to compute more observations with less resources overall. Table \ref{table:tree-bt-48x27} shows a comparison of the standard tree observation and our custom binary tree one, in terms of both running times and memory occupancy for a single observation. As we can see, the binary tree observation is around $6$ times faster on average and occupies $30$ times less memory on average than the tree one.
 
@@ -543,11 +543,36 @@ To sum up efficiency improvements, each feature is built from scratch, by levera
 	\label{table:tree-bt-48x27}
 \end{table}
 
+\subsection{Normalization}
+We already mentioned that an observation should be considered as a snapshot of a state from the point of view of an agent; then we reported that this snapshot should be consistent across different runs and that it should also be shaped as a tensor of fixed size. All of this pre-preprocessing is a required step that should be carefully considered when working with neural models (the ones that will be described in subsequent chapters). 
 
-DIRE PATH NULLI PER VIA DELLA COSTRUZIONE DAL DEVIATION
-PARLARE DELLA NORMALIZZAZIONE
+Another important aspect about neural networks is that they mostly require input features to be in comparable ranges: this can be achieved by either normalization or standardization. To be clear, the input features that we are talking about are the ones associated to elements of an observation (e.g. a node in our binary tree).
 
-\section{Rewards shaping}
+About standardization, a feature $x$ is mapped to $x_s=\frac{x-\mu_x}{\sigma_x}$, where $\mu_x$ and $\sigma_x$ are the mean and standard deviation of feature $x$. In this way, the resulting $x_s$ would have zero mean and standard deviation equal to $1$. One thing to notice, though, is that it requires either to know the underlying distribution of feature $x$ and its corresponding parameters ($\mu_x$ and $\sigma_x$) or a sample of examples from which parameters could be estimated. In the case of reinforcement learning, we definitely do not have pre-computed samples, since we work in an online fashion, meaning that observations are computed on the fly at each time-step and the network gets called with a batch of previously collected observations. Because of this, the only way in which we could standardize features would be to either know the underlying distribution of each one (which is mostly not the case), or use normalization layers in the network itself (e.g. batch normalization \cite{batch-norm} or layer normalization \cite{layer-norm}).
+
+About normalization, it could be used to refer to many different things, but the main idea is again to translate an input range $[l, u]$ to a fixed output range $[min, max]$ (e.g. $[0, 1]$ or $[-1,1]$). Usually, when the input is translated into $[0,1]$ we talk about normalization, while when the input is translated into a range different than $[0,1]$ we talk about min-max scaling. The general formula of min-max scaling is $x_n = l + \frac{x - min}{max - min} \cdot (u - l)$. In the more specific case of default normalization, the formula becomes $x_n = \frac{x}{max}$. 
+
+Normalization enables us to exploit domain knowledge in order to infer ranges for each feature of our observation. In particular, distances are normalized by considering a fixed observation radius as maximum and either zero or the negated radius as minimum (in the case of negative distances, which we used to indicate agents behind the given one, for example), while other features have much clearer ranges (e.g. features related to malfunctions have a minimum at $0$ and a maximum at the maximum duration of a malfunction, which is a parameter of the environment).
+
+\section{Reinforcement learning setting}
+In a single-agent standard reinforcement learning scenario, the problem is modeled as an MDP (Markov Decision Process), where at each discrete time-step $t$ the agent observes the environment's state $s_t$ (where $s_t \in S$ and $S$ is the whole state space) and take an action $a_t$ (where $a_t \in A$ and $A$ is the whole action space) that bring it to a new state $s_{t+1}$. Moreover, the agent receives a reward $r_t$ proportional to the quality of taking action $a_t$ in state $s_t$. Usually, rewards are local, meaning that only the given $(s_t, a_t)$ pair should be considered when computing them. Then, the agent should learn a policy, i.e. a function $\pi: A\times S \rightarrow [0,1]$, that maximizes the expected cumulative return, i.e. $R=\sum_{t=1}^{\infty}\gamma^t r_t$, where $\gamma\in(0,1)$ is the discount rate (a parameter that intuitively encodes how much importance should be given to immediate or future rewards, s.t. $\gamma \rightarrow 0$ favors the former while $\gamma \rightarrow 1$ favors the latter).
+
+Since Flatland is actually a multi-agent environment, the formal definition of the reinforcement learning scenario slightly changes, but the main ideas still hold. As reported in \cite{marl-medium}, MARL (Multi-Agent Reinforcement Learning) typically represents the environment as a stochastic game. While the name is different, it’s fairly similar to an MDP. States become joint states of all the agents, with different rewards corresponding to each possible joint action. Transition functions remain analogous to the single-agent case, replacing states and actions accordingly. The main challenge related to MARL is the one of non-stationary transitions, i.e. given a distinct state and action pair, the transition probabilities to other states are not constant (state transitions become dependent on the joint actions of all the agents).
+
+\subsection{Rewards and shaping}
+Flatland provides the following rewards out of the box:
+\begin{itemize}
+	\item $-1$ for each step taken
+	\item $+1$ when every agent arrives at their target
+\end{itemize}
+
+We decided to perform the following rewards shaping:
+\begin{itemize}
+	\item If the agent has arrived to its target, a positive reward equal to the maximum number of steps minus the current number of steps is returned 
+	\item If the agent is in deadlock, return a reward equal to the negated maximum number of steps 
+	\item Accumulate rewards for choices if the agent is not in a decision cell
+	\item If an agent performed a stop action, give the agent a reward which is worse than the the reward it could have received by choosing any other action. Then, multiply this weight by the number of turns the agent consequently decided to perform a stop action and compute the product of it with a stop penalty parameter. Finally, this reward is clipped to the maximum value given by a deadlock penalty.
+\end{itemize}
 
 \chapter{Policy}
 \section{Action masking}
@@ -570,8 +595,6 @@ PARLARE DELLA NORMALIZZAZIONE
 \chapter{GNN}
 
 \chapter{Results}
-
-
 
 \chapter{Conclusions}
 
