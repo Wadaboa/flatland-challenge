@@ -695,6 +695,24 @@ class CellOrientationGraph():
             nodes.update(path)
         return nx.subgraph(self.graph, nodes)
 
+    def get_agents_distance(self, handle_one, handle_two):
+        '''
+        Return the minimum distance between the given agents
+        '''
+        pos_one = self.get_agent_cell(handle_one)
+        pos_two = self.get_agent_cell(handle_two)
+        if pos_one is None or pos_two is None:
+            return None
+        node_one, weight_one = self.next_node(pos_one)
+        node_two, weight_two = self.next_node(pos_two)
+        try:
+            distance = nx.dijkstra_path_length(
+                self.graph, node_one, node_two
+            )
+            return distance + weight_one + weight_two
+        except nx.NetworkXNoPath:
+            return None
+
     def get_distance(self, source, dest):
         '''
         Return the minimum distance between the source

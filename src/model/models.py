@@ -1,5 +1,4 @@
 import numpy as np
-
 import torch
 import torch.nn as nn
 import torch_geometric.nn as gnn
@@ -246,19 +245,19 @@ class MultiDQNGNN(DQN):
         # GNN
         self.gnn_conv = gnn.GCNConv(embedding_size, embedding_size)
 
-    def forward(self, state, adjacency, active_agents):
-        q_values = torch.empty(
+    def forward(self, state, adjacency, inactives):
+        q_values = torch.zeros(
             (state.shape[0], state.shape[1], self.action_size),
             dtype=torch.float
         )
-        for batch_number, batch in state:
+        for batch_number, batch in enumerate(state):
             # Encode the FOV observation of each agent
             # with the convolutional encoder
             encoded = self.convs(batch)
 
             # Use an MLP from the encoded values to have a
             # consistent number of features
-            flattened = encoded.flatten(encoded, start_dim=1)
+            flattened = torch.flatten(encoded, start_dim=1)
             features = self.mlp(flattened)
 
             # Create the graph used by the defined GNN conv,
@@ -267,22 +266,23 @@ class MultiDQNGNN(DQN):
             num_agents = adjacency.shape[0]
             for i in range(num_agents):
                 for j in range(num_agents):
-                    if adjacency[i][j] != 0:
+                    if adjacency[i, j] != 0:
                         edge_index.append([i, j])
-                        edge_weight.append(adjacency[i][j])
+                        edge_weight.append(adjacency[i, j])
             edge_index = torch.tensor(
                 edge_index, dtype=torch.long
             ).t().contiguous()
             edge_weight = torch.tensor(edge_weight, dtype=torch.float)
-            x = torch.tensor(features, dtype=torch.float)
 
             # Compute embeddings for each node by performing graph convolutions
-            embeddings = self.gnn_conv(x, edge_index, edge_weight=edge_weight)
+            embeddings = self.gnn_conv(
+                features, edge_index, edge_weight=edge_weight
+            )
 
             # Call the DQN with the embeddings associated to active agents
-            for handle in torch.nonzero(active_agents, as_tuple=True)[0]:
-                q_values[batch_number, handle, :] = (
-                    super().forward(embeddings[handle])
+            for handle in torch.nonzero(~inactives, as_tuple=True)[0]:
+                q_values[batch_number, handle.item(), :] = (
+                    super().forward(embeddings[handle.item()].unsqueeze(0))
                 )
 
         # Return the Q-values tensor

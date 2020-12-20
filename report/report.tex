@@ -647,7 +647,7 @@ Flatland provides the following rewards out of the box:
 
 Training agents with the standard reward didn't seem effective in a lot of ways. For example, from our point of view it doesn't make sense to give an agent a reward of $+1$ only if all of them reached their targets. A more sensible idea would be to kind of even out all the negative rewards that the agent got during their journey to the target, but also leaving information about the number of steps that it took to arrive at the destination. 
 
-Following the reported reasoning, the following rewards shaping was perfomed:
+Backing the reported reasoning, the following rewards shaping was perfomed:
 \begin{itemize}
 	\item If the agent has arrived to its target, a positive reward equal to the maximum number of steps minus the current number of steps is returned (in this way, if an agent arrives in $n_1$ steps in one execution and in $n_2\le n_1$ steps in another execution, information about the number of steps is not lost and the agent should learn to prefer the transitions that made it receive a reward of $n_2$)
 	\item If the agent is in deadlock, a reward equal to the negated maximum number of steps is returned
@@ -676,7 +676,7 @@ In practical terms, given a random number $r\in[0,1]$ sampled from a uniform dis
 \right., \]
 where \texttt{random_choice} is a routine that samples from the given set, with a uniform distribution. 
 
-By tweaking a little bit the $\epsilon$-greedy selector we could also get two others selectors:
+By tweaking a little bit the $\epsilon$-greedy selector we could also get two other selectors:
 \begin{itemize}
 	\item Greedy: set $\epsilon=0$ and avoid decaying it (always select the best action)
 	\item Random: set $\epsilon=1$ and avoid decaying it (always select a random action)
@@ -709,7 +709,14 @@ $$
 L(\theta)=\mathbb{E}_{(s_t,a_t,r_{t+1},s_{t+1})}\left[\left(\underbrace{r_{t+1}+\gamma\max_{a_{t+1}}Q_\theta(s_{t+1}, a_{t+1}) - Q_\theta(s_t, a_t)}_{TD}\right)^2\right]
 $$
 
-About the network architecture, the literature does not follow a clear definition, so that the term DQN is mostly linked to the whole training pipeline required to reach good estimates of the optimal $Q$ function. For example, in the original paper \cite{atari-dqn} DeepMind researchers use an initial CNN (Convolutional Neural Network), since their input is represented by videogame frames, followed by a sequence of MLPs (Multi-Layer Perceptron).   
+About the network architecture, the literature does not follow a clear definition, so that the term DQN is mostly linked to the whole training pipeline required to reach good estimates of the optimal $Q$ function. For example, in the original paper \cite{atari-dqn} DeepMind researchers use an initial CNN (Convolutional Neural Network), since their input is represented by videogame frames, followed by an MLP (Multi-Layer Perceptron). In our case, we sticked to just using the final fully-connected layers, as shown in figure \ref{fig:fc-dqn}, where the number of input neurons is given by the linearization of the selected observation, the number of hidden cells and the number of hidden layers are hyperparameters, while the number of outputs is equal to the size of the action space (in our case we have exactly $3$ choices). 
+
+\begin{figure}[!htb]
+	\centering
+	\includesvg[width = 200pt]{fc-dqn}
+	\caption{Simple DQN example with FC layers}
+	\label{fig:fc-dqn}
+\end{figure}
 
 Another thing to notice is that the weights used for the target versus the current (presumably non-optimal) $Q$-values are different. In practical terms, a separate network is used to estimate the TD target. This target network has the same architecture as the function approximator but with frozen parameters. Every $T$ steps (a hyperparameter) the parameters from the $Q$-network are copied to the target network. This leads to more stable training because it keeps the target function fixed (for a while). Because of this, assuming $\theta_i$ to represent the current network weights and $\theta_i^{-}$ the target network weights, the loss function is updated as follows:
 $$
@@ -725,7 +732,7 @@ There are two main ways two copy the weights from the current to the target netw
 \section{Experience replay}
 We already mentioned the problem of non-stationarity related to MARL, when agents have to deal with a stochastic environment, but in practice that same problem is also present in simpler RL algorithms, since the data distribution still changes as the agent learns new behaviours (which is in contrast with the standard assumption of a fixed underlying distribution of deep learning methods). Moreover, we know that supervised learning algorithms assume samples in a dataset to be \textit{i.i.d.} (independent and identically distributed), so that if we model the RL problem as a supervised one (e.g. a DQN can be framed as a regression problem that minimizes the distance from the optimal $Q$ function) we break the independence assumption since sequences of states are usually highly correlated. 
 
-To alleviate the problems of correlated data and non-stationary distributions, in the original DQN formulation \cite{atari-dqn} DeepMind researchers report the use of a data structure named experience replay (also known as replay buffer in the literature) , which randomly samples previous transitions, and thereby smooths the training distribution over many past behaviors. In this way, the $(s_t, a_t, r_{t+1}, s_{t+1})$ tuple shown in the previous loss equations should be considered as a sample extracted from the current replay buffer.
+To alleviate the problems of correlated data and non-stationary distributions, in the original DQN formulation \cite{atari-dqn} DeepMind researchers report the use of a data structure named experience replay (also known as replay buffer in the literature), which randomly samples previous transitions, and thereby smooths the training distribution over many past behaviors. In this way, the $(s_t, a_t, r_{t+1}, s_{t+1})$ tuple shown in the previous loss equations should be considered as a sample extracted from the current replay buffer.
 
 In practical terms, there are two main ways to implement an experience replay $E$:
 \begin{itemize}

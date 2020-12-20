@@ -14,6 +14,7 @@ from env.deadlocks import DeadlocksDetector
 from env.railway_encoding import CellOrientationGraph
 from obs.binary_tree import BinaryTreeObservator
 from obs.single_agent_graph import SingleAgentGraphObservator
+from obs.fov import FOVObservator
 
 
 class RailEnvWrapper(RailEnv):
@@ -37,15 +38,13 @@ class RailEnvWrapper(RailEnv):
         Compute the state size based on observation type
         '''
         n_features_per_node = self.obs_builder.observation_dim
-        n_nodes = 0
+        n_nodes = 1
         if isinstance(self.obs_builder, TreeObsForRailEnv):
             n_nodes = sum(
                 4 ** i for i in range(self.obs_builder.max_depth + 1)
             )
         elif isinstance(self.obs_builder, BinaryTreeObservator):
             n_nodes = sum(2 ** i for i in range(self.obs_builder.max_depth))
-        elif isinstance(self.obs_builder, SingleAgentGraphObservator):
-            n_nodes = 1
         return n_features_per_node * n_nodes
 
     def get_agents_same_start(self):
@@ -313,6 +312,20 @@ class RailEnvWrapper(RailEnv):
             self.railway_encoding.is_real_decision(h)
             for h in range(self.get_num_agents())
         ]
+
+    def agents_adjacency_matrix(self, radius=None):
+        '''
+        Return the adjacency matrix containing pairwise distances between agents
+        '''
+        adj = np.zeros((self.get_num_agents(), self.get_num_agents()))
+        for i in range(adj.shape[0]):
+            for j in range(adj.shape[1]):
+                if i != j:
+                    distance = self.railway_encoding.get_agents_distance(i, j)
+                    if (distance is not None and
+                            (radius is None or (radius is not None and distance <= radius))):
+                        adj[i, j] = distance
+        return adj
 
     def _normalize_obs(self, obs):
         '''

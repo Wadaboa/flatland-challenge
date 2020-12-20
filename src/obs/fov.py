@@ -25,7 +25,8 @@ class FOVObservator(ObservationBuilder):
         super().__init__()
         # Always keep an odd number of "squares", so that the agent
         # is centered w.r.t. its FOV
-        self.max_depth = max_depth if max_depth % 2 != 0 else max_depth + 1
+        assert max_depth % 2 != 0, 'FOV window must be an odd number'
+        self.max_depth = max_depth
         self.predictor = predictor
         self.observations = dict()
         self.observation_dim = 6
@@ -176,7 +177,8 @@ class FOVObservator(ObservationBuilder):
                 )
                 # Distance map in direction and FOV of the agent
                 distance_fov = utils.extract_fov(
-                    self.env.distance_map.get()[handle, :, :, agent_position[2]],
+                    self.env.distance_map.get(
+                    )[handle, :, :, agent_position[2]],
                     agent_position, self.max_depth, -1
                 )
                 distance_fov[distance_fov == np.inf] = -1

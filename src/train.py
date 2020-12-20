@@ -1,6 +1,7 @@
 import time
 import os
 from datetime import datetime
+from networkx.readwrite.json_graph import adjacency
 
 import yaml
 import wandb
@@ -156,16 +157,18 @@ def train_agents(args, writer):
         choices_taken = []
         choices_count = [0] * env_utils.RailEnvChoices.choice_size()
         num_exploration_choices = [0] * env_utils.RailEnvChoices.choice_size()
-        legal_choices = dict()
+        legal_choices, legal_actions = dict(), dict()
         update_values = [False] * args.env.num_trains
         action_dict, choice_dict = dict(), dict()
         prev_obs = dict()
+        done = dict()
         prev_choices = [RailEnvChoices.CHOICE_LEFT.value] * args.env.num_trains
         for handle in range(args.env.num_trains):
             legal_choices[handle] = train_env.railway_encoding.get_legal_choices(
                 handle, train_env.railway_encoding.get_agent_actions(handle)
             )
             choice_dict.update({handle: RailEnvChoices.CHOICE_LEFT.value})
+            done[handle] = False
             if obs[handle] is not None:
                 prev_obs[handle] = env_utils.copy_obs(obs[handle])
 
@@ -181,42 +184,92 @@ def train_agents(args, writer):
 
             # Compute an action for each agent, if necessary
             inference_timer.start()
-            for agent in train_env.get_agent_handles():
-                # An action is not required if the train hasn't joined the railway network,
-                # if it already reached its target, or if it's currently malfunctioning,
-                # or if it's in deadlock or if it's in the middle of traversing a cell
-                update_values[agent] = False
-                legal_choices[agent] = env_utils.RailEnvChoices.default_choices()
-                action = RailEnvActions.DO_NOTHING.value
-                if info['action_required'][agent]:
-                    if train_env.railway_encoding.is_real_decision(agent):
-                        legal_actions = train_env.railway_encoding.get_agent_actions(
-                            agent
-                        )
-                        legal_choices[agent] = train_env.railway_encoding.get_legal_choices(
-                            agent, legal_actions
-                        )
-                        choice, is_best = policy.act(
-                            obs[agent], legal_choices[agent], training=True
-                        )
+
+            # If the multi agent observation was selected, then the policy.act method
+            # should be called with the entire set of observations
+            if args.policy.type.multi_agent_graph:
+                for agent in train_env.get_agent_handles():
+                    legal_choices[agent] = env_utils.RailEnvChoices.default_choices()
+                    update_values[agent] = False
+                    if info['action_required'][agent]:
+                        if train_env.railway_encoding.is_real_decision(agent):
+                            legal_actions[agent] = train_env.railway_encoding.get_agent_actions(
+                                agent
+                            )
+                            legal_choices[agent] = train_env.railway_encoding.get_legal_choices(
+                                agent, legal_actions[agent]
+                            )
+                            update_values[agent] = True
+                adjacency = train_env.agents_adjacency_matrix(
+                    radius=args.observator.max_depth
+                )
+                choices, is_best = policy.act(
+                    np.array(list(obs.values())),
+                    np.array(list(legal_choices.values())),
+                    adjacency, ~np.array(update_values), training=True
+                )
+                for agent in train_env.get_agent_handles():
+                    action = RailEnvActions.DO_NOTHING.value
+                    if update_values[agent]:
                         action = train_env.railway_encoding.map_choice_to_action(
-                            choice, legal_actions
+                            choices[agent], legal_actions[agent]
                         )
                         assert action != RailEnvActions.DO_NOTHING.value, (
-                            choice, legal_actions
+                            choices[agent], legal_actions[agent]
                         )
-                        update_values[agent] = True
-                        choices_count[choice] += 1
-                        choices_taken.append(choice)
-                        num_exploration_choices[choice] += int(not(is_best))
-                        choice_dict.update({agent: choice})
-                    else:
+                        choices_count[choices[agent]] += 1
+                        choices_taken.append(choices[agent])
+                        num_exploration_choices[choices[agent]] += int(
+                            not(is_best[agent])
+                        )
+                        choice_dict.update({agent: choices[agent]})
+                    elif not done[agent] and not info["deadlocks"][agent]:
                         actions = train_env.railway_encoding.get_agent_actions(
                             agent
                         )
                         assert len(actions) == 1, actions
                         action = actions[0]
-                action_dict.update({agent: action})
+                    action_dict.update({agent: action})
+            # Otherwise, do one call of policy.act for each observation
+            else:
+                for agent in train_env.get_agent_handles():
+                    # An action is not required if the train hasn't joined the railway network,
+                    # if it already reached its target, or if it's currently malfunctioning,
+                    # or if it's in deadlock or if it's in the middle of traversing a cell
+                    update_values[agent] = False
+                    legal_choices[agent] = env_utils.RailEnvChoices.default_choices()
+                    action = RailEnvActions.DO_NOTHING.value
+                    if info['action_required'][agent]:
+                        if train_env.railway_encoding.is_real_decision(agent):
+                            legal_actions[agent] = train_env.railway_encoding.get_agent_actions(
+                                agent
+                            )
+                            legal_choices[agent] = train_env.railway_encoding.get_legal_choices(
+                                agent, legal_actions[agent]
+                            )
+                            choice, is_best = policy.act(
+                                obs[agent], legal_choices[agent], training=True
+                            )
+                            action = train_env.railway_encoding.map_choice_to_action(
+                                choice, legal_actions[agent]
+                            )
+                            assert action != RailEnvActions.DO_NOTHING.value, (
+                                choice, legal_actions[agent]
+                            )
+                            update_values[agent] = True
+                            choices_count[choice] += 1
+                            choices_taken.append(choice)
+                            num_exploration_choices[choice] += int(
+                                not(is_best)
+                            )
+                            choice_dict.update({agent: choice})
+                        else:
+                            actions = train_env.railway_encoding.get_agent_actions(
+                                agent
+                            )
+                            assert len(actions) == 1, actions
+                            action = actions[0]
+                    action_dict.update({agent: action})
             inference_timer.end()
 
             # Environment step
@@ -232,29 +285,75 @@ def train_agents(args, writer):
                     show=True, show_observations=False, show_predictions=True, show_rowcols=True
                 )
 
-            # Update replay buffer and train agent
-            for agent in train_env.get_agent_handles():
-
-                # Only learn from timesteps where something happened
-                if (update_values[agent] or
-                        (done[agent] and step == train_env.arrived_turns[agent]) or
-                        (info["deadlocks"][agent] and step == info["deadlock_turns"][agent])):
-                    learn_timer.start()
+            # If the multi agent observation was selected, then the policy.step method
+            # should be called just one time
+            if args.policy.type.multi_agent_graph:
+                first_time_finished = [
+                    done[agent] and step == train_env.arrived_turns[agent]
+                    for agent in train_env.get_agent_handles()
+                ]
+                first_time_deadlock = [
+                    info["deadlocks"][agent] and step == info["deadlock_turns"][agent]
+                    for agent in train_env.get_agent_handles()
+                ]
+                learn_timer.start()
+                if any(update_values) or any(first_time_finished) or any(first_time_deadlock):
+                    finished = [
+                        done[agent] or info["deadlocks"][agent]
+                        for agent in train_env.get_agent_handles()
+                    ]
+                    next_adjacency = train_env.agents_adjacency_matrix(
+                        radius=args.observator.max_depth
+                    )
                     experience = (
-                        prev_obs[agent], prev_choices[agent], custom_rewards[agent],
-                        obs[agent], legal_choices[agent],
-                        (done[agent] or info["deadlocks"][agent])
+                        np.array(list(prev_obs.values())),
+                        np.array(prev_choices),
+                        adjacency,
+                        np.array(list(custom_rewards.values())),
+                        np.array(list(obs.values())),
+                        np.array(list(legal_choices.values())),
+                        next_adjacency,
+                        np.array(finished),
+                        ~np.array(update_values)
                     )
                     policy.step(experience)
-                    learn_timer.end()
-                    prev_obs[agent] = env_utils.copy_obs(obs[agent])
-                    prev_choices[agent] = choice_dict[agent]
+                learn_timer.end()
 
-                # Update observation and score
-                score += rewards[agent]
-                custom_score += custom_rewards[agent]
-                if next_obs[agent] is not None:
-                    obs[agent] = env_utils.copy_obs(next_obs[agent])
+                for agent in train_env.get_agent_handles():
+                    if update_values[agent] or first_time_finished[agent] or first_time_deadlock[agent]:
+                        prev_obs[agent] = env_utils.copy_obs(obs[agent])
+                        prev_choices[agent] = choice_dict[agent]
+
+                    # Update observation and score
+                    score += rewards[agent]
+                    custom_score += custom_rewards[agent]
+                    if next_obs[agent] is not None:
+                        obs[agent] = env_utils.copy_obs(next_obs[agent])
+            # Otherwise, do one call of policy.step for each agent
+            else:
+                # Update replay buffer and train agent
+                for agent in train_env.get_agent_handles():
+
+                    # Only learn from timesteps where something happened
+                    if (update_values[agent] or
+                            (done[agent] and step == train_env.arrived_turns[agent]) or
+                            (info["deadlocks"][agent] and step == info["deadlock_turns"][agent])):
+                        learn_timer.start()
+                        experience = (
+                            prev_obs[agent], prev_choices[agent], custom_rewards[agent],
+                            obs[agent], legal_choices[agent],
+                            (done[agent] or info["deadlocks"][agent])
+                        )
+                        policy.step(experience)
+                        learn_timer.end()
+                        prev_obs[agent] = env_utils.copy_obs(obs[agent])
+                        prev_choices[agent] = choice_dict[agent]
+
+                    # Update observation and score
+                    score += rewards[agent]
+                    custom_score += custom_rewards[agent]
+                    if next_obs[agent] is not None:
+                        obs[agent] = env_utils.copy_obs(next_obs[agent])
 
             # Break if every agent arrived
             final_step = step

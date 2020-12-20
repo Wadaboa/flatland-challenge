@@ -1,5 +1,18 @@
 import numpy as np
+import torch
 import torch.nn as nn
+
+
+class MaskedMSELoss(torch.nn.Module):
+
+    def __init__(self):
+        super(MaskedMSELoss, self).__init__()
+
+    def forward(self, input, target, mask):
+        diff = ((
+            torch.flatten(input) - torch.flatten(target)
+        ) ** 2.0) * torch.flatten(mask)
+        return torch.sum(diff) / torch.sum(mask)
 
 
 def masked_softmax(vec, mask, dim=1, temperature=1):
@@ -55,15 +68,17 @@ def conv_block_output_size(modules, input_width, input_height):
     '''
     output_width, output_height = input_width, input_height
     for module in modules:
-        kernel_size = module.kernel_size
-        stride = module.stride
-        padding = module.padding
-        dilation = module.dilation
         if type(module) in (nn.Conv2d, nn.MaxPool2d):
+            kernel_size_h, kernel_size_w = module.kernel_size
+            stride_h, stride_w = module.stride
+            padding_h, padding_w = module.padding
+            dilation_h, dilation_w = module.dilation
             output_width = np.floor((
-                output_width + 2 * padding - dilation * (kernel_size - 1) - 1
-            ) / stride + 1)
+                output_width + 2 * padding_w -
+                dilation_w * (kernel_size_w - 1) - 1
+            ) / stride_w + 1)
             output_height = np.floor((
-                output_height + 2 * padding - dilation * (kernel_size-1) - 1
-            ) / stride + 1)
-    return output_width, output_height
+                output_height + 2 * padding_h -
+                dilation_h * (kernel_size_h - 1) - 1
+            ) / stride_h + 1)
+    return int(output_width), int(output_height)

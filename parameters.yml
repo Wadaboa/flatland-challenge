@@ -42,7 +42,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 6
+  max_depth: 33
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -55,7 +55,7 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 6
+  max_depth: 33
 
 # Policy config
 policy:
@@ -64,11 +64,11 @@ policy:
     # Single agent graph observation policy
     single_agent_graph: False
     # Multi agent graph observation policy
-    multi_agent_graph: False
+    multi_agent_graph: True
     # Standard tree observation policy
     tree: False
     # Binary tree observation policy
-    binary_tree: True
+    binary_tree: False
     # Random policy
     random: False
 
@@ -147,8 +147,8 @@ model:
     relu: False
     # Tanh function
     tanh: True
-  # GNN configuration
-  gnn:
+  # Single GNN configuration
+  single_gnn:
     # Size of the hidden layers
     hidden_size: 8
     # Size of the output embedding
@@ -157,12 +157,16 @@ model:
     pos_size: 3
     # Dropout value
     dropout: !!float 0.0
-    # Aggregation function
-    aggr_function:
-      # Mean function
-      mean: False
-      # Sum function
-      sum: True
+  # Multi GNN configuration
+  multi_gnn:
+    # Size of the output embedding
+    embedding_size: 128
+    # CNN encoder hidden channels number and sizes
+    hidden_channels:
+      - 16
+      - 32
+    # CNN encoder size of the output channel
+    output_channels: 32
 
 # Replay buffer config
 replay_buffer:
@@ -224,9 +228,9 @@ training:
   # Renderer config
   renderer:
     # Render episodes during training
-    training: False
+    training: True
     # How often to render an episode in training
-    train_checkpoint: 150
+    train_checkpoint: 1
     # Render episodes during evaluation
     evaluation: False
     # How often to render an episode in evaluation

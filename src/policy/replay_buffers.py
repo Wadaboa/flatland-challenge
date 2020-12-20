@@ -10,7 +10,13 @@ from torch_geometric.data import Data, Batch
 Experience = namedtuple(
     "Experience", field_names=[
         "state", "choice", "reward", "next_state",
-        "next_legal_choices", "inactive"
+        "next_legal_choices", "finished"
+    ]
+)
+MultiExperience = namedtuple(
+    "Experience", field_names=[
+        "state", "choice", "adjacency", "reward", "next_state",
+        "next_legal_choices", "next_adjacency", "finished", "inactive"
     ]
 )
 
@@ -29,33 +35,40 @@ class ReplayBuffer:
         self.memory = deque(maxlen=buffer_size)
         self.device = device
 
-    def add(self, experience):
+    def add(self, experience, multi=False):
         '''
         Add a new experience to memory
         '''
-        state, choice, reward, next_state, next_legal_choices, inactive = experience
-        self.memory.append(
-            Experience(
-                state, choice, reward,
-                next_state, next_legal_choices, inactive
-            )
-        )
+        if not multi:
+            self.memory.append(Experience(*experience))
+        else:
+            self.memory.append(MultiExperience(*experience))
 
-    def sample(self):
+    def sample(self, multi=False):
         '''
         Randomly sample a batch of experiences from memory.
         Each returned tensor has shape (batch_size, *)
         '''
-        states, choices, rewards, next_states, next_legal_choices, inactives = zip(
-            *random.sample(self.memory, k=self.batch_size)
-        )
+        if not multi:
+            states, choices, rewards, next_states, next_legal_choices, finished = zip(
+                *random.sample(self.memory, k=self.batch_size)
+            )
+        else:
+            states, choices, adjacencies, rewards, next_states, next_legal_choices, next_adjacencies, finished, inactives = zip(
+                *random.sample(self.memory, k=self.batch_size)
+            )
+
         # Check for PyTorch Geometric
         if isinstance(states[0], np.ndarray):
             states = torch.tensor(
                 states, dtype=torch.float32, device=self.device
             )
+            next_states = torch.tensor(
+                next_states, dtype=torch.float32, device=self.device
+            )
         elif isinstance(states[0], Data):
             states = Batch.from_data_list(states).to(self.device)
+            next_states = Batch.from_data_list(next_states).to(self.device)
 
         choices = torch.tensor(
             choices, dtype=torch.int64, device=self.device
@@ -63,22 +76,30 @@ class ReplayBuffer:
         rewards = torch.tensor(
             rewards, dtype=torch.float32, device=self.device
         ).reshape((self.batch_size, -1))
-
-        # Check for PyTorch Geometric
-        if isinstance(next_states[0], np.ndarray):
-            next_states = torch.tensor(
-                next_states, dtype=torch.float32, device=self.device
-            )
-        elif isinstance(next_states[0], Data):
-            next_states = Batch.from_data_list(next_states).to(self.device)
-
         next_legal_choices = torch.tensor(
             next_legal_choices, dtype=torch.bool, device=self.device
-        )
-        inactives = torch.tensor(
-            inactives, dtype=torch.uint8, device=self.device
         ).reshape((self.batch_size, -1))
-        return states, choices, rewards, next_states, next_legal_choices, inactives
+        finished = torch.tensor(
+            finished, dtype=torch.uint8, device=self.device
+        ).reshape((self.batch_size, -1))
+
+        if multi:
+            adjacencies = torch.tensor(
+                adjacencies, dtype=torch.int64, device=self.device
+            ).reshape((self.batch_size, -1))
+            next_adjacencies = torch.tensor(
+                next_adjacencies, dtype=torch.int64, device=self.device
+            ).reshape((self.batch_size, -1))
+            inactives = torch.tensor(
+                inactives, dtype=torch.uint8, device=self.device
+            ).reshape((self.batch_size, -1))
+            return (
+                states, choices, adjacencies, rewards,
+                next_states, next_legal_choices, next_adjacencies,
+                finished, inactives
+            )
+
+        return states, choices, rewards, next_states, next_legal_choices, finished
 
     def can_sample(self):
         '''
