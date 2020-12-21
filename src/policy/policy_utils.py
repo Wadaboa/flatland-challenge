@@ -3,7 +3,10 @@ import torch
 import torch.nn as nn
 
 
-class MaskedMSELoss(torch.nn.Module):
+class MaskedMSELoss(nn.Module):
+    '''
+    MSE loss with masked inputs/targets
+    '''
 
     def __init__(self):
         super(MaskedMSELoss, self).__init__()
@@ -13,6 +16,18 @@ class MaskedMSELoss(torch.nn.Module):
             torch.flatten(input) - torch.flatten(target)
         ) ** 2.0) * torch.flatten(mask)
         return torch.sum(diff) / torch.sum(mask)
+
+
+class Sequential(nn.Sequential):
+    '''
+    Extension of the PyTorch Sequential module, 
+    to handle a variable number of arguments 
+    '''
+
+    def forward(self, input, *args, **kwargs):
+        for module in self:
+            input = module(input, *args, **kwargs)
+        return input
 
 
 def masked_softmax(vec, mask, dim=1, temperature=1):

@@ -11,7 +11,7 @@ from torch_geometric.data import Data, Batch
 from env import env_utils
 from policy import policy_utils
 from policy.action_selectors import ActionSelector, RandomActionSelector
-from model.models import DQN, DuelingDQN, SingleDQNGNN, MultiDQNGNN
+from model.models import DQN, DuelingDQN, SingleGNN, MultiGNN
 from policy.replay_buffers import ReplayBuffer
 
 
@@ -327,16 +327,19 @@ class SingleAgentDQNGNNPolicy(DQNPolicy):
         )
 
         # Q-Network
-        self.qnetwork_local = SingleDQNGNN(
-            state_size, env_utils.RailEnvChoices.choice_size(),
-            self.params.model.single_gnn.pos_size,
-            self.params.model.single_gnn.embedding_size,
-            hidden_sizes=self.params.model.hidden_sizes,
-            nonlinearity=self.params.model.nonlinearity.get_true_key(),
-            gnn_hidden_size=self.params.model.single_gnn.hidden_size,
-            depth=self.params.observator.max_depth,
-            dropout=self.params.model.single_gnn.dropout
-        ).to(self.device)
+        self.qnetwork_local = policy_utils.Sequential(
+            SingleGNN(
+                state_size,
+                self.params.model.single_gnn.pos_size,
+                self.params.model.single_gnn.embedding_size,
+                nonlinearity=self.params.model.nonlinearity.get_true_key(),
+                gnn_hidden_size=self.params.model.single_gnn.hidden_size,
+                depth=self.params.observator.max_depth,
+                dropout=self.params.model.single_gnn.dropout,
+                device=self.device
+            ).to(self.device),
+            self.qnetwork_local
+        )
 
         if training:
             self.qnetwork_target = copy.deepcopy(self.qnetwork_local)
@@ -357,19 +360,21 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
         )
 
         # Q-Network
-        self.qnetwork_local = MultiDQNGNN(
-            env_utils.RailEnvChoices.choice_size(),
-            self.params.observator.max_depth,
-            self.params.observator.max_depth,
-            state_size,
-            self.params.model.multi_gnn.output_channels,
-            hidden_channels=self.params.model.multi_gnn.hidden_channels,
-            pool=self.params.model.multi_gnn.pool,
-            embedding_size=self.params.model.multi_gnn.embedding_size,
-            hidden_sizes=self.params.model.hidden_sizes,
-            nonlinearity=self.params.model.nonlinearity.get_true_key(),
-            device=self.device
-        ).to(self.device)
+        self.qnetwork_local = policy_utils.Sequential(
+            MultiGNN(
+                self.params.observator.max_depth,
+                self.params.observator.max_depth,
+                state_size,
+                self.params.model.multi_gnn.output_channels,
+                hidden_channels=self.params.model.multi_gnn.hidden_channels,
+                pool=self.params.model.multi_gnn.pool,
+                embedding_size=self.params.model.multi_gnn.embedding_size,
+                hidden_sizes=self.params.model.hidden_sizes,
+                nonlinearity=self.params.model.nonlinearity.get_true_key(),
+                device=self.device
+            ).to(self.device),
+            self.qnetwork_local
+        )
 
         if training:
             self.qnetwork_target = copy.deepcopy(self.qnetwork_local)
@@ -393,7 +398,7 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
         self.qnetwork_local.eval()
         with torch.no_grad():
             choice_values = self.qnetwork_local(
-                state, adjacency, inactives
+                states=state, adjacencies=adjacency, mask=~inactives
             ).squeeze().detach().cpu().numpy()
 
         # Select a legal choice based on the action selector
@@ -438,7 +443,7 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
         # Get expected Q-values from local model
         # (batch_size, num_agents, choice_size)
         q_expected = self.qnetwork_local(
-            states, adjacencies, inactives
+            states=states, adjacencies=adjacencies, mask=~inactives
         )
         # Gather to (batch_size, num_agents, 1)
         q_expected = q_expected.gather(2, choices.unsqueeze(2)).squeeze(2)
@@ -487,10 +492,10 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
 
         def _double_dqn():
             q_locals_next = self.qnetwork_local(
-                next_states, next_adjacencies, inactives
+                states=next_states, adjacencies=next_adjacencies, mask=~inactives
             ).detach().cpu().numpy()
             q_targets_next = self.qnetwork_target(
-                next_states, next_adjacencies, inactives
+                states=next_states, adjacencies=next_adjacencies, mask=~inactives
             ).detach().cpu().numpy()
 
             # Softmax Bellman
@@ -509,7 +514,7 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
 
         def _dqn():
             q_targets_next = self.qnetwork_target(
-                next_states
+                states=next_states, adjacencies=next_adjacencies, mask=~inactives
             ).detach().cpu().numpy()
 
             # Standard or softmax Bellman

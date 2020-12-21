@@ -16,68 +16,87 @@ class DQN(nn.Module):
     Vanilla deep Q-Network
     '''
 
-    def __init__(self, state_size, action_size, hidden_sizes=[128, 128], nonlinearity="tanh"):
+    def __init__(self, state_size, action_size, hidden_sizes=[128, 128],
+                 nonlinearity="tanh", device="cpu"):
         super(DQN, self).__init__()
         self.state_size = state_size
         self.action_size = action_size
+        self.device = device
         self.fc = model_utils.get_linear(
             state_size, action_size, hidden_sizes, nonlinearity=nonlinearity
         )
 
-    def forward(self, state):
-        state = torch.flatten(state, start_dim=1)
-        return self.fc(state)
+    def forward(self, states, mask=None):
+        states = torch.flatten(states, start_dim=1)
+        assert len(states.shape) == 2 and states.shape[1] == self.state_size
+        if mask is None:
+            mask = torch.ones(
+                (states.shape[0], 1), dtype=torch.bool,
+                device=self.device
+            )
+
+        empty_tensor = torch.zeros((1, self.action_size), device=self.device)
+        return torch.where(mask, self.fc(states), empty_tensor).to(self.device)
 
 
 ######################################################################
 ########################### Dueling DQN ##############################
 ######################################################################
 
-class DuelingDQN(nn.Module):
+class DuelingDQN(DQN):
     '''
     Dueling DQN
     '''
 
-    def __init__(self, state_size, action_size, hidden_sizes=[128, 128], nonlinearity="tanh", aggregation="mean"):
-        super(DuelingDQN, self).__init__()
-        self.state_size = state_size
-        self.action_size = action_size
+    def __init__(self, state_size, action_size, hidden_sizes=[128, 128],
+                 nonlinearity="tanh", device="cpu", aggregation="mean"):
+        super(DuelingDQN, self).__init__(
+            state_size, action_size, hidden_sizes=hidden_sizes,
+            nonlinearity=nonlinearity, device=device
+        )
         self.aggregation = aggregation
         self.fc_val = model_utils.get_linear(
             state_size, 1, hidden_sizes, nonlinearity=nonlinearity
         )
-        self.fc_adv = model_utils.get_linear(
-            state_size, action_size, hidden_sizes, nonlinearity=nonlinearity
-        )
 
-    def forward(self, state):
-        state = torch.flatten(state, start_dim=1)
-        val = self.fc_val(state)
-        adv = self.fc_adv(state)
-        agg = adv.mean() if self.aggregation == "mean" else adv.max()
+    def forward(self, states, mask=None):
+        states = torch.flatten(states, start_dim=1)
+        assert len(states.shape) == 2 and states.shape[1] == self.state_size
+        if mask is None:
+            mask = torch.ones(
+                (states.shape[0], 1), dtype=torch.bool,
+                device=self.device
+            )
+
+        empty_tensor = torch.zeros((1, 1), device=self.device)
+        val = torch.where(
+            mask, self.fc_val(states), empty_tensor
+        ).to(self.device)
+        adv = super.forward(states, mask=mask)
+        agg = (
+            adv.mean(dim=1, keepdim=True) if self.aggregation == "mean"
+            else adv.max(dim=1, keepdim=True)
+        )
         return val + adv - agg
 
 
 ######################################################################
-##################### Single agent DQN + GNN #########################
+########################## Single agent GNN ##########################
 ######################################################################
 
-class SingleDQNGNN(DQN):
+class SingleGNN(nn.Module):
     '''
-    Single agent DQN + GNN
+    Single agent GNN
     '''
 
-    def __init__(self, state_size, action_size, pos_size, embedding_size,
-                 hidden_sizes=[128, 128], nonlinearity="tanh",
-                 gnn_hidden_size=16, depth=3, dropout=0.0):
-        super(SingleDQNGNN, self).__init__(
-            action_size * embedding_size, action_size,
-            hidden_sizes=hidden_sizes, nonlinearity=nonlinearity
-        )
+    def __init__(self, state_size, pos_size, embedding_size, nonlinearity="tanh",
+                 gnn_hidden_size=16, depth=3, dropout=0.0, device="cpu"):
+        self.state_size = state_size
         self.pos_size = pos_size
         self.embedding_size = embedding_size
         self.depth = depth
         self.dropout = dropout
+        self.device = device
         self.nl = nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
         self.gnn_conv = nn.ModuleList()
         self.gnn_conv.append(gnn.GCNConv(
@@ -98,7 +117,8 @@ class SingleDQNGNN(DQN):
                 len(graphs),
                 self.pos_size,
                 self.embedding_size
-            ), dtype=torch.float
+            ), dtype=torch.float,
+            device=self.device
         )
 
         # For each graph in the batch
@@ -119,32 +139,27 @@ class SingleDQNGNN(DQN):
             for j, p in enumerate(pos):
                 if p == -1:
                     embs[i, j] = torch.tensor(
-                        [-self.depth] * self.embedding_size, dtype=torch.float
+                        [-self.depth] * self.embedding_size,
+                        dtype=torch.float, device=self.device
                     )
                 else:
                     embs[i, j] = emb[p.item()]
 
-        # Call the DQN with a tensor of shape
-        # (batch_size, pos_size, embedding_size)
-        return super().forward(embs)
+        return embs
 
 
 ######################################################################
-###################### Multi agent DQN + GNN #########################
+########################## Multi agent GNN ###########################
 ######################################################################
 
-class MultiDQNGNN(DQN):
+class MultiGNN(nn.Module):
     '''
-    Multi agent DQN + GNN
+    Multi agent GNN
     '''
 
-    def __init__(self, action_size, input_width, input_height, input_channels, output_channels,
+    def __init__(self, input_width, input_height, input_channels, output_channels,
                  hidden_channels=[16, 32, 16], pool=False, embedding_size=128, hidden_sizes=[128, 128],
                  nonlinearity="relu", device="cpu"):
-        super(MultiDQNGNN, self).__init__(
-            embedding_size, action_size,
-            hidden_sizes=hidden_sizes, nonlinearity=nonlinearity
-        )
         self.input_width = input_width
         self.input_height = input_height
         self.input_channels = input_channels
@@ -175,12 +190,21 @@ class MultiDQNGNN(DQN):
             embedding_size, embedding_size, add_self_loops=False
         )
 
-    def forward(self, states, adjacencies, inactives):
-        q_values = torch.zeros(
-            (states.shape[0], states.shape[1], self.action_size),
-            dtype=torch.float, device=self.device
+    def forward(self, states, adjacencies, mask=None):
+        if mask is None:
+            mask = torch.ones(
+                (states.shape[0], states.shape[1], 1), dtype=torch.bool,
+                device=self.device
+            )
+        active_indexes = mask.nonzero()
+        embeddings = torch.empty(
+            size=(
+                states.shape[0],
+                states.shape[1],
+                self.embedding_size
+            ), dtype=torch.float,
+            device=self.device
         )
-        active_indexes = (~inactives).nonzero()
         for batch_number, batch in enumerate(states):
             current_active_indexes = active_indexes[
                 active_indexes[:, 0] == batch_number
@@ -215,16 +239,9 @@ class MultiDQNGNN(DQN):
             )
 
             # Compute embeddings for each node by performing graph convolutions
-            embeddings = self.gnn_conv(
+            embeddings[batch_number] = self.gnn_conv(
                 features, edge_index, edge_weight=edge_weight
             )
 
-            # Call the DQN with the embeddings associated to active agents
-            for ind in current_active_indexes:
-                handle = ind[1].item()
-                q_values[batch_number, handle, :] = (
-                    super().forward(embeddings[handle].unsqueeze(0))
-                )
-
-        # Return the Q-values tensor
-        return q_values
+        # Return embeddings of size (batch_size * num_agents, embedding_size)
+        return embeddings.flatten(start_dim=0, end_dim=1)
