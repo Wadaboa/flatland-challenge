@@ -2,7 +2,7 @@ import random
 
 import numpy as np
 
-from model import model_utils
+from policy import policy_utils
 
 
 class ParameterDecay:
@@ -111,7 +111,7 @@ class EpsilonGreedyActionSelector(ActionSelector):
     def select(self, actions, legal_actions=None, training=False):
         if legal_actions is None:
             legal_actions = np.ones_like(actions, dtype=bool)
-        max_action = model_utils.masked_argmax(actions, legal_actions, dim=0)
+        max_action = policy_utils.masked_argmax(actions, legal_actions, dim=0)
         if not training or random.random() > self.epsilon:
             return max_action, True
         random_action = random.choice(np.arange(actions.size)[legal_actions])
@@ -152,10 +152,10 @@ class BoltzmannActionSelector(ActionSelector):
     def select(self, actions, legal_actions=None, training=False):
         if legal_actions is None:
             legal_actions = np.ones_like(actions, dtype=bool)
-        max_action = model_utils.masked_argmax(actions, legal_actions, dim=0)
+        max_action = policy_utils.masked_argmax(actions, legal_actions, dim=0)
         if not training:
             return max_action, True
-        dist = model_utils.masked_softmax(
+        dist = policy_utils.masked_softmax(
             actions, legal_actions, dim=0, temperature=self.temperature
         )
         random_action = random.choice(

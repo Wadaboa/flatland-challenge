@@ -115,6 +115,9 @@ def train_agents(args, writer):
     # Set the unique ID for this training
     now = datetime.now()
     training_id = now.strftime('%Y%m%d-%H%M%S')
+    if args.training.renderer.training and args.training.renderer.save_frames:
+        frames_dir = f"tmp/frames/{training_id}"
+        os.makedirs(frames_dir, exist_ok=True)
 
     # Print initial training info
     training_timer = utils.Timer()
@@ -210,25 +213,26 @@ def train_agents(args, writer):
                 )
                 for agent in train_env.get_agent_handles():
                     action = RailEnvActions.DO_NOTHING.value
-                    if update_values[agent]:
-                        action = train_env.railway_encoding.map_choice_to_action(
-                            choices[agent], legal_actions[agent]
-                        )
-                        assert action != RailEnvActions.DO_NOTHING.value, (
-                            choices[agent], legal_actions[agent]
-                        )
-                        choices_count[choices[agent]] += 1
-                        choices_taken.append(choices[agent])
-                        num_exploration_choices[choices[agent]] += int(
-                            not(is_best[agent])
-                        )
-                        choice_dict.update({agent: choices[agent]})
-                    elif not done[agent] and not info["deadlocks"][agent]:
-                        actions = train_env.railway_encoding.get_agent_actions(
-                            agent
-                        )
-                        assert len(actions) == 1, actions
-                        action = actions[0]
+                    if info['action_required'][agent]:
+                        if train_env.railway_encoding.is_real_decision(agent):
+                            action = train_env.railway_encoding.map_choice_to_action(
+                                choices[agent], legal_actions[agent]
+                            )
+                            assert action != RailEnvActions.DO_NOTHING.value, (
+                                choices[agent], legal_actions[agent]
+                            )
+                            choices_count[choices[agent]] += 1
+                            choices_taken.append(choices[agent])
+                            num_exploration_choices[choices[agent]] += int(
+                                not(is_best[agent])
+                            )
+                            choice_dict.update({agent: choices[agent]})
+                        else:
+                            actions = train_env.railway_encoding.get_agent_actions(
+                                agent
+                            )
+                            assert len(actions) == 1, actions
+                            action = actions[0]
                     action_dict.update({agent: action})
             # Otherwise, do one call of policy.act for each observation
             else:
@@ -284,6 +288,11 @@ def train_agents(args, writer):
                 env_renderer.render_env(
                     show=True, show_observations=False, show_predictions=True, show_rowcols=True
                 )
+                # Save renderer frame
+                if args.training.renderer.save_frames:
+                    env_renderer.gl.save_image(
+                        "{:s}/{:04d}.png".format(frames_dir, step)
+                    )
 
             # If the multi agent observation was selected, then the policy.step method
             # should be called just one time

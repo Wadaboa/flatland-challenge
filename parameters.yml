@@ -192,7 +192,7 @@ generic:
   # Device config
   use_gpu: True
   # Enable wandb logging
-  enable_wandb: True
+  enable_wandb: False
   # Checkpoint to save model to wandb
   wandb_checkpoint: 500
   # Gradients logging in wandb
@@ -228,13 +228,15 @@ training:
   # Renderer config
   renderer:
     # Render episodes during training
-    training: True
+    training: False
     # How often to render an episode in training
     train_checkpoint: 1
     # Render episodes during evaluation
     evaluation: False
     # How often to render an episode in evaluation
     eval_checkpoint: 5
+    # Save frames
+    save_frames: False
 
 testing:
   # Number of episodes to run

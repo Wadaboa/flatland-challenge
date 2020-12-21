@@ -4,81 +4,7 @@ import torch.nn as nn
 import torch_geometric.nn as gnn
 import torch.nn.functional as F
 
-import model.model_utils as model_utils
-
-
-def get_linear(input_size, output_size, hidden_sizes, nonlinearity="tanh"):
-    '''
-    Returns a PyTorch Sequential object containing FC layers with
-    non-linear activation functions, by following the given input/hidden/output sizes
-    '''
-    assert len(hidden_sizes) >= 1
-    nl = nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
-    fc = [nn.Linear(input_size, hidden_sizes[0]), nl]
-    for i in range(1, len(hidden_sizes)):
-        fc.extend([nn.Linear(hidden_sizes[i - 1], hidden_sizes[i]), nl])
-    fc.extend([nn.Linear(hidden_sizes[-1], output_size)])
-    return nn.Sequential(*fc)
-
-
-def conv_bn_act(input_channels, output_channels, kernel_size=3,
-                stride=1, padding=0, nonlinearity="relu"):
-    '''
-    Returns a block composed by a convolutional layer and a batch norm one,
-    followed by a non-linearity (e.g. ReLU or Tanh)
-    '''
-    return [
-        nn.Conv2d(
-            input_channels, output_channels,
-            kernel_size=kernel_size, stride=stride, padding=padding
-        ),
-        nn.BatchNorm2d(output_channels),
-        nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
-    ]
-
-
-def conv_bn_act_maxpool(input_channels, output_channels, kernel_size=3,
-                        stride=1, padding=0, nonlinearity="relu"):
-    '''
-    Returns a block composed by a convolutional layer and a batch norm one,
-    followed by a non-linearity (e.g. ReLU or Tanh), with a final max pooling layer
-    '''
-    return (
-        conv_bn_act(
-            input_channels, output_channels, kernel_size=kernel_size,
-            stride=stride, padding=padding, nonlinearity=nonlinearity
-        ) +
-        [nn.MaxPool2d(kernel_size=kernel_size, stride=stride, padding=padding)]
-    )
-
-
-def get_conv(input_channels, output_channels, hidden_channels,
-             kernel_size=3, stride=1, padding=0, nonlinearity="relu", pool=False):
-    '''
-    Returns a PyTorch Sequential object containing `conv_bn_act` or `conv_bn_act_pool` blocks,
-    by following the given input/hidden/output number of channels
-    '''
-    assert len(hidden_channels) >= 1
-    conv_block = conv_bn_act if not pool else conv_bn_act_maxpool
-    conv = conv_block(
-        input_channels, hidden_channels[0], kernel_size=kernel_size,
-        stride=stride, padding=padding, nonlinearity=nonlinearity
-    )
-    for i in range(1, len(hidden_channels)):
-        conv.extend(
-            conv_block(
-                hidden_channels[i - 1], hidden_channels[i],
-                kernel_size=kernel_size, stride=stride, padding=padding,
-                nonlinearity=nonlinearity
-            )
-        )
-    conv.extend(
-        conv_block(
-            hidden_channels[-1], output_channels, kernel_size=kernel_size,
-            stride=stride, padding=padding, nonlinearity=nonlinearity
-        )
-    )
-    return nn.Sequential(*conv)
+from model import model_utils
 
 
 ######################################################################
@@ -94,7 +20,7 @@ class DQN(nn.Module):
         super(DQN, self).__init__()
         self.state_size = state_size
         self.action_size = action_size
-        self.fc = get_linear(
+        self.fc = model_utils.get_linear(
             state_size, action_size, hidden_sizes, nonlinearity=nonlinearity
         )
 
@@ -117,10 +43,10 @@ class DuelingDQN(nn.Module):
         self.state_size = state_size
         self.action_size = action_size
         self.aggregation = aggregation
-        self.fc_val = get_linear(
+        self.fc_val = model_utils.get_linear(
             state_size, 1, hidden_sizes, nonlinearity=nonlinearity
         )
-        self.fc_adv = get_linear(
+        self.fc_adv = model_utils.get_linear(
             state_size, action_size, hidden_sizes, nonlinearity=nonlinearity
         )
 
@@ -227,7 +153,7 @@ class MultiDQNGNN(DQN):
         self.embedding_size = embedding_size
 
         # Encoder
-        self.convs = get_conv(
+        self.convs = model_utils.get_conv(
             input_channels, output_channels, hidden_channels,
             kernel_size=3, stride=1, padding=0,
             nonlinearity=nonlinearity, pool=False
@@ -237,20 +163,30 @@ class MultiDQNGNN(DQN):
         output_width, output_height = model_utils.conv_block_output_size(
             self.convs, input_width, input_height
         )
-        self.mlp = get_linear(
+        self.mlp = model_utils.get_linear(
             output_width * output_height * output_channels,
             embedding_size, hidden_sizes, nonlinearity=nonlinearity
         )
 
         # GNN
-        self.gnn_conv = gnn.GCNConv(embedding_size, embedding_size)
+        self.gnn_conv = gnn.GCNConv(
+            embedding_size, embedding_size, add_self_loops=False
+        )
 
-    def forward(self, state, adjacency, inactives):
+    def forward(self, states, adjacencies, inactives):
         q_values = torch.zeros(
-            (state.shape[0], state.shape[1], self.action_size),
+            (states.shape[0], states.shape[1], self.action_size),
             dtype=torch.float
         )
-        for batch_number, batch in enumerate(state):
+        active_indexes = (~inactives).nonzero()
+        for batch_number, batch in enumerate(states):
+            current_active_indexes = active_indexes[
+                active_indexes[:, 0] == batch_number
+            ]
+            # If every agent is inactive, skip computations
+            if current_active_indexes.shape[0] == 0:
+                continue
+
             # Encode the FOV observation of each agent
             # with the convolutional encoder
             encoded = self.convs(batch)
@@ -263,12 +199,12 @@ class MultiDQNGNN(DQN):
             # Create the graph used by the defined GNN conv,
             # specified by the given adjacency matrix
             edge_index, edge_weight = [], []
-            num_agents = adjacency.shape[0]
+            num_agents = adjacencies.shape[1]
             for i in range(num_agents):
                 for j in range(num_agents):
-                    if adjacency[i, j] != 0:
+                    if adjacencies[batch_number, i, j] != 0 or i == j:
                         edge_index.append([i, j])
-                        edge_weight.append(adjacency[i, j])
+                        edge_weight.append(adjacencies[batch_number, i, j])
             edge_index = torch.tensor(
                 edge_index, dtype=torch.long
             ).t().contiguous()
@@ -280,9 +216,10 @@ class MultiDQNGNN(DQN):
             )
 
             # Call the DQN with the embeddings associated to active agents
-            for handle in torch.nonzero(~inactives, as_tuple=True)[0]:
-                q_values[batch_number, handle.item(), :] = (
-                    super().forward(embeddings[handle.item()].unsqueeze(0))
+            for ind in current_active_indexes:
+                handle = ind[1].item()
+                q_values[batch_number, handle, :] = (
+                    super().forward(embeddings[handle].unsqueeze(0))
                 )
 
         # Return the Q-values tensor

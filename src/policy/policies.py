@@ -9,7 +9,7 @@ import wandb
 from torch_geometric.data import Data, Batch
 
 from env import env_utils
-from model import model_utils
+from policy import policy_utils
 from policy.action_selectors import ActionSelector, RandomActionSelector
 from model.models import DQN, DuelingDQN, SingleDQNGNN, MultiDQNGNN
 from policy.replay_buffers import ReplayBuffer
@@ -17,7 +17,8 @@ from policy.replay_buffers import ReplayBuffer
 
 LOSSES = {
     "huber": nn.SmoothL1Loss(),
-    "mse": nn.MSELoss()
+    "mse": nn.MSELoss(),
+    "masked_mse": policy_utils.MaskedMSELoss()
 }
 
 
@@ -237,13 +238,13 @@ class DQNPolicy(Policy):
             # Softmax Bellman
             if self.params.learning.softmax_bellman:
                 return np.sum(
-                    q_targets_next * model_utils.masked_softmax(
+                    q_targets_next * policy_utils.masked_softmax(
                         q_locals_next, next_legal_choices
                     ), axis=1, keepdims=True
                 )
 
             # Standard Bellman
-            best_choices = model_utils.masked_argmax(
+            best_choices = policy_utils.masked_argmax(
                 q_targets_next, next_legal_choices
             )
             return np.take_along_axis(q_targets_next, best_choices, axis=1)
@@ -255,10 +256,10 @@ class DQNPolicy(Policy):
 
             # Standard or softmax Bellman
             return (
-                model_utils.masked_max(q_targets_next, next_legal_choices)
+                policy_utils.masked_max(q_targets_next, next_legal_choices)
                 if not self.params.learning.softmax_bellman
                 else np.sum(
-                    model_utils.masked_softmax(
+                    policy_utils.masked_softmax(
                         q_targets_next, next_legal_choices
                     ) * q_targets_next, axis=1, keepdims=True
                 )
@@ -370,7 +371,7 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
 
         if training:
             self.qnetwork_target = copy.deepcopy(self.qnetwork_local)
-            self.criterion = model_utils.MaskedMSELoss()
+            self.criterion = policy_utils.MaskedMSELoss()
 
     def act(self, state, legal_choices, adjacency, inactives, training=False):
         '''
@@ -380,21 +381,26 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
         state = torch.from_numpy(
             state
         ).float().unsqueeze(0).to(self.device)
+        adjacency = torch.from_numpy(
+            adjacency
+        ).int().unsqueeze(0).to(self.device)
+        inactives = torch.from_numpy(
+            inactives
+        ).bool().unsqueeze(0).to(self.device)
 
         # Call the network
         self.qnetwork_local.eval()
         with torch.no_grad():
-            inactives = torch.tensor(inactives).to(self.device)
             choice_values = self.qnetwork_local(
                 state, adjacency, inactives
             ).squeeze().detach().cpu().numpy()
 
         # Select a legal choice based on the action selector
-        num_agents = adjacency.shape[0]
+        num_agents = adjacency.shape[1]
         actions = np.full((num_agents,), -1)
         is_best = np.full((num_agents,), False)
         for handle in range(num_agents):
-            if not inactives[handle]:
+            if not inactives[0, handle]:
                 actions[handle], is_best[handle] = self.choice_selector.select(
                     choice_values[handle], np.array(legal_choices[handle]),
                     training=(training and self.training)
@@ -429,9 +435,12 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
         states, choices, adjacencies, rewards, next_states, next_legal_choices, next_adjacencies, finished, inactives = experiences
 
         # Get expected Q-values from local model
+        # (batch_size, num_agents, choice_size)
         q_expected = self.qnetwork_local(
             states, adjacencies, inactives
-        ).gather(2, choices)  # generalize with -1 in superclass
+        )
+        # Gather to (batch_size, num_agents, 1)
+        q_expected = q_expected.gather(2, choices.unsqueeze(2)).squeeze(2)
 
         # Get expected Q-values from target model
         q_targets_next = torch.from_numpy(
@@ -439,7 +448,7 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
                 next_states, next_legal_choices.cpu().numpy(),
                 next_adjacencies, inactives
             )
-        ).to(self.device)
+        ).squeeze(2).to(self.device)
 
         # Compute Q-targets for current states
         q_targets = (
@@ -486,14 +495,14 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
             # Softmax Bellman
             if self.params.learning.softmax_bellman:
                 return np.sum(
-                    q_targets_next * model_utils.masked_softmax(
-                        q_locals_next, next_legal_choices
+                    q_targets_next * policy_utils.masked_softmax(
+                        q_locals_next, next_legal_choices, dim=2
                     ), axis=2, keepdims=True
                 )
 
             # Standard Bellman
-            best_choices = model_utils.masked_argmax(
-                q_targets_next, next_legal_choices
+            best_choices = policy_utils.masked_argmax(
+                q_targets_next, next_legal_choices, dim=2
             )
             return np.take_along_axis(q_targets_next, best_choices, axis=2)
 
@@ -504,11 +513,11 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
 
             # Standard or softmax Bellman
             return (
-                model_utils.masked_max(q_targets_next, next_legal_choices)
+                policy_utils.masked_max(q_targets_next, next_legal_choices)
                 if not self.params.learning.softmax_bellman
                 else np.sum(
-                    q_targets_next * model_utils.masked_softmax(
-                        q_targets_next, next_legal_choices
+                    q_targets_next * policy_utils.masked_softmax(
+                        q_targets_next, next_legal_choices, dim=2
                     ), axis=2, keepdims=True
                 )
             )

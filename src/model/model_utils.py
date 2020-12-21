@@ -3,61 +3,78 @@ import torch
 import torch.nn as nn
 
 
-class MaskedMSELoss(torch.nn.Module):
-
-    def __init__(self):
-        super(MaskedMSELoss, self).__init__()
-
-    def forward(self, input, target, mask):
-        diff = ((
-            torch.flatten(input) - torch.flatten(target)
-        ) ** 2.0) * torch.flatten(mask)
-        return torch.sum(diff) / torch.sum(mask)
-
-
-def masked_softmax(vec, mask, dim=1, temperature=1):
+def get_linear(input_size, output_size, hidden_sizes, nonlinearity="tanh"):
     '''
-    Softmax only on valid outputs
+    Returns a PyTorch Sequential object containing FC layers with
+    non-linear activation functions, by following the given input/hidden/output sizes
     '''
-    assert vec.shape == mask.shape
-    assert np.all(mask.astype(bool).any(axis=dim)), mask
+    assert len(hidden_sizes) >= 1
+    nl = nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
+    fc = [nn.Linear(input_size, hidden_sizes[0]), nl]
+    for i in range(1, len(hidden_sizes)):
+        fc.extend([nn.Linear(hidden_sizes[i - 1], hidden_sizes[i]), nl])
+    fc.extend([nn.Linear(hidden_sizes[-1], output_size)])
+    return nn.Sequential(*fc)
 
-    exps = vec.copy()
-    exps = np.exp(vec / temperature)
-    exps[~mask.astype(bool)] = 0
-    return exps / exps.sum(axis=dim, keepdims=True)
 
-
-def masked_max(vec, mask, dim=1):
+def conv_bn_act(input_channels, output_channels, kernel_size=3,
+                stride=1, padding=0, nonlinearity="relu"):
     '''
-    Max only on valid outputs
+    Returns a block composed by a convolutional layer and a batch norm one,
+    followed by a non-linearity (e.g. ReLU or Tanh)
     '''
-    assert vec.shape == mask.shape
-    assert np.all(mask.astype(bool).any(axis=dim)), mask
+    return [
+        nn.Conv2d(
+            input_channels, output_channels,
+            kernel_size=kernel_size, stride=stride, padding=padding
+        ),
+        nn.BatchNorm2d(output_channels),
+        nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
+    ]
 
-    res = vec.copy()
-    res[~mask.astype(bool)] = np.nan
-    return np.nanmax(res, axis=dim, keepdims=True)
 
-
-def masked_argmax(vec, mask, dim=1):
+def conv_bn_act_maxpool(input_channels, output_channels, kernel_size=3,
+                        stride=1, padding=0, nonlinearity="relu"):
     '''
-    Argmax only on valid outputs
+    Returns a block composed by a convolutional layer and a batch norm one,
+    followed by a non-linearity (e.g. ReLU or Tanh), with a final max pooling layer
     '''
-    assert vec.shape == mask.shape
-    assert np.all(mask.astype(bool).any(axis=dim)), mask
+    return (
+        conv_bn_act(
+            input_channels, output_channels, kernel_size=kernel_size,
+            stride=stride, padding=padding, nonlinearity=nonlinearity
+        ) +
+        [nn.MaxPool2d(kernel_size=kernel_size, stride=stride, padding=padding)]
+    )
 
-    res = vec.copy()
-    res[~mask.astype(bool)] = np.nan
-    argmax_arr = np.nanargmax(res, axis=dim)
 
-    # Argmax has no keepdims argument
-    if dim > 0:
-        new_shape = list(res.shape)
-        new_shape[dim] = 1
-        argmax_arr = argmax_arr.reshape(tuple(new_shape))
-
-    return argmax_arr
+def get_conv(input_channels, output_channels, hidden_channels,
+             kernel_size=3, stride=1, padding=0, nonlinearity="relu", pool=False):
+    '''
+    Returns a PyTorch Sequential object containing `conv_bn_act` or `conv_bn_act_pool` blocks,
+    by following the given input/hidden/output number of channels
+    '''
+    assert len(hidden_channels) >= 1
+    conv_block = conv_bn_act if not pool else conv_bn_act_maxpool
+    conv = conv_block(
+        input_channels, hidden_channels[0], kernel_size=kernel_size,
+        stride=stride, padding=padding, nonlinearity=nonlinearity
+    )
+    for i in range(1, len(hidden_channels)):
+        conv.extend(
+            conv_block(
+                hidden_channels[i - 1], hidden_channels[i],
+                kernel_size=kernel_size, stride=stride, padding=padding,
+                nonlinearity=nonlinearity
+            )
+        )
+    conv.extend(
+        conv_block(
+            hidden_channels[-1], output_channels, kernel_size=kernel_size,
+            stride=stride, padding=padding, nonlinearity=nonlinearity
+        )
+    )
+    return nn.Sequential(*conv)
 
 
 def conv_block_output_size(modules, input_width, input_height):

@@ -72,27 +72,27 @@ class ReplayBuffer:
 
         choices = torch.tensor(
             choices, dtype=torch.int64, device=self.device
-        ).reshape((self.batch_size, -1))
+        )
         rewards = torch.tensor(
             rewards, dtype=torch.float32, device=self.device
-        ).reshape((self.batch_size, -1))
+        )
         next_legal_choices = torch.tensor(
             next_legal_choices, dtype=torch.bool, device=self.device
-        ).reshape((self.batch_size, -1))
+        )
         finished = torch.tensor(
             finished, dtype=torch.uint8, device=self.device
-        ).reshape((self.batch_size, -1))
+        )
 
         if multi:
             adjacencies = torch.tensor(
                 adjacencies, dtype=torch.int64, device=self.device
-            ).reshape((self.batch_size, -1))
+            )
             next_adjacencies = torch.tensor(
                 next_adjacencies, dtype=torch.int64, device=self.device
-            ).reshape((self.batch_size, -1))
+            )
             inactives = torch.tensor(
-                inactives, dtype=torch.uint8, device=self.device
-            ).reshape((self.batch_size, -1))
+                inactives, dtype=torch.bool, device=self.device
+            )
             return (
                 states, choices, adjacencies, rewards,
                 next_states, next_legal_choices, next_adjacencies,
