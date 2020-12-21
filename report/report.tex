@@ -711,14 +711,14 @@ $$
 
 About the network architecture, the literature does not follow a clear definition, so that the term DQN is mostly linked to the whole training pipeline required to reach good estimates of the optimal $Q$ function. For example, in the original paper \cite{atari-dqn} DeepMind researchers use an initial CNN (Convolutional Neural Network), since their input is represented by videogame frames, followed by an MLP (Multi-Layer Perceptron). In our case, we sticked to just using the final fully-connected layers, as shown in figure \ref{fig:fc-dqn}, where the number of input neurons is given by the linearization of the selected observation, the number of hidden cells and the number of hidden layers are hyperparameters, while the number of outputs is equal to the size of the action space (in our case we have exactly $3$ choices). 
 
-\begin{figure}[!htb]
+\begin{figure}[h]
 	\centering
 	\includesvg[width = 200pt]{fc-dqn}
 	\caption{Simple DQN example with FC layers}
 	\label{fig:fc-dqn}
 \end{figure}
 
-Another thing to notice is that the weights used for the target versus the current (presumably non-optimal) $Q$-values are different. In practical terms, a separate network is used to estimate the TD target. This target network has the same architecture as the function approximator but with frozen parameters. Every $T$ steps (a hyperparameter) the parameters from the $Q$-network are copied to the target network. This leads to more stable training because it keeps the target function fixed (for a while). Because of this, assuming $\theta_i$ to represent the current network weights and $\theta_i^{-}$ the target network weights, the loss function is updated as follows:
+Another thing to notice is that the weights used for the target versus the current (presumably non-optimal) $Q$ values are different. In practical terms, a separate network is used to estimate the TD target. This target network has the same architecture as the function approximator but with frozen parameters. Every $T$ steps (a hyperparameter) the parameters from the $Q$-network are copied to the target network. This leads to more stable training because it keeps the target function fixed (for a while). Because of this, assuming $\theta_i$ to represent the current network weights and $\theta_i^{-}$ the target network weights, the loss function is updated as follows:
 $$
 L(\theta_i)=\mathbb{E}_{(s_t,a_t,r_{t+1},s_{t+1})}\left[\left(r_{t+1}+\gamma\max_{a_{t+1}}Q_{\theta_i^{-}}(s_{t+1}, a_{t+1}) - Q_{\theta_i}(s_t, a_t)\right)^2\right]
 $$
@@ -741,13 +741,50 @@ In practical terms, there are two main ways to implement an experience replay $E
 \end{itemize}
 
 \section{Improvements}
-\subsection{Double}
-One important issue of standard DQNs is that they tend to overestimate $Q$-values (which is mostly due to the $\max$ operator in the Bellman optimality equation), leading to unstable training and low quality policies. In order to mitigate the issue, in \cite{double-dqn} they propose to decouple the selection of an action from its evaluation. From a practical point of view, we only have to change how the TD error is computed:
+\subsection{Double}\label{subsec:double-dqn}
+One important issue of standard DQNs is that they tend to overestimate $Q$ values (which is mostly due to the $\max$ operator in the Bellman optimality equation), leading to unstable training and low quality policies. 
+
+In order to mitigate the issue, in \cite{double-dqn} they propose to decouple the selection of an action from its evaluation. From a practical point of view, we only have to change how the TD error is computed:
 $$
 L(\theta)=\mathbb{E}_{(s_t,a_t,r_{t+1},s_{t+1})}\left[\left(r_{t+1}+\gamma Q_{\theta^-}(s_{t+1},\argmax_{a \in A}Q_\theta(s_{t+1},a)) - Q_{\theta}(s_t, a_t)\right)^2\right]
 $$
 
+Intuitively, in double DQNs we are mitigating the overestimation bias by adding a second estimator, so that chances of both estimators being overoptimistic at the same action are simply lower. In this way, estimator $Q_{\theta}$ would "obtain the best action", while $Q_{\theta^-}$ would evaluate the $Q$ values for the estimated action, so as to average out the inherent noise.
+
 \subsection{Dueling}
+The main goal of dueling architectures, as first presented in \cite{dueling-dqn}, is still to solve the overestimation problem described in \ref{subsec:double-dqn}. Moreover, since for most applications it seems unnecessary to know the value of each action at every timestep, the dueling architecture can learn which states are valuable and which are not, without having to learn the effect of each action for each state.
+
+In particular, authors rely on the fact that the $Q$ function can be decomposed in the sum of two functions, the value function $V$ and the advantage function $A$, so that $Q_\pi(s,a)=V_\pi(s)+A_\pi(s,a)$. Moreover, from the expression of the state-value function $V_\pi(s)=\mathbb{E}\left[Q_\pi\left(s,a\right)\right]$ it follows that $\mathbb{E}\left[A_\pi\left(s,a\right)\right]=0$.
+
+From a practical point of view, a dueling DQN can be implemented by separating the $Q$ function estimation into two streams, the "value" and "advantage" one (as shown in the last layers in figure \ref{fig:dueling-dqn}), to then recombine them into a single output which represents the $Q$ estimates themselves.
+
+The recombination layer cannot simply be the sum of the presumed "value" and "advantage" outputs, since they actually aren't reliable estimates of the mentioned functions and they suffer from lack of identifiability (meaning that, given a $Q$ value we are not able to recover the corresponding $V$ and $A$ values uniquely), as thoroughly described in \cite{dueling-dqn}. To this end, authors decided to force the advantage function estimator to have zero advantage at the
+chosen action, so that output merging could be computed by the following formula:
+$$
+Q(s,a)=V(s) + \left(A(s,a) - \max_{a'\in A}A(s,a')\right)
+$$
+
+An alternative formulation of the recombination formula is to use the average (instead of the maximum) over the advantage function. In this way, the original semantics of $V$ and $A$ are lost, but authors report that it eases optimization, while still preserving the relative rank of the $A$ (and hence the $Q$) values. Formally:
+$$
+Q(s,a)=V(s) + \left(A(s,a) - \frac{1}{|A|}\sum_{a'\in A}A(s,a')\right)
+$$
+
+\begin{figure}[h]
+	\includegraphics[width=\textwidth]{dueling-dqn.png}
+	\caption{Dueling DQN architecture}
+	\label{fig:dueling-dqn}
+\end{figure}
+
+\subsection{Gradient noise reduction}
+\citeauthor{atari-dqn} observed that large gradients can be detrimental to the optimization of DQNs. This was noted in the context of large reward values, but it is possible that overestimation bias can also introduce variance in the gradient and have a negative effect.
+
+To solve this issue, in \cite{atari-dqn} authors decided to clip gradient values to a fairly small range (fixed to be $[-1,1]$), while in \cite{per} they went for a solution which clips the norm of the gradient to a specific maximum value (which was chosen to be $10$).
+
+By further inspecting the rationale behind \citeauthor{atari-dqn} (quoted below), we can conclude that using an MSE loss and clipping gradient values to be in $[-1,1]$ should give the same results as using an Huber loss without any kind of gradient noise reduction. However, it's not clear if \citeauthor{per} followed the same reasoning.
+\begin{displayquote}
+	We also found it helpful to clip the error term from the update to be between $−1$ and $1$. Because the absolute value loss function $|x|$ has a derivative of $−1$ for all negative values of $x$ and a derivative of $1$ for all positive values of $x$, clipping the squared error to be between $−1$ and $1$ corresponds to using an absolute value loss function for errors outside of the $(−1,1)$ interval. This form of error clipping further improved the stability of the algorithm.
+\end{displayquote}
+
 \subsection{Softmax Bellman}
 
 \chapter{GNN}
