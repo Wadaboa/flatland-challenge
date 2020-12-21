@@ -139,8 +139,8 @@ class MultiDQNGNN(DQN):
     '''
 
     def __init__(self, action_size, input_width, input_height, input_channels, output_channels,
-                 hidden_channels=[16, 32, 16], embedding_size=128, hidden_sizes=[128, 128],
-                 nonlinearity="relu"):
+                 hidden_channels=[16, 32, 16], pool=False, embedding_size=128, hidden_sizes=[128, 128],
+                 nonlinearity="relu", device="cpu"):
         super(MultiDQNGNN, self).__init__(
             embedding_size, action_size,
             hidden_sizes=hidden_sizes, nonlinearity=nonlinearity
@@ -151,18 +151,20 @@ class MultiDQNGNN(DQN):
         self.output_channels = output_channels
         self.hidden_channels = hidden_channels
         self.embedding_size = embedding_size
+        self.device = device
 
         # Encoder
         self.convs = model_utils.get_conv(
             input_channels, output_channels, hidden_channels,
             kernel_size=3, stride=1, padding=0,
-            nonlinearity=nonlinearity, pool=False
+            nonlinearity=nonlinearity, pool=pool
         )
 
         # MLP
         output_width, output_height = model_utils.conv_block_output_size(
             self.convs, input_width, input_height
         )
+        assert output_width > 0 and output_height > 0
         self.mlp = model_utils.get_linear(
             output_width * output_height * output_channels,
             embedding_size, hidden_sizes, nonlinearity=nonlinearity
@@ -176,7 +178,7 @@ class MultiDQNGNN(DQN):
     def forward(self, states, adjacencies, inactives):
         q_values = torch.zeros(
             (states.shape[0], states.shape[1], self.action_size),
-            dtype=torch.float
+            dtype=torch.float, device=self.device
         )
         active_indexes = (~inactives).nonzero()
         for batch_number, batch in enumerate(states):
@@ -206,9 +208,11 @@ class MultiDQNGNN(DQN):
                         edge_index.append([i, j])
                         edge_weight.append(adjacencies[batch_number, i, j])
             edge_index = torch.tensor(
-                edge_index, dtype=torch.long
+                edge_index, dtype=torch.long, device=self.device
             ).t().contiguous()
-            edge_weight = torch.tensor(edge_weight, dtype=torch.float)
+            edge_weight = torch.tensor(
+                edge_weight, dtype=torch.float, device=self.device
+            )
 
             # Compute embeddings for each node by performing graph convolutions
             embeddings = self.gnn_conv(

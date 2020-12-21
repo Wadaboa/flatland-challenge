@@ -86,10 +86,18 @@ def conv_block_output_size(modules, input_width, input_height):
     output_width, output_height = input_width, input_height
     for module in modules:
         if type(module) in (nn.Conv2d, nn.MaxPool2d):
-            kernel_size_h, kernel_size_w = module.kernel_size
-            stride_h, stride_w = module.stride
-            padding_h, padding_w = module.padding
-            dilation_h, dilation_w = module.dilation
+            if type(module) == nn.Conv2d:
+                kernel_size, stride, padding, dilation = get_conv2d_params(
+                    module
+                )
+            elif type(module) == nn.MaxPool2d:
+                kernel_size, stride, padding, dilation = get_maxpool2d_params(
+                    module
+                )
+            kernel_size_h, kernel_size_w = kernel_size
+            stride_h, stride_w = stride
+            padding_h, padding_w = padding
+            dilation_h, dilation_w = dilation
             output_width = np.floor((
                 output_width + 2 * padding_w -
                 dilation_w * (kernel_size_w - 1) - 1
@@ -99,3 +107,27 @@ def conv_block_output_size(modules, input_width, input_height):
                 dilation_h * (kernel_size_h - 1) - 1
             ) / stride_h + 1)
     return int(output_width), int(output_height)
+
+
+def get_conv2d_params(conv):
+    '''
+    Return kernel size, stride, padding and dilation for a Conv2d layer
+    '''
+    return (
+        conv.kernel_size,
+        conv.stride,
+        conv.padding,
+        conv.dilation
+    )
+
+
+def get_maxpool2d_params(pool):
+    '''
+    Return kernel size, stride, padding and dilation for a MaxPool2d layer
+    '''
+    return (
+        (pool.kernel_size, pool.kernel_size),
+        (pool.stride, pool.stride),
+        (pool.padding, pool.padding),
+        (pool.dilation, pool.dilation)
+    )

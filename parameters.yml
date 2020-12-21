@@ -42,7 +42,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 33
+  max_depth: 17
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -55,7 +55,7 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 33
+  max_depth: 8
 
 # Policy config
 policy:
@@ -117,9 +117,11 @@ learning:
   # Loss function
   loss:
     # Huber loss
-    huber: True
+    huber: False
     # MSE loss
     mse: False
+    # Masked MSE loss (for multi graph observation)
+    masked_mse: True
   # Type of gradient clipping
   gradient:
     # Maximum value for the norm of the gradients
@@ -167,6 +169,8 @@ model:
       - 32
     # CNN encoder size of the output channel
     output_channels: 32
+    # Add max pooling to the CNN encoder block
+    pool: True
 
 # Replay buffer config
 replay_buffer:

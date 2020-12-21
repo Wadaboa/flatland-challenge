@@ -364,14 +364,15 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
             state_size,
             self.params.model.multi_gnn.output_channels,
             hidden_channels=self.params.model.multi_gnn.hidden_channels,
+            pool=self.params.model.multi_gnn.pool,
             embedding_size=self.params.model.multi_gnn.embedding_size,
             hidden_sizes=self.params.model.hidden_sizes,
             nonlinearity=self.params.model.nonlinearity.get_true_key(),
+            device=self.device
         ).to(self.device)
 
         if training:
             self.qnetwork_target = copy.deepcopy(self.qnetwork_local)
-            self.criterion = policy_utils.MaskedMSELoss()
 
     def act(self, state, legal_choices, adjacency, inactives, training=False):
         '''

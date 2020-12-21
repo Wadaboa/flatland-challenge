@@ -66,7 +66,7 @@ def extract_fov(matrix, center_index, window_size, pad=0):
     offset = window_size // 2
     yl, yu = center_index[0] - offset, center_index[0] + offset
     xl, xu = center_index[1] - offset, center_index[1] + offset
-    if xl >= 0 and xu < m and yl >= 0 and yu < n:
+    if xl >= 0 and xu < n and yl >= 0 and yu < m:
         return np.array(matrix[yl: yu + 1, xl:xu + 1], dtype=matrix.dtype)
 
     # Window has to be padded
