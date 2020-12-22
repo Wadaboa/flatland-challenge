@@ -10,13 +10,7 @@ from torch_geometric.data import Data, Batch
 Experience = namedtuple(
     "Experience", field_names=[
         "state", "choice", "reward", "next_state",
-        "next_legal_choices", "finished"
-    ]
-)
-MultiExperience = namedtuple(
-    "Experience", field_names=[
-        "state", "choice", "adjacency", "reward", "next_state",
-        "next_legal_choices", "next_adjacency", "finished", "inactive"
+        "next_legal_choices", "finished", "moving"
     ]
 )
 
@@ -35,28 +29,20 @@ class ReplayBuffer:
         self.memory = deque(maxlen=buffer_size)
         self.device = device
 
-    def add(self, experience, multi=False):
+    def add(self, experience):
         '''
         Add a new experience to memory
         '''
-        if not multi:
-            self.memory.append(Experience(*experience))
-        else:
-            self.memory.append(MultiExperience(*experience))
+        self.memory.append(Experience(*experience))
 
-    def sample(self, multi=False):
+    def sample(self):
         '''
         Randomly sample a batch of experiences from memory.
         Each returned tensor has shape (batch_size, *)
         '''
-        if not multi:
-            states, choices, rewards, next_states, next_legal_choices, finished = zip(
-                *random.sample(self.memory, k=self.batch_size)
-            )
-        else:
-            states, choices, adjacencies, rewards, next_states, next_legal_choices, next_adjacencies, finished, inactives = zip(
-                *random.sample(self.memory, k=self.batch_size)
-            )
+        states, choices, rewards, next_states, next_legal_choices, finished, moving = zip(
+            *random.sample(self.memory, k=self.batch_size)
+        )
 
         # Check for PyTorch Geometric
         if isinstance(states[0], np.ndarray):
@@ -82,24 +68,11 @@ class ReplayBuffer:
         finished = torch.tensor(
             finished, dtype=torch.uint8, device=self.device
         )
+        moving = torch.tensor(
+            moving, dtype=torch.bool, device=self.device
+        )
 
-        if multi:
-            adjacencies = torch.tensor(
-                adjacencies, dtype=torch.int64, device=self.device
-            )
-            next_adjacencies = torch.tensor(
-                next_adjacencies, dtype=torch.int64, device=self.device
-            )
-            inactives = torch.tensor(
-                inactives, dtype=torch.bool, device=self.device
-            )
-            return (
-                states, choices, adjacencies, rewards,
-                next_states, next_legal_choices, next_adjacencies,
-                finished, inactives
-            )
-
-        return states, choices, rewards, next_states, next_legal_choices, finished
+        return states, choices, rewards, next_states, next_legal_choices, finished, moving
 
     def can_sample(self):
         '''

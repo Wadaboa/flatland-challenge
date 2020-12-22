@@ -89,8 +89,24 @@ class ActionSelector:
         assert isinstance(decay_schedule, ParameterDecay)
         self.decay_schedule = decay_schedule
 
-    def select(self, actions, legal_actions=None, val=False):
+    def select(self, actions, legal_actions=None, training=False):
         raise NotImplementedError()
+
+    def select_many(self, actions, moving_agents, legal_actions, training=False):
+        assert len(moving_agents.shape) == 1
+        assert len(legal_actions.shape) == 2
+        assert len(actions.shape) == 2
+        assert moving_agents.shape[0] == legal_actions.shape[0] == actions.shape[0]
+        assert legal_actions.shape[1] == actions.shape[1]
+        num_agents = moving_agents.shape[0]
+        choices = np.full((num_agents,), -1)
+        is_best = np.full((num_agents,), False)
+        for handle in range(num_agents):
+            if moving_agents[handle]:
+                choices[handle], is_best[handle] = self.select(
+                    actions[handle], legal_actions[handle], training=training
+                )
+        return choices, is_best
 
     def decay(self):
         return None

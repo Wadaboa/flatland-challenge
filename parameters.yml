@@ -116,12 +116,10 @@ learning:
   softmax_bellman: True
   # Loss function
   loss:
-    # Huber loss
+    # (Masked) Huber loss
     huber: True
-    # MSE loss
+    # (Masked) MSE loss
     mse: False
-    # Masked MSE loss (for multi graph observation)
-    masked_mse: False
   # Type of gradient clipping
   gradient:
     # Maximum value for the norm of the gradients
@@ -196,7 +194,7 @@ generic:
   # Device config
   use_gpu: False
   # Enable wandb logging
-  enable_wandb: True
+  enable_wandb: False
   # Checkpoint to save model to wandb
   wandb_checkpoint: 500
   # Gradients logging in wandb
@@ -244,18 +242,18 @@ training:
 
 testing:
   # Number of episodes to run
-  episodes: 1
+  episodes: 100
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: ""
+  model: "checkpoints/20201221-230143-3400"
   # Verbose option
   verbose: False
   # Renderer config
   renderer:
     # Enable renderer
-    enabled: True
+    enabled: False
     # Seconds to sleep between moves
     sleep: 0
     # Save intermediate renderer frames
-    save_frames: True
+    save_frames: False

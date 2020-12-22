@@ -190,58 +190,22 @@ class MultiGNN(nn.Module):
             embedding_size, embedding_size, add_self_loops=False
         )
 
-    def forward(self, states, adjacencies, mask=None):
-        if mask is None:
-            mask = torch.ones(
-                (states.shape[0], states.shape[1], 1), dtype=torch.bool,
-                device=self.device
-            )
-        active_indexes = mask.nonzero()
-        embeddings = torch.empty(
-            size=(
-                states.shape[0],
-                states.shape[1],
-                self.embedding_size
-            ), dtype=torch.float,
-            device=self.device
+    def forward(self, states):
+        print(states.state.shape)
+        # Encode the FOV observation of each agent
+        # with the convolutional encoder
+        encoded = self.convs(states.state)
+
+        print(encoded.shape)
+
+        # Use an MLP from the encoded values to have a
+        # consistent number of features
+        flattened = torch.flatten(encoded, start_dim=1)
+        features = self.mlp(flattened)
+
+        print(features.shape)
+
+        # Compute embeddings for each node by performing graph convolutions
+        return self.gnn_conv(
+            features, states.edge_index, states.edge_weight
         )
-        for batch_number, batch in enumerate(states):
-            current_active_indexes = active_indexes[
-                active_indexes[:, 0] == batch_number
-            ]
-            # If every agent is inactive, skip computations
-            if current_active_indexes.shape[0] == 0:
-                continue
-
-            # Encode the FOV observation of each agent
-            # with the convolutional encoder
-            encoded = self.convs(batch)
-
-            # Use an MLP from the encoded values to have a
-            # consistent number of features
-            flattened = torch.flatten(encoded, start_dim=1)
-            features = self.mlp(flattened)
-
-            # Create the graph used by the defined GNN conv,
-            # specified by the given adjacency matrix
-            edge_index, edge_weight = [], []
-            num_agents = adjacencies.shape[1]
-            for i in range(num_agents):
-                for j in range(num_agents):
-                    if adjacencies[batch_number, i, j] != 0 or i == j:
-                        edge_index.append([i, j])
-                        edge_weight.append(adjacencies[batch_number, i, j])
-            edge_index = torch.tensor(
-                edge_index, dtype=torch.long, device=self.device
-            ).t().contiguous()
-            edge_weight = torch.tensor(
-                edge_weight, dtype=torch.float, device=self.device
-            )
-
-            # Compute embeddings for each node by performing graph convolutions
-            embeddings[batch_number] = self.gnn_conv(
-                features, edge_index, edge_weight=edge_weight
-            )
-
-        # Return embeddings of size (batch_size * num_agents, embedding_size)
-        return embeddings.flatten(start_dim=0, end_dim=1)

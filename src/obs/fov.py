@@ -1,6 +1,8 @@
 
 import torch
 import numpy as np
+from torch_geometric.utils import add_remaining_self_loops
+from torch_geometric.data import Data
 
 from flatland.core.env_observation_builder import ObservationBuilder
 from flatland.core.grid.rail_env_grid import RailEnvTransitions
@@ -35,6 +37,7 @@ class FOVObservator(ObservationBuilder):
         self.agent_malfunctions = None
         self.agent_speeds = None
         self.agent_targets = None
+        self.data_object = None
 
     def reset(self):
         if self.predictor is not None:
@@ -151,10 +154,27 @@ class FOVObservator(ObservationBuilder):
                 self.agent_speeds[
                     agent_position[0], agent_position[1]
                 ] = agent.speed_data['speed']
+
+        # Compute adjacency matrix and store it in a
+        # PyTorch Geometric Data object
+        adjacency = self.env.agents_adjacency_matrix(
+            radius=self.max_depth
+        )
+        edge_index = torch.from_numpy(
+            np.argwhere(adjacency != 0), dtype=torch.long
+        ).t().contiguous()
+        edge_index = add_remaining_self_loops(edge_index, fill_value=0)
+        edge_weight = torch.from_numpy(
+            adjacency[np.nonzero(adjacency)], dtype=torch.long
+        )
+        self.data_object = Data(
+            edge_index=edge_index, edge_weight=edge_weight
+        )
+
         return super().get_many(handles)
 
     def get(self, handle=0):
-        self.observations[handle] = np.full(
+        obs = np.full(
             (self.observation_dim, self.max_depth, self.max_depth), -1
         )
         if (self.predictions[handle] is not None):
@@ -193,11 +213,18 @@ class FOVObservator(ObservationBuilder):
                     agent_position, self.max_depth, -1
                 )
 
-                self.observations[handle][0] = cell_type
-                self.observations[handle][1] = cell_orientation
-                self.observations[handle][2] = path_fov
-                self.observations[handle][3] = distance_fov
-                self.observations[handle][4] = agents_fov
-                self.observations[handle][5] = targets_fov
+                obs[0] = cell_type
+                obs[1] = cell_orientation
+                obs[2] = path_fov
+                obs[3] = distance_fov
+                obs[4] = agents_fov
+                obs[5] = targets_fov
+
+        # Create a PyTorch Geometric Data object
+        self.observations[handle] = Data(
+            edge_index=self.data_object.edge_index,
+            edge_weight=self.data_object.edge_weight,
+            state=torch.from_numpy(obs, dtype=torch.float).unsqueeze(0)
+        )
 
         return self.observations[handle]

@@ -188,6 +188,12 @@ def train_agents(args, writer):
             # Compute an action for each agent, if necessary
             inference_timer.start()
 
+            legal_choices, update_values = train_env.pre_act()
+            choices, is_best = policy.act(
+                list(obs.values()), legal_choices,
+                update_values, training=True
+            )
+
             # If the multi agent observation was selected, then the policy.act method
             # should be called with the entire set of observations
             if args.policy.type.multi_agent_graph:
@@ -203,13 +209,10 @@ def train_agents(args, writer):
                                 agent, legal_actions[agent]
                             )
                             update_values[agent] = True
-                adjacency = train_env.agents_adjacency_matrix(
-                    radius=args.observator.max_depth
-                )
                 choices, is_best = policy.act(
-                    np.array(list(obs.values())),
+                    list(obs.values()),
                     np.array(list(legal_choices.values())),
-                    adjacency, ~np.array(update_values), training=True
+                    ~np.array(update_values), training=True
                 )
                 for agent in train_env.get_agent_handles():
                     action = RailEnvActions.DO_NOTHING.value

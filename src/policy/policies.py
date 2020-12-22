@@ -16,9 +16,8 @@ from policy.replay_buffers import ReplayBuffer
 
 
 LOSSES = {
-    "huber": nn.SmoothL1Loss(),
-    "mse": nn.MSELoss(),
-    "masked_mse": policy_utils.MaskedMSELoss()
+    "huber": policy_utils.MaskedHuberLoss(),
+    "mse": policy_utils.MaskedMSELoss(),
 }
 
 
@@ -132,29 +131,34 @@ class DQNPolicy(Policy):
             log="all", log_freq=self.params.generic.wandb_gradients.checkpoint
         )
 
-    def act(self, state, legal_choices, training=False):
+    def act(self, states, legal_choices, moving_agents, training=False):
         '''
         Perform action selection based on the Q-values returned by the network
         '''
         # Add 1 dimension to state to simulate a mini-batch of size 1
-        if isinstance(state, np.ndarray):
-            state = torch.from_numpy(
-                state
-            ).float().unsqueeze(0).to(self.device)
-        elif isinstance(state, Data):
-            state = Batch.from_data_list([state]).to(self.device)
+        if isinstance(states, np.ndarray):
+            states = torch.tensor(
+                states, dtype=torch.float, device=self.device
+            )
+        elif isinstance(states, Data):
+            states = Batch.from_data_list(states).to(self.device)
+
+        # Add 1 dimension to moving agents to simulate a mini-batch of size 1
+        t_moving_agents = torch.from_numpy(
+            moving_agents
+        ).bool().unsqueeze(0).to(self.device)
 
         # Call the network
         self.qnetwork_local.eval()
         with torch.no_grad():
             choice_values = self.qnetwork_local(
-                state
+                states=states, mask=t_moving_agents
             ).squeeze().detach().cpu().numpy()
 
         # Select a legal choice based on the action selector
-        legal_choices = np.array(legal_choices)
-        return self.choice_selector.select(
-            choice_values, legal_choices, training=(training and self.training)
+        return self.choice_selector.select_many(
+            choice_values, moving_agents, np.array(legal_choices),
+            training=(training and self.training)
         )
 
     def step(self, experience):
@@ -181,18 +185,19 @@ class DQNPolicy(Policy):
         '''
         # Sample a batch of experiences
         experiences = self.memory.sample()
-        states, choices, rewards, next_states, next_legal_choices, finished = experiences
+        states, choices, rewards, next_states, next_legal_choices, finished, moving = experiences
 
         # Get expected Q-values from local model
-        q_expected = self.qnetwork_local(states)
-        q_expected = q_expected.gather(1, choices.unsqueeze(1))
+        q_expected = self.qnetwork_local(states, mask=moving).gather(
+            1, choices.unsqueeze(1)
+        ).squeeze(1)
 
         # Get expected Q-values from target model
         q_targets_next = torch.from_numpy(
             self._get_q_targets_next(
-                next_states, next_legal_choices.cpu().numpy()
+                next_states, next_legal_choices.cpu().numpy(), moving
             )
-        ).to(self.device)
+        ).squeeze(1).to(self.device)
 
         # Compute Q-targets for current states
         q_targets = (
@@ -203,7 +208,7 @@ class DQNPolicy(Policy):
         )
 
         # Compute and minimize the loss
-        self.loss = self.criterion(q_expected, q_targets)
+        self.loss = self.criterion(q_expected, q_targets, mask=~moving)
         self.optimizer.zero_grad()
         self.loss.backward()
         if self.params.learning.gradient.clip_norm:
@@ -223,17 +228,17 @@ class DQNPolicy(Policy):
         # Update target network
         self._soft_update(self.qnetwork_local, self.qnetwork_target)
 
-    def _get_q_targets_next(self, next_states, next_legal_choices):
+    def _get_q_targets_next(self, next_states, next_legal_choices, moving):
         '''
         Get expected Q-values from target network
         '''
 
         def _double_dqn():
             q_locals_next = self.qnetwork_local(
-                next_states
+                next_states, mask=moving
             ).detach().cpu().numpy()
             q_targets_next = self.qnetwork_target(
-                next_states
+                next_states, mask=moving
             ).detach().cpu().numpy()
 
             # Softmax Bellman
@@ -327,7 +332,6 @@ class SingleAgentDQNGNNPolicy(DQNPolicy):
             params, state_size, choice_selector, training=training
         )
 
-        # Q-Network
         self.qnetwork_local = policy_utils.Sequential(
             SingleGNN(
                 state_size,
@@ -360,7 +364,6 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
             choice_selector, training=training
         )
 
-        # Q-Network
         self.qnetwork_local = policy_utils.Sequential(
             MultiGNN(
                 self.params.observator.max_depth,
@@ -379,157 +382,6 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
 
         if training:
             self.qnetwork_target = copy.deepcopy(self.qnetwork_local)
-
-    def act(self, state, legal_choices, adjacency, inactives, training=False):
-        '''
-        Perform action selection based on the Q-values returned by the network
-        '''
-        # Add 1 dimension to state to simulate a mini-batch of size 1
-        state = torch.from_numpy(
-            state
-        ).float().unsqueeze(0).to(self.device)
-        adjacency = torch.from_numpy(
-            adjacency
-        ).int().unsqueeze(0).to(self.device)
-        inactives = torch.from_numpy(
-            inactives
-        ).bool().unsqueeze(0).to(self.device)
-
-        # Call the network
-        self.qnetwork_local.eval()
-        with torch.no_grad():
-            choice_values = self.qnetwork_local(
-                states=state, adjacencies=adjacency, mask=~inactives
-            ).squeeze().detach().cpu().numpy()
-
-        # Select a legal choice based on the action selector
-        num_agents = adjacency.shape[1]
-        actions = np.full((num_agents,), -1)
-        is_best = np.full((num_agents,), False)
-        for handle in range(num_agents):
-            if not inactives[0, handle]:
-                actions[handle], is_best[handle] = self.choice_selector.select(
-                    choice_values[handle], np.array(legal_choices[handle]),
-                    training=(training and self.training)
-                )
-
-        return actions, is_best
-
-    def step(self, experience):
-        '''
-        Add an experience to memory and eventually perform a training step
-        '''
-        assert self.training, "Policy has been initialized for evaluation only"
-
-        # Save experience in replay memory
-        self.memory.add(experience, multi=True)
-
-        # Learn every `checkpoint` time steps
-        # (if enough samples are available in memory, get random subset and learn)
-        self.time_step = (
-            self.time_step + 1
-        ) % self.params.replay_buffer.checkpoint
-        if self.time_step == 0 and self.memory.can_sample():
-            self.qnetwork_local.train()
-            self._learn()
-
-    def _learn(self):
-        '''
-        Perform a learning step
-        '''
-        # Sample a batch of experiences
-        experiences = self.memory.sample(multi=True)
-        states, choices, adjacencies, rewards, next_states, next_legal_choices, next_adjacencies, finished, inactives = experiences
-
-        # Get expected Q-values from local model
-        # (batch_size, num_agents, choice_size)
-        q_expected = self.qnetwork_local(
-            states=states, adjacencies=adjacencies, mask=~inactives
-        )
-        # Gather to (batch_size, num_agents, 1)
-        q_expected = q_expected.gather(2, choices.unsqueeze(2)).squeeze(2)
-
-        # Get expected Q-values from target model
-        q_targets_next = torch.from_numpy(
-            self._get_q_targets_next(
-                next_states, next_legal_choices.cpu().numpy(),
-                next_adjacencies, inactives
-            )
-        ).squeeze(2).to(self.device)
-
-        # Compute Q-targets for current states
-        q_targets = (
-            rewards + (
-                self.params.learning.discount *
-                q_targets_next * (1 - finished)
-            )
-        )
-
-        # Compute and minimize the loss
-        self.loss = self.criterion(q_expected, q_targets, inactives)
-        self.optimizer.zero_grad()
-        self.loss.backward()
-        if self.params.learning.gradient.clip_norm:
-            nn.utils.clip_grad.clip_grad_norm_(
-                self.qnetwork_local.parameters(), self.params.learning.gradient.max_norm
-            )
-        elif self.params.learning.gradient.clamp_values:
-            nn.utils.clip_grad.clip_grad_value_(
-                self.qnetwork_local.parameters(), self.params.learning.gradient.value_limit
-            )
-        self.optimizer.step()
-
-        # Log loss to wandb
-        if self.params.generic.enable_wandb and self.params.generic.wandb_gradients.enabled:
-            wandb.log({"loss": self.loss})
-
-        # Update target network
-        self._soft_update(self.qnetwork_local, self.qnetwork_target)
-
-    def _get_q_targets_next(self, next_states, next_legal_choices, next_adjacencies, inactives):
-        '''
-        Get expected Q-values from target network
-        '''
-
-        def _double_dqn():
-            q_locals_next = self.qnetwork_local(
-                states=next_states, adjacencies=next_adjacencies, mask=~inactives
-            ).detach().cpu().numpy()
-            q_targets_next = self.qnetwork_target(
-                states=next_states, adjacencies=next_adjacencies, mask=~inactives
-            ).detach().cpu().numpy()
-
-            # Softmax Bellman
-            if self.params.learning.softmax_bellman:
-                return np.sum(
-                    q_targets_next * policy_utils.masked_softmax(
-                        q_locals_next, next_legal_choices, dim=2
-                    ), axis=2, keepdims=True
-                )
-
-            # Standard Bellman
-            best_choices = policy_utils.masked_argmax(
-                q_targets_next, next_legal_choices, dim=2
-            )
-            return np.take_along_axis(q_targets_next, best_choices, axis=2)
-
-        def _dqn():
-            q_targets_next = self.qnetwork_target(
-                states=next_states, adjacencies=next_adjacencies, mask=~inactives
-            ).detach().cpu().numpy()
-
-            # Standard or softmax Bellman
-            return (
-                policy_utils.masked_max(q_targets_next, next_legal_choices)
-                if not self.params.learning.softmax_bellman
-                else np.sum(
-                    q_targets_next * policy_utils.masked_softmax(
-                        q_targets_next, next_legal_choices, dim=2
-                    ), axis=2, keepdims=True
-                )
-            )
-
-        return _double_dqn() if self.params.model.double else _dqn()
 
 
 POLICIES = {

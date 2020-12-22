@@ -10,6 +10,7 @@ from flatland.envs.persistence import RailEnvPersister
 from flatland.utils.rendertools import RenderTool, AgentRenderVariant
 
 from obs import normalization
+from env import env_utils
 from env.deadlocks import DeadlocksDetector
 from env.railway_encoding import CellOrientationGraph
 from obs.binary_tree import BinaryTreeObservator
@@ -32,6 +33,8 @@ class RailEnvWrapper(RailEnv):
         self.partial_rewards = dict()
         self.arrived_turns = dict()
         self.stop_actions = dict()
+        self.current_info = dict()
+        self.num_actions = self.get_num_actions()
 
     def _get_state_size(self):
         '''
@@ -181,21 +184,23 @@ class RailEnvWrapper(RailEnv):
         self.deadlocks_detector.reset(self.get_num_agents())
 
         # Build the info dict
-        info_dict = {
+        self.current_info = {
             'action_required': {}, 'malfunction': {}, 'speed': {},
             'status': {}, 'deadlocks': {}, 'deadlock_turns': {}
         }
         for i, agent in enumerate(self.agents):
-            info_dict['action_required'][i] = self.action_required(agent)
-            info_dict['malfunction'][i] = agent.malfunction_data['malfunction']
-            info_dict['speed'][i] = agent.speed_data['speed']
-            info_dict['status'][i] = agent.status
-            info_dict["deadlocks"][i] = self.deadlocks_detector.deadlocks[i]
-            info_dict["deadlock_turns"][i] = self.deadlocks_detector.deadlock_turns[i]
+            self.current_info['action_required'][i] = self.action_required(
+                agent
+            )
+            self.current_info['malfunction'][i] = agent.malfunction_data['malfunction']
+            self.current_info['speed'][i] = agent.speed_data['speed']
+            self.current_info['status'][i] = agent.status
+            self.current_info["deadlocks"][i] = self.deadlocks_detector.deadlocks[i]
+            self.current_info["deadlock_turns"][i] = self.deadlocks_detector.deadlock_turns[i]
 
         # Return the new observation vectors for each agent
         observation_dict = self._get_observations()
-        return (self._normalize_obs(observation_dict), info_dict)
+        return (self._normalize_obs(observation_dict), self.current_info)
 
     def _generate_rail(self):
         '''
@@ -222,6 +227,7 @@ class RailEnvWrapper(RailEnv):
         info["deadlocks"], info["deadlock_turns"] = self.deadlocks_detector.step(
             self
         )
+        self.current_info = info
 
         # Patch dones dict, update arrived agents turns and stop actions
         remove_all = False
@@ -326,6 +332,66 @@ class RailEnvWrapper(RailEnv):
                             (radius is None or (radius is not None and distance <= radius))):
                         adj[i, j] = distance
         return adj
+
+    def pre_act(self):
+        '''
+        Return the list of legal actions and choices for each agent and a list 
+        representing which agent needs to make a choice 
+        '''
+        legal_choices = np.full(
+            (self.get_num_agents(), env_utils.RailEnvChoices.choice_size()),
+            env_utils.RailEnvChoices.default_choices()
+        )
+        legal_actions = np.full(
+            (self.get_num_agents(), self.num_actions), False
+        )
+        update_values = np.full((self.get_num_agents(),), False)
+        for agent in self.get_agent_handles():
+            legal_actions[
+                agent, self.railway_encoding.get_agent_actions(agent)
+            ] = True
+            if self.current_info['action_required'][agent] and self.railway_encoding.is_real_decision(agent):
+                legal_choices[agent] = self.railway_encoding.get_legal_choices(
+                    agent, legal_actions[agent]
+                )
+                update_values[agent] = True
+        return legal_actions, legal_choices, update_values
+
+    def post_act(self, choices, legal_actions, update_values):
+        '''
+        '''
+        action_dict = dict()
+        for agent in self.get_agent_handles():
+            action = RailEnvActions.DO_NOTHING.value
+            if info['action_required'][agent]:
+                if train_env.railway_encoding.is_real_decision(agent):
+                    action = self.railway_encoding.map_choice_to_action(
+                        choices[agent], legal_actions[agent]
+                    )
+                    assert action != RailEnvActions.DO_NOTHING.value, (
+                        choices[agent], legal_actions[agent]
+                    )
+                    choices_count[choices[agent]] += 1
+                    choices_taken.append(choices[agent])
+                    num_exploration_choices[choices[agent]] += int(
+                        not(is_best[agent])
+                    )
+                    choice_dict.update({agent: choices[agent]})
+                else:
+                    actions = self.railway_encoding.get_agent_actions(
+                        agent
+                    )
+                    assert len(actions) == 1, actions
+                    action = actions[0]
+            action_dict.update({agent: action})
+
+    def get_num_actions(self):
+        '''
+        Return the number of possible RailEnvActions
+        '''
+        return len([
+            action_type for _, action_type in RailEnvActions.__members__.items()
+        ])
 
     def _normalize_obs(self, obs):
         '''
