@@ -184,7 +184,8 @@ class DQNPolicy(Policy):
         states, choices, rewards, next_states, next_legal_choices, finished = experiences
 
         # Get expected Q-values from local model
-        q_expected = self.qnetwork_local(states).gather(1, choices)
+        q_expected = self.qnetwork_local(states)
+        q_expected = q_expected.gather(1, choices.unsqueeze(1))
 
         # Get expected Q-values from target model
         q_targets_next = torch.from_numpy(

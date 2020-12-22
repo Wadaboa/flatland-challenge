@@ -65,6 +65,7 @@
 % Define argmax and softmax
 \DeclareMathOperator*{\argmax}{arg\,max}
 \DeclareMathOperator*{\softmax}{soft\,max}
+\DeclareMathOperator*{\mellowmax}{mellow\,max}
 
 
 \begin{document}
@@ -655,7 +656,7 @@ Backing the reported reasoning, the following rewards shaping was perfomed:
 	\item If an agent performed a stop action, give the agent a reward which is worse than the the reward it could have received by choosing any other action. Then, multiply this weight by the number of turns the agent consequently decided to perform a stop action and compute the product of it with a stop penalty parameter. Finally, this reward is clipped to the maximum value given by a deadlock penalty. In this way, performing a lot of consecutive stop actions has an exponential decrease in the received rewards.
 \end{itemize}
 
-\section{Action selection}
+\section{Action selection}\label{sec:action-selection}
 A reinforcement learning algorithm could be considered as a search algorithm in the huge space of feasible policies. In that case, the aim of our agent would be to travel along the landscape of "policy values" in order to find the global optimum, i.e. the best policy overall. The final goal would thus be to constantly improve the current best policy, via some kind of local search, which in the case of neural networks is implemented using gradient descent.
 
 Because of this local search perspective, another key aspect of the reinforcement learning algorithm is to balance the exploration-exploitation tradeoff. In particular, by exploration we mean probing a large portion of the search space with the hope of finding other promising solutions that are yet to be refined, while exploitation is instead related to the refinement of an already promising solution, by intensifying the search in its neighborhood.
@@ -751,7 +752,7 @@ $$
 
 Intuitively, in double DQNs we are mitigating the overestimation bias by adding a second estimator, so that chances of both estimators being overoptimistic at the same action are simply lower. In this way, estimator $Q_{\theta}$ would "obtain the best action", while $Q_{\theta^-}$ would evaluate the $Q$ values for the estimated action, so as to average out the inherent noise.
 
-\subsection{Dueling}
+\subsection{Dueling}\label{subsec:dueling-dqn}
 The main goal of dueling architectures, as first presented in \cite{dueling-dqn}, is still to solve the overestimation problem described in \ref{subsec:double-dqn}. Moreover, since for most applications it seems unnecessary to know the value of each action at every timestep, the dueling architecture can learn which states are valuable and which are not, without having to learn the effect of each action for each state.
 
 In particular, authors rely on the fact that the $Q$ function can be decomposed in the sum of two functions, the value function $V$ and the advantage function $A$, so that $Q_\pi(s,a)=V_\pi(s)+A_\pi(s,a)$. Moreover, from the expression of the state-value function $V_\pi(s)=\mathbb{E}\left[Q_\pi\left(s,a\right)\right]$ it follows that $\mathbb{E}\left[A_\pi\left(s,a\right)\right]=0$.
@@ -764,7 +765,7 @@ $$
 Q(s,a)=V(s) + \left(A(s,a) - \max_{a'\in A}A(s,a')\right)
 $$
 
-An alternative formulation of the recombination formula is to use the average (instead of the maximum) over the advantage function. In this way, the original semantics of $V$ and $A$ are lost, but authors report that it eases optimization, while still preserving the relative rank of the $A$ (and hence the $Q$) values. Formally:
+An alternative formulation of the recombination layer is to use the average (instead of the maximum) over the advantage function. In this way, the original semantics of $V$ and $A$ are lost, but authors report that it eases optimization, while still preserving the relative rank of the $A$ (and hence the $Q$) values. Formally:
 $$
 Q(s,a)=V(s) + \left(A(s,a) - \frac{1}{|A|}\sum_{a'\in A}A(s,a')\right)
 $$
@@ -782,10 +783,19 @@ To solve this issue, in \cite{atari-dqn} authors decided to clip gradient values
 
 By further inspecting the rationale behind \citeauthor{atari-dqn} (quoted below), we can conclude that using an MSE loss and clipping gradient values to be in $[-1,1]$ should give the same results as using an Huber loss without any kind of gradient noise reduction. However, it's not clear if \citeauthor{per} followed the same reasoning.
 \begin{displayquote}
-	We also found it helpful to clip the error term from the update to be between $−1$ and $1$. Because the absolute value loss function $|x|$ has a derivative of $−1$ for all negative values of $x$ and a derivative of $1$ for all positive values of $x$, clipping the squared error to be between $−1$ and $1$ corresponds to using an absolute value loss function for errors outside of the $(−1,1)$ interval. This form of error clipping further improved the stability of the algorithm.
+	We also found it helpful to clip the error term from the update to be between $-1$ and $1$. Because the absolute value loss function $|x|$ has a derivative of $-1$ for all negative values of $x$ and a derivative of $1$ for all positive values of $x$, clipping the squared error to be between $-1$ and $1$ corresponds to using an absolute value loss function for errors outside of the $(-1,1)$ interval. This form of error clipping further improved the stability of the algorithm.
 \end{displayquote}
 
 \subsection{Softmax Bellman}
+So far, we sticked to training the presented models with the reported losses, by having Bellman optimality in mind. As already discussed in \ref{subsec:double-dqn} and \ref{subsec:dueling-dqn}, the main goal of the authors that developed the double and dueling DQN improvements was to reduce the overestimation bias of the resulting $Q$ values, which is mainly due to the use of the $\max$ operator in Bellman's equation.
+
+In \cite{softmax-bellman}, \citeauthor{softmax-bellman} explore the possibility of directly modifying Bellman's equation to understand if a change in the $\max$ operator therein could be beneficial to the $Q$ function estimates and how this could impact their overoptimistic behavior.
+
+In particular, other Bellman operators had already been presented, but the main two on which authors decided to focus are $\softmax$ and $\mellowmax$. The latter was first conceived in \cite{mellowmax-bellman} to be used as either an alternative action selector (see section \ref{sec:action-selection}) or directly inside Bellman equation. Formally, the $\mellowmax$ operator can be written as follows:
+$$
+\frac{1}{\omega}log\left(\frac{1}{|A|} \sum_{a'\in A} exp(\omega \cdot Q(s,a'))\right)
+$$ 
+
 
 \chapter{GNN}
 

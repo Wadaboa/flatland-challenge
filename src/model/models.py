@@ -72,7 +72,7 @@ class DuelingDQN(DQN):
         val = torch.where(
             mask, self.fc_val(states), empty_tensor
         ).to(self.device)
-        adv = super.forward(states, mask=mask)
+        adv = super().forward(states, mask=mask)
         agg = (
             adv.mean(dim=1, keepdim=True) if self.aggregation == "mean"
             else adv.max(dim=1, keepdim=True)

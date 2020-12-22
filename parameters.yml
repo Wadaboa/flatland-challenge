@@ -24,11 +24,11 @@ env:
   # (3 medium - 5 big)
   max_rails_in_cities: 3
   # Enable variable speed
-  variable_speed: False
+  variable_speed: True
   # Malfunctions config
   malfunctions:
     # Enable malfunctions
-    enabled: False
+    enabled: True
     # Malfunction rate
     # (0.0125 medium - 0.0125 big)
     rate: !!float 0.005
@@ -42,7 +42,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 17
+  max_depth: 7
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -55,7 +55,7 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 8
+  max_depth: 7
 
 # Policy config
 policy:
@@ -64,11 +64,11 @@ policy:
     # Single agent graph observation policy
     single_agent_graph: False
     # Multi agent graph observation policy
-    multi_agent_graph: True
+    multi_agent_graph: False
     # Standard tree observation policy
     tree: False
     # Binary tree observation policy
-    binary_tree: False
+    binary_tree: True
     # Random policy
     random: False
 
@@ -117,11 +117,11 @@ learning:
   # Loss function
   loss:
     # Huber loss
-    huber: False
+    huber: True
     # MSE loss
     mse: False
     # Masked MSE loss (for multi graph observation)
-    masked_mse: True
+    masked_mse: False
   # Type of gradient clipping
   gradient:
     # Maximum value for the norm of the gradients
@@ -194,9 +194,9 @@ generic:
   # Random seed used when `fix_random` is True
   random_seed: 1
   # Device config
-  use_gpu: True
+  use_gpu: False
   # Enable wandb logging
-  enable_wandb: False
+  enable_wandb: True
   # Checkpoint to save model to wandb
   wandb_checkpoint: 500
   # Gradients logging in wandb
@@ -234,7 +234,7 @@ training:
     # Render episodes during training
     training: False
     # How often to render an episode in training
-    train_checkpoint: 1
+    train_checkpoint: 150
     # Render episodes during evaluation
     evaluation: False
     # How often to render an episode in evaluation
