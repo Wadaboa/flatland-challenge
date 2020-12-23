@@ -110,7 +110,7 @@ class EntireGNN(nn.Module):
         self.gnn_conv.append(gnn.GCNConv(
             state_size, gnn_hidden_size
         ))
-        for i in range(1, self.depth - 1):
+        for _ in range(1, self.depth - 1):
             self.gnn_conv.append(gnn.GCNConv(
                 gnn_hidden_size, gnn_hidden_size
             ))
@@ -118,12 +118,12 @@ class EntireGNN(nn.Module):
             gnn_hidden_size, self.embedding_size
         ))
 
-    def forward(self, state, **kwargs):
-        graphs = state.to_data_list()
-        embs = torch.empty(
+    def forward(self, states, **kwargs):
+        graphs = states.to_data_list()
+        embs = torch.zeros(
             size=(
-                len(graphs) * self.pos_size,
-                self.embedding_size
+                len(graphs),
+                self.pos_size * self.embedding_size
             ), dtype=torch.float,
             device=self.device
         )
@@ -143,14 +143,20 @@ class EntireGNN(nn.Module):
                 x = F.dropout(x, p=self.dropout, training=self.training)
 
             # Extract useful embeddings
+            tmp_embs = torch.zeros(
+                (self.pos_size, self.embedding_size),
+                dtype=torch.float,
+                device=self.device
+            )
             for j, p in enumerate(pos):
                 if p == -1:
-                    embs[i + j] = torch.tensor(
+                    tmp_embs[j] = torch.tensor(
                         [-self.depth] * self.embedding_size,
                         dtype=torch.float, device=self.device
                     )
                 else:
-                    embs[i + j] = emb[p.item()]
+                    tmp_embs[j] = emb[p.item()]
+            embs[i] = torch.flatten(tmp_embs)
 
         return embs
 

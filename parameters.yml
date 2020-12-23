@@ -62,13 +62,13 @@ policy:
   # Select policy type
   type:
     # Graph observation policy
-    graph: False
+    graph: True
     # Decentralized FOV observation policy
     decentralized_fov: False
     # Standard tree observation policy
     tree: False
     # Binary tree observation policy
-    binary_tree: True
+    binary_tree: False
     # Random policy
     random: False
 

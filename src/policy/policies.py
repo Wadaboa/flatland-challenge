@@ -145,7 +145,10 @@ class DQNPolicy(Policy):
                     states, dtype=torch.float, device=self.device
                 )
             elif isinstance(states[0], Data):
-                states = Batch.from_data_list([states[0]]).to(self.device)
+                if self.params.policy.type.decentralized_fov:
+                    states = Batch.from_data_list([states[0]]).to(self.device)
+                else:
+                    states = Batch.from_data_list(states).to(self.device)
 
             # Convert moving agents to tensor
             t_moving_agents = torch.from_numpy(
@@ -339,7 +342,11 @@ class DQNGNNPolicy(DQNPolicy):
         Initialize DQNGNNPolicy object
         '''
         super(DQNGNNPolicy, self).__init__(
-            params, state_size, choice_selector, training=training
+            params, (
+                params.model.single_gnn.embedding_size *
+                params.model.single_gnn.pos_size
+            ),
+            choice_selector, training=training
         )
 
         self.qnetwork_local = policy_utils.Sequential(
