@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from torch._C import dtype
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -17,7 +18,7 @@ class MaskedMSELoss(nn.Module):
         if mask is None:
             return F.mse_loss(input, target, reduction=self.reduction)
 
-        flattened_mask = torch.flatten(mask)
+        flattened_mask = torch.flatten(mask).float()
         diff = ((
             torch.flatten(input) - torch.flatten(target)
         ) ** 2.0) * flattened_mask
@@ -45,13 +46,15 @@ class MaskedHuberLoss(nn.Module):
                 input, target, reduction=self.reduction, beta=self.beta
             )
 
-        flattened_mask = torch.flatten(mask)
-        errors = torch.abs(torch.flatten(input) - torch.flatten(target))
-        diff = torch.where(
-            errors < self.beta,
-            flattened_mask * (0.5 * (errors ** 2) / self.beta),
-            flattened_mask * (errors - 0.5 * self.beta)
+        flattened_mask = torch.flatten(mask).float()
+        errors = torch.abs(torch.flatten(input) -
+                           torch.flatten(target)) * flattened_mask
+        diff = torch.zeros_like(errors)
+        less = errors < self.beta
+        diff[less] = (
+            (0.5 * (errors[less] ** 2) / self.beta) * flattened_mask[less]
         )
+        diff[~less] = (errors[~less] - 0.5 * self.beta) * flattened_mask[~less]
         mask_sum = (
             torch.sum(flattened_mask)
             if self.reduction == 'mean'

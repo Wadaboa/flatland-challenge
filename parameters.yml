@@ -230,9 +230,9 @@ training:
   # Renderer config
   renderer:
     # Render episodes during training
-    training: False
+    training: True
     # How often to render an episode in training
-    train_checkpoint: 150
+    train_checkpoint: 1
     # Render episodes during evaluation
     evaluation: False
     # How often to render an episode in evaluation

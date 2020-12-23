@@ -34,9 +34,11 @@ class DQN(nn.Module):
                 (states.shape[0], 1), dtype=torch.bool,
                 device=self.device
             )
-
-        empty_tensor = torch.zeros((1, self.action_size), device=self.device)
-        return torch.where(mask, self.fc(states), empty_tensor).to(self.device)
+        mask_q = torch.zeros(
+            (states.shape[0], self.action_size), device=self.device)
+        q_values = self.fc(states[mask, :])
+        mask_q[mask, :] = q_values
+        return mask_q
 
 
 ######################################################################
@@ -68,16 +70,25 @@ class DuelingDQN(DQN):
                 device=self.device
             )
 
-        empty_tensor = torch.zeros((1, 1), device=self.device)
-        val = torch.where(
-            mask, self.fc_val(states), empty_tensor
-        ).to(self.device)
-        adv = super().forward(states, mask=mask)
-        agg = (
-            adv.mean(dim=1, keepdim=True) if self.aggregation == "mean"
-            else adv.max(dim=1, keepdim=True)
+        mask_val = torch.zeros(
+            (states.shape[0], self.action_size),
+            device=self.device
         )
-        return val + adv - agg
+        val = self.fc(states[mask, :])
+        mask_val[mask, :] = val
+        mask_adv = super().forward(states, mask=mask)
+        if torch.isnan(mask_val).any() or torch.isnan(mask_adv).any():
+            print(states[mask, :])
+            print(torch.unique(states[mask, :]))
+            print(states[mask, :].shape)
+            print(val, mask_val, mask_adv, mask)
+        mask_agg = torch.zeros((states.shape[0], 1), device=self.device)
+        agg = (
+            mask_adv[mask, :].mean(dim=1, keepdim=True) if self.aggregation == "mean"
+            else mask_adv[mask, :].max(dim=1, keepdim=True)
+        )
+        mask_agg[mask, :] = agg
+        return mask_val + mask_adv - mask_agg
 
 
 ######################################################################

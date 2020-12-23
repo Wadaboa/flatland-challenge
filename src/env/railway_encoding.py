@@ -459,6 +459,7 @@ class CellOrientationGraph():
                 self.is_before_join(position) and not self.only_one_agent()
             )
         }
+
         if RailEnvActions.MOVE_FORWARD in actions:
             # If RailEnvActions.MOVE_LEFT or RailEnvActions.MOVE_RIGHT in legal actions
             if len(actions) > 1:
