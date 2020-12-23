@@ -69,9 +69,9 @@ class Sequential(nn.Sequential):
     to handle a variable number of arguments
     '''
 
-    def forward(self, input, *args, **kwargs):
+    def forward(self, input, **kwargs):
         for module in self:
-            input = module(input, *args, **kwargs)
+            input = module(input, **kwargs)
         return input
 
 

@@ -1,7 +1,8 @@
 
+from flatland.envs import observations
 import torch
 import numpy as np
-from torch_geometric.utils import add_remaining_self_loops
+from torch_geometric.utils import add_remaining_self_loops, num_nodes
 from torch_geometric.data import Data
 
 from flatland.core.env_observation_builder import ObservationBuilder
@@ -161,20 +162,31 @@ class FOVObservator(ObservationBuilder):
             radius=self.max_depth
         )
         edge_index = torch.from_numpy(
-            np.argwhere(adjacency != 0), dtype=torch.long
-        ).t().contiguous()
-        edge_index = add_remaining_self_loops(edge_index, fill_value=0)
+            np.argwhere(adjacency != 0)
+        ).long().t().contiguous()
         edge_weight = torch.from_numpy(
-            adjacency[np.nonzero(adjacency)], dtype=torch.long
-        )
+            adjacency[np.nonzero(adjacency)]
+        ).float()
+        edge_index, edge_weight = add_remaining_self_loops(
+            edge_index, edge_weight, fill_value=0, num_nodes=self.env.get_num_agents())
+
+        states = super().get_many(handles)
+
         self.data_object = Data(
-            edge_index=edge_index, edge_weight=edge_weight
+            edge_index=edge_index,
+            edge_weight=edge_weight,
+            num_nodes=self.env.get_num_agents(),
+            states=torch.tensor(
+                list(states.values()), dtype=torch.float)
         )
 
-        return super().get_many(handles)
+        self.observations = {
+            handle: self.data_object for handle in self.env.get_agent_handles()}
+
+        return self.observations
 
     def get(self, handle=0):
-        obs = np.full(
+        self.observations[handle] = np.full(
             (self.observation_dim, self.max_depth, self.max_depth), -1
         )
         if (self.predictions[handle] is not None):
@@ -213,18 +225,10 @@ class FOVObservator(ObservationBuilder):
                     agent_position, self.max_depth, -1
                 )
 
-                obs[0] = cell_type
-                obs[1] = cell_orientation
-                obs[2] = path_fov
-                obs[3] = distance_fov
-                obs[4] = agents_fov
-                obs[5] = targets_fov
-
-        # Create a PyTorch Geometric Data object
-        self.observations[handle] = Data(
-            edge_index=self.data_object.edge_index,
-            edge_weight=self.data_object.edge_weight,
-            state=torch.from_numpy(obs, dtype=torch.float).unsqueeze(0)
-        )
-
+                self.observations[handle][0] = cell_type
+                self.observations[handle][1] = cell_orientation
+                self.observations[handle][2] = path_fov
+                self.observations[handle][3] = distance_fov
+                self.observations[handle][4] = agents_fov
+                self.observations[handle][5] = targets_fov
         return self.observations[handle]

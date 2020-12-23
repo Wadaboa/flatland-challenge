@@ -75,6 +75,15 @@ class RailEnvChoices(IntEnum):
         return [False, False, True]
 
 
+def get_num_actions():
+    '''
+    Return the number of possible RailEnvActions
+    '''
+    return len([
+        action_type for _, action_type in RailEnvActions.__members__.items()
+    ])
+
+
 def create_rail_env(args, load_env=""):
     '''
     Build a RailEnv object with the specified parameters,

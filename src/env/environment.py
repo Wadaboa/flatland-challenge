@@ -34,7 +34,7 @@ class RailEnvWrapper(RailEnv):
         self.arrived_turns = dict()
         self.stop_actions = dict()
         self.current_info = dict()
-        self.num_actions = self.get_num_actions()
+        self.num_actions = env_utils.get_num_actions()
 
     def _get_state_size(self):
         '''
@@ -381,7 +381,6 @@ class RailEnvWrapper(RailEnv):
                     agent, legal_actions[agent]
                 )
                 update_values[agent] = True
-        print(legal_actions.shape)
         return legal_actions, legal_choices, update_values
 
     def post_act(self, choices, is_best, legal_actions, update_values):
@@ -398,8 +397,6 @@ class RailEnvWrapper(RailEnv):
                 action = self.railway_encoding.map_choice_to_action(
                     choices[agent], legal_actions[agent]
                 )
-                if choices[agent] == 1:
-                    print(action, choices[agent], legal_actions[agent])
                 assert action != RailEnvActions.DO_NOTHING.value, (
                     choices[agent], legal_actions[agent]
                 )
@@ -424,7 +421,6 @@ class RailEnvWrapper(RailEnv):
             'num_exploration_choices': num_exploration_choices,
             'choice_dict': choice_dict
         }
-        print(choice_dict)
 
         return action_dict, metadata
 
@@ -439,11 +435,11 @@ class RailEnvWrapper(RailEnv):
                     self.current_info['first_time_deadlock'][agent]):
                 if self.params.policy.type.multi_agent_graph:
                     exp = (
-                        list(prev_obs[agent].values()),
+                        prev_obs[agent],
                         list(prev_choices[agent].values()),
                         np.array(list(custom_rewards.values())),
-                        list(obs.values()),
-                        np.array(list(legal_choices.values())),
+                        obs[agent],
+                        legal_choices,
                         finished, update_values
                     )
                 else:
@@ -462,17 +458,19 @@ class RailEnvWrapper(RailEnv):
         for agent in self.get_agent_handles():
             if update_values[agent] or self.current_info['first_time_finished'][agent] or self.current_info['first_time_deadlock'][agent]:
                 if self.params.policy.type.multi_agent_graph:
-                    prev_obs[agent] = env_utils.copy_obs(obs)
-                    prev_choices[agent] = choice_dict
+                    prev_choices[agent] = dict(choice_dict)
                 else:
-                    prev_obs[agent] = env_utils.copy_obs(obs[agent])
                     prev_choices[agent] = choice_dict[agent]
+                prev_obs[agent] = env_utils.copy_obs(obs[agent])
 
             # Update observation and score
             score += rewards[agent]
             custom_score += custom_rewards[agent]
             if next_obs[agent] is not None:
-                obs[agent] = env_utils.copy_obs(next_obs[agent])
+                if self.params.policy.type.multi_agent_graph:
+                    obs[agent] = next_obs[agent]
+                else:
+                    obs[agent] = env_utils.copy_obs(next_obs[agent])
         metadata = {
             'obs': obs,
             'prev_obs': prev_obs,
@@ -481,14 +479,6 @@ class RailEnvWrapper(RailEnv):
             'custom_score': custom_score
         }
         return metadata
-
-    def get_num_actions(self):
-        '''
-        Return the number of possible RailEnvActions
-        '''
-        return len([
-            action_type for _, action_type in RailEnvActions.__members__.items()
-        ])
 
     def _normalize_obs(self, obs):
         '''

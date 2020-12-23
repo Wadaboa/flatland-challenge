@@ -157,25 +157,33 @@ def train_agents(args, writer):
 
         # Initialize data structures for training info
         score, custom_score, final_step = 0.0, 0.0, 0
-        choices_taken = []
+        choices_taken = np.array([])
         choices_count = np.zeros((env_utils.RailEnvChoices.choice_size(),))
-        num_exploration_choices = [0] * env_utils.RailEnvChoices.choice_size()
-        legal_choices, legal_actions = dict(), dict()
-        update_values = [False] * args.env.num_trains
+        num_exploration_choices = np.zeros_like(choices_count)
+        legal_choices = np.full(
+            (args.env.num_trains, env_utils.RailEnvChoices.choice_size()),
+            env_utils.RailEnvChoices.default_choices()
+        )
+        legal_actions = np.full(
+            (args.env.num_trains, env_utils.get_num_actions()), False
+        )
+        update_values = np.full((args.env.num_trains,), False)
         action_dict, choice_dict = dict(), dict()
         prev_obs = dict()
-        done = dict()
         prev_choices = dict()
         for handle in range(args.env.num_trains):
+            legal_actions[handle] = train_env.railway_encoding.get_agent_actions(
+                handle
+            )
             legal_choices[handle] = train_env.railway_encoding.get_legal_choices(
-                handle, train_env.railway_encoding.get_agent_actions(handle)
+                handle, legal_actions[handle]
             )
             choice_dict.update({handle: RailEnvChoices.CHOICE_LEFT.value})
-            prev_choices.update({handle: RailEnvChoices.CHOICE_LEFT.value})
-            done[handle] = False
             if obs[handle] is not None:
                 prev_obs[handle] = env_utils.copy_obs(obs[handle])
-
+        if args.policy.type.multi_agent_graph:
+            prev_choices.update(
+                {handle: dict(choice_dict) for handle in range(args.env.num_trains)})
         # Do an episode
         for step in range(train_env._max_episode_steps):
 
@@ -190,7 +198,7 @@ def train_agents(args, writer):
             inference_timer.start()
 
             legal_actions, legal_choices, update_values = train_env.pre_act()
-            
+
             choices, is_best = policy.act(
                 list(obs.values()), legal_choices,
                 update_values, training=True

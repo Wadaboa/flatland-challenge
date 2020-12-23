@@ -94,8 +94,9 @@ class CellOrientationGraph():
                                 tmp_action
                             ))
                             tmp_actions.setdefault(
-                                (i, j, original_dir.value), []
-                            ).append(tmp_action)
+                                (i, j, original_dir.value),
+                                np.full((env_utils.get_num_actions(),), False)
+                            )[tmp_action.value] = True
 
                     for tmp_edge in tmp_edges:
                         tmp_choice = self.map_action_to_choice(
@@ -410,39 +411,39 @@ class CellOrientationGraph():
         '''
         # If CHOICE_LEFT, then priorities are MOVE_LEFT, MOVE_FORWARD, MOVE_RIGHT
         if choice == env_utils.RailEnvChoices.CHOICE_LEFT.value:
-            if RailEnvActions.MOVE_LEFT in actions:
-                return RailEnvActions.MOVE_LEFT.value
-            elif RailEnvActions.MOVE_FORWARD in actions:
-                return RailEnvActions.MOVE_FORWARD.value
-            elif RailEnvActions.MOVE_RIGHT in actions:
-                return RailEnvActions.MOVE_RIGHT.value
+            if actions[RailEnvActions.MOVE_LEFT.value]:
+                return RailEnvActions.MOVE_LEFT
+            elif actions[RailEnvActions.MOVE_FORWARD.value]:
+                return RailEnvActions.MOVE_FORWARD
+            elif actions[RailEnvActions.MOVE_RIGHT.value]:
+                return RailEnvActions.MOVE_RIGHT
         # If CHOICE_RIGHT, then priorities are MOVE_RIGHT, MOVE_FORWARD
         elif choice == env_utils.RailEnvChoices.CHOICE_RIGHT.value:
-            if RailEnvActions.MOVE_RIGHT in actions:
-                return RailEnvActions.MOVE_RIGHT.value
-            elif RailEnvActions.MOVE_FORWARD in actions:
-                return RailEnvActions.MOVE_FORWARD.value
+            if actions[RailEnvActions.MOVE_RIGHT.value]:
+                return RailEnvActions.MOVE_RIGHT
+            elif actions[RailEnvActions.MOVE_FORWARD.value]:
+                return RailEnvActions.MOVE_FORWARD
         # If STOP, then the priority is STOP_MOVING
         elif choice == env_utils.RailEnvChoices.STOP.value:
-            return RailEnvActions.STOP_MOVING.value
+            return RailEnvActions.STOP_MOVING
         # Otherwise, last resort is DO_NOTHING
-        return RailEnvActions.DO_NOTHING.value
+        return RailEnvActions.DO_NOTHING
 
     def map_action_to_choice(self, action, actions):
         '''
         Map the given RailEnvActions action to a RailEnvChoices choice
         '''
-        if action == RailEnvActions.MOVE_LEFT and RailEnvActions.MOVE_LEFT in actions:
+        if action == RailEnvActions.MOVE_LEFT and actions[RailEnvActions.MOVE_LEFT.value]:
             return env_utils.RailEnvChoices.CHOICE_LEFT
-        if action == RailEnvActions.MOVE_RIGHT and RailEnvActions.MOVE_RIGHT in actions:
-            if len(actions) > 1:
+        if action == RailEnvActions.MOVE_RIGHT and actions[RailEnvActions.MOVE_RIGHT.value]:
+            if np.count_nonzero(actions) > 1:
                 return env_utils.RailEnvChoices.CHOICE_RIGHT
-            elif len(actions) == 1:
+            elif np.count_nonzero(actions) == 1:
                 return env_utils.RailEnvChoices.CHOICE_LEFT
-        if action == RailEnvActions.MOVE_FORWARD and RailEnvActions.MOVE_FORWARD in actions:
-            if RailEnvActions.MOVE_LEFT in actions:
+        if action == RailEnvActions.MOVE_FORWARD and actions[RailEnvActions.MOVE_FORWARD.value]:
+            if actions[RailEnvActions.MOVE_LEFT.value]:
                 return env_utils.RailEnvChoices.CHOICE_RIGHT
-            if RailEnvActions.MOVE_RIGHT in actions:
+            if actions[RailEnvActions.MOVE_RIGHT.value]:
                 return env_utils.RailEnvChoices.CHOICE_LEFT
             return env_utils.RailEnvChoices.CHOICE_LEFT
         return env_utils.RailEnvChoices.STOP
@@ -452,28 +453,25 @@ class CellOrientationGraph():
         Map the given RailEnvActions actions to a list of RailEnvChoices
         '''
         # If only one agent, stop moving is not legal
-        possible_moves = {
-            env_utils.RailEnvChoices.CHOICE_LEFT: False,
-            env_utils.RailEnvChoices.CHOICE_RIGHT: False,
-            env_utils.RailEnvChoices.STOP: (
-                self.is_before_join(position) and not self.only_one_agent()
-            )
-        }
+        possible_moves = np.full(
+            (env_utils.RailEnvChoices.choice_size(),), False)
+        possible_moves[env_utils.RailEnvChoices.STOP.value] = (
+            self.is_before_join(position) and not self.only_one_agent())
 
-        if RailEnvActions.MOVE_FORWARD in actions:
+        if actions[RailEnvActions.MOVE_FORWARD.value]:
             # If RailEnvActions.MOVE_LEFT or RailEnvActions.MOVE_RIGHT in legal actions
-            if len(actions) > 1:
-                possible_moves[env_utils.RailEnvChoices.CHOICE_RIGHT] = True
-            possible_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
-        if RailEnvActions.MOVE_LEFT in actions:
-            possible_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
-        if RailEnvActions.MOVE_RIGHT in actions:
+            if np.count_nonzero(actions) > 1:
+                possible_moves[env_utils.RailEnvChoices.CHOICE_RIGHT.value] = True
+            possible_moves[env_utils.RailEnvChoices.CHOICE_LEFT.value] = True
+        if actions[RailEnvActions.MOVE_LEFT.value]:
+            possible_moves[env_utils.RailEnvChoices.CHOICE_LEFT.value] = True
+        if actions[RailEnvActions.MOVE_RIGHT.value]:
             # If only RailEnvActions.MOVE_RIGHT in legal actions
-            if len(actions) == 1:
-                possible_moves[env_utils.RailEnvChoices.CHOICE_LEFT] = True
+            if np.count_nonzero(actions) == 1:
+                possible_moves[env_utils.RailEnvChoices.CHOICE_LEFT.value] = True
             else:
-                possible_moves[env_utils.RailEnvChoices.CHOICE_RIGHT] = True
-        return list(possible_moves.values())
+                possible_moves[env_utils.RailEnvChoices.CHOICE_RIGHT.value] = True
+        return possible_moves
 
     def get_legal_choices(self, handle, actions):
         '''
@@ -486,36 +484,6 @@ class CellOrientationGraph():
             return env_utils.RailEnvChoices.default_choices()
 
         return self.get_possible_choices(self.get_agent_cell(handle), actions)
-
-    def get_legal_actions(self, handle):
-        '''
-        Compute and return all the active legal actions that the given agent can perform
-        (an active action is MOVE_*), by removing actions that lead into an occupied cell
-        '''
-        actions = self.get_agent_actions(handle)
-        next_positions = [
-            self.agent_position_by_action(handle, action)[:-1] for action in actions
-        ]
-        agents_positions = [
-            self.get_agent_cell(agent)[:-1] for agent in range(len(self.agents))
-            if (
-                handle != agent and
-                self.agents[agent].status not in
-                (RailAgentStatus.DONE_REMOVED, RailAgentStatus.READY_TO_DEPART)
-            )
-        ]
-
-        # Store illegal actions
-        to_delete = []
-        for i, pos in enumerate(next_positions):
-            if pos is not None and pos in agents_positions:
-                to_delete.append(i)
-
-        # Delete illegal actions in reverse order,
-        # so as to avoid changing indexes
-        for i in sorted(to_delete, reverse=True):
-            del actions[i]
-        return actions
 
     def is_fork(self, position):
         '''
@@ -595,7 +563,8 @@ class CellOrientationGraph():
         actions = []
         for succ in successors:
             actions.append(
-                self._unpacked_graph.get_edge_data(position, succ)['action']
+                self._unpacked_graph.get_edge_data(
+                    position, succ)['action'].value
             )
         return actions
 

@@ -31,9 +31,10 @@ class DQN(nn.Module):
         assert len(states.shape) == 2 and states.shape[1] == self.state_size
         if mask is None:
             mask = torch.ones(
-                (states.shape[0], 1), dtype=torch.bool,
+                (states.shape[0],), dtype=torch.bool,
                 device=self.device
             )
+        mask = torch.flatten(mask)
         mask_q = torch.zeros(
             (states.shape[0], self.action_size), device=self.device)
         q_values = self.fc(states[mask, :])
@@ -66,10 +67,12 @@ class DuelingDQN(DQN):
         assert len(states.shape) == 2 and states.shape[1] == self.state_size
         if mask is None:
             mask = torch.ones(
-                (states.shape[0], 1), dtype=torch.bool,
+                (states.shape[0],), dtype=torch.bool,
                 device=self.device
             )
-
+        mask = torch.flatten(mask)
+        print(states.shape)
+        print(mask.shape)
         mask_val = torch.zeros(
             (states.shape[0], self.action_size),
             device=self.device
@@ -77,11 +80,6 @@ class DuelingDQN(DQN):
         val = self.fc(states[mask, :])
         mask_val[mask, :] = val
         mask_adv = super().forward(states, mask=mask)
-        if torch.isnan(mask_val).any() or torch.isnan(mask_adv).any():
-            print(states[mask, :])
-            print(torch.unique(states[mask, :]))
-            print(states[mask, :].shape)
-            print(val, mask_val, mask_adv, mask)
         mask_agg = torch.zeros((states.shape[0], 1), device=self.device)
         agg = (
             mask_adv[mask, :].mean(dim=1, keepdim=True) if self.aggregation == "mean"
@@ -102,6 +100,7 @@ class SingleGNN(nn.Module):
 
     def __init__(self, state_size, pos_size, embedding_size, nonlinearity="tanh",
                  gnn_hidden_size=16, depth=3, dropout=0.0, device="cpu"):
+        super(SingleGNN, self).__init__()
         self.state_size = state_size
         self.pos_size = pos_size
         self.embedding_size = embedding_size
@@ -121,7 +120,7 @@ class SingleGNN(nn.Module):
             gnn_hidden_size, self.embedding_size
         ))
 
-    def forward(self, state):
+    def forward(self, state, **kwargs):
         graphs = state.to_data_list()
         embs = torch.empty(
             size=(
@@ -171,6 +170,7 @@ class MultiGNN(nn.Module):
     def __init__(self, input_width, input_height, input_channels, output_channels,
                  hidden_channels=[16, 32, 16], pool=False, embedding_size=128, hidden_sizes=[128, 128],
                  nonlinearity="relu", device="cpu"):
+        super(MultiGNN, self).__init__()
         self.input_width = input_width
         self.input_height = input_height
         self.input_channels = input_channels
@@ -201,20 +201,14 @@ class MultiGNN(nn.Module):
             embedding_size, embedding_size, add_self_loops=False
         )
 
-    def forward(self, states):
-        print(states.state.shape)
+    def forward(self, states, **kwargs):
         # Encode the FOV observation of each agent
         # with the convolutional encoder
-        encoded = self.convs(states.state)
-
-        print(encoded.shape)
-
+        encoded = self.convs(states.states)
         # Use an MLP from the encoded values to have a
         # consistent number of features
         flattened = torch.flatten(encoded, start_dim=1)
         features = self.mlp(flattened)
-
-        print(features.shape)
 
         # Compute embeddings for each node by performing graph convolutions
         return self.gnn_conv(

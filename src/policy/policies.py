@@ -144,7 +144,7 @@ class DQNPolicy(Policy):
                     states, dtype=torch.float, device=self.device
                 )
             elif isinstance(states[0], Data):
-                states = Batch.from_data_list(states).to(self.device)
+                states = Batch.from_data_list([states[0]]).to(self.device)
 
             # Add 1 dimension to moving agents to simulate a mini-batch of size 1
             t_moving_agents = torch.from_numpy(
@@ -154,7 +154,7 @@ class DQNPolicy(Policy):
             self.qnetwork_local.eval()
             with torch.no_grad():
                 choice_values = self.qnetwork_local(
-                    states=states, mask=t_moving_agents
+                    states, mask=t_moving_agents
                 ).squeeze().detach().cpu().numpy()
         # Select a legal choice based on the action selector
         return self.choice_selector.select_many(
@@ -188,8 +188,9 @@ class DQNPolicy(Policy):
         experiences = self.memory.sample()
         states, choices, rewards, next_states, next_legal_choices, finished, moving = experiences
         # Get expected Q-values from local model
+        
         q_expected = self.qnetwork_local(states, mask=moving).gather(
-            1, choices.unsqueeze(1)
+            1, choices.flatten().unsqueeze(1)
         ).squeeze(1)
         # Get expected Q-values from target model
         q_targets_next = torch.from_numpy(
