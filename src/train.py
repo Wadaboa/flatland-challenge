@@ -1,15 +1,11 @@
-import time
 import os
 from datetime import datetime
-from networkx.readwrite.json_graph import adjacency
 
 import yaml
 import wandb
 import numpy as np
 from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
-
-from flatland.envs.rail_env import RailEnvActions
 
 import utils
 from env import env_utils
@@ -133,7 +129,9 @@ def train_agents(args, writer):
 
     # Do the specified number of episodes
     scores, custom_scores, completions, steps, deadlocks = [], [], [], [], []
+    choices_taken = np.zeros((args.training.train_env.episodes + 1,))
     for episode in range(args.training.train_env.episodes + 1):
+
         # Initialize timers
         step_timer = utils.Timer()
         reset_timer = utils.Timer()
@@ -155,9 +153,8 @@ def train_agents(args, writer):
         # Compute agents with same source
         agents_with_same_start = train_env.get_agents_same_start()
 
-        # Initialize data structures for training info
+        # Create data structures for training info
         score, custom_score, final_step = 0.0, 0.0, 0
-        choices_taken = np.array([])
         choices_count = np.zeros((env_utils.RailEnvChoices.choice_size(),))
         num_exploration_choices = np.zeros_like(choices_count)
         legal_choices = np.full(
@@ -167,10 +164,11 @@ def train_agents(args, writer):
         legal_actions = np.full(
             (args.env.num_trains, env_utils.get_num_actions()), False
         )
-        update_values = np.full((args.env.num_trains,), False)
+        moving_agents = np.full((args.env.num_trains,), False)
         action_dict, choice_dict = dict(), dict()
-        prev_obs = dict()
-        prev_choices = dict()
+        prev_obs, prev_choices = dict(), dict()
+
+        # Initialize data structures
         for handle in range(args.env.num_trains):
             legal_actions[handle] = train_env.railway_encoding.get_agent_actions(
                 handle
@@ -181,9 +179,14 @@ def train_agents(args, writer):
             choice_dict.update({handle: RailEnvChoices.CHOICE_LEFT.value})
             if obs[handle] is not None:
                 prev_obs[handle] = env_utils.copy_obs(obs[handle])
-        if args.policy.type.multi_agent_graph:
-            prev_choices.update(
-                {handle: dict(choice_dict) for handle in range(args.env.num_trains)})
+
+        # Update initial previous choices based on the policy type
+        for handle in range(args.env.num_trains):
+            if args.policy.type.multi_agent_graph:
+                prev_choices[handle] = dict(choice_dict)
+            else:
+                prev_choices[handle] = choice_dict[handle]
+
         # Do an episode
         for step in range(train_env._max_episode_steps):
 
@@ -194,23 +197,23 @@ def train_agents(args, writer):
                     for agent in agents_with_same_start[position]:
                         info['action_required'][agent] = False
 
-            # Compute an action for each agent, if necessary
+            # Policy act
             inference_timer.start()
-
-            legal_actions, legal_choices, update_values = train_env.pre_act()
-
+            legal_actions, legal_choices, moving_agents = train_env.pre_act()
             choices, is_best = policy.act(
                 list(obs.values()), legal_choices,
-                update_values, training=True
+                moving_agents, training=True
             )
+
+            # Update training info after policy act
             action_dict, metadata = train_env.post_act(
-                choices, is_best, legal_actions, update_values
+                choices, is_best, legal_actions, moving_agents
             )
-            choices_count += metadata['choices_count']
-            np.concatenate([choices_taken, metadata['choices_taken']])
+            current_choices_count = metadata['choices_count']
+            choices_count += current_choices_count
+            choices_taken[episode] += np.sum(current_choices_count)
             num_exploration_choices += metadata['num_exploration_choices']
             choice_dict.update(metadata['choice_dict'])
-
             inference_timer.end()
 
             # Environment step
@@ -233,17 +236,23 @@ def train_agents(args, writer):
 
             # Policy step
             learn_timer.start()
-            experience = (prev_obs, prev_choices, custom_rewards,
-                          obs, legal_choices, update_values)
+            experience = (
+                prev_obs,
+                prev_choices,
+                custom_rewards,
+                obs,
+                legal_choices,
+                moving_agents
+            )
             experiences = train_env.pre_step(experience)
             policy.step(experiences)
             learn_timer.end()
 
+            # Update training info after policy step
             metadata = train_env.post_step(
                 obs, choice_dict, next_obs,
-                update_values, rewards, custom_rewards
+                moving_agents, rewards, custom_rewards
             )
-
             obs.update(metadata['obs'])
             prev_obs.update(metadata['prev_obs'])
             prev_choices.update(metadata['prev_choices'])
@@ -263,22 +272,33 @@ def train_agents(args, writer):
         policy.choice_selector.decay()
 
         # Save final scores
-        scores.append(score / (train_env._max_episode_steps *
-                               train_env.get_num_agents()))
+        scores.append(
+            score / (
+                train_env._max_episode_steps *
+                train_env.get_num_agents()
+            )
+        )
         custom_scores.append(custom_score / train_env.get_num_agents())
         completions.append(
-            sum(done[idx] for idx in train_env.get_agent_handles()) / train_env.get_num_agents())
+            sum(done[idx] for idx in train_env.get_agent_handles()) /
+            train_env.get_num_agents()
+        )
         steps.append(final_step)
         deadlocks.append(
-            sum(int(v) for v in info["deadlocks"].values()) / train_env.get_num_agents())
+            sum(int(v) for v in info["deadlocks"].values()) /
+            train_env.get_num_agents()
+        )
         choices_probs = choices_count / np.sum(choices_count)
 
         # Save model and replay buffer at checkpoint
         if episode % args.training.checkpoint == 0:
             policy.save(f'./checkpoints/{training_id}-{episode}')
+
             # Save partial model to wandb
             if args.generic.enable_wandb and episode > 0 and episode % args.generic.wandb_checkpoint == 0:
                 wandb.save(f'./checkpoints/{training_id}-{episode}.local')
+
+            # Save replay buffer
             if args.replay_buffer.save:
                 policy.save_replay_buffer(
                     f'./replay_buffers/{training_id}-{episode}.pkl'
@@ -312,7 +332,7 @@ def train_agents(args, writer):
                 steps[-1],
                 train_env._max_episode_steps,
                 policy.choice_selector.get_parameter(),
-                np.sum(choices_count),
+                choices_taken[episode],
                 np.sum(num_exploration_choices),
                 format_choices_probabilities(choices_probs)
             ), end="\n"
@@ -343,7 +363,7 @@ def train_agents(args, writer):
         tensorboard_log(writer, "training/steps", steps[-1], episode)
         tensorboard_log(
             writer, "training/choices_count",
-            np.sum(choices_count), episode
+            choices_taken[episode], episode
         )
         tensorboard_log(
             writer, "training/exploration_choices",
@@ -362,8 +382,10 @@ def train_agents(args, writer):
             writer, "training/custom_score",
             custom_scores[-1], episode
         )
-        tensorboard_log(writer, "training/completion",
-                        completions[-1], episode)
+        tensorboard_log(
+            writer, "training/completion",
+            completions[-1], episode
+        )
         tensorboard_log(
             writer, "training/buffer_size",
             len(policy.memory), episode
@@ -408,14 +430,14 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
     in the specified environment
     '''
     action_dict = dict()
-    scores, custom_scores, completions, steps, choices_count, deadlocks = [], [], [], [], [], []
+    choices_taken = np.zeros((len(eval_seeds),))
+    scores, custom_scores, completions, steps, deadlocks = [], [], [], [], []
 
     # Do the specified number of episodes
     print('\nStarting validation:')
     for episode, seed in enumerate(eval_seeds):
         score, custom_score = 0.0, 0.0
         final_step = 0
-        choices_taken = []
 
         # Reset environment and renderer
         if not args.training.eval_env.all_random:
@@ -440,36 +462,22 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
                     for agent in agents_with_same_start[position]:
                         info['action_required'][agent] = False
 
-            # Perform a step
-            for agent in env.get_agent_handles():
-                action = RailEnvActions.DO_NOTHING.value
-                if info['action_required'][agent]:
-                    if env.railway_encoding.is_real_decision(agent):
-                        legal_actions = env.railway_encoding.get_agent_actions(
-                            agent
-                        )
-                        legal_choices = env.railway_encoding.get_legal_choices(
-                            agent, legal_actions
-                        )
-                        choice, is_best = policy.act(
-                            obs[agent], legal_choices, training=False
-                        )
-                        assert is_best == True
-                        choices_taken.append(choice)
-                        action = env.railway_encoding.map_choice_to_action(
-                            choice, legal_actions
-                        )
-                        assert action != RailEnvActions.DO_NOTHING.value, (
-                            choice, legal_actions
-                        )
-                    else:
-                        actions = env.railway_encoding.get_agent_actions(agent)
-                        assert len(actions) == 1, actions
-                        action = actions[0]
-                action_dict.update({agent: action})
+            # Policy act
+            legal_actions, legal_choices, moving_agents = env.pre_act()
+            choices, is_best = policy.act(
+                list(obs.values()), legal_choices,
+                moving_agents, training=True
+            )
+            action_dict, metadata = env.post_act(
+                choices, is_best, legal_actions, moving_agents
+            )
+            current_choices_count = metadata['choices_count']
+            choices_taken[episode] += np.sum(current_choices_count)
 
-            # Perform a step in the environment
-            obs, rewards, custom_rewards, done, info = env.step(action_dict)
+            # Environment step
+            obs, rewards, custom_rewards, done, info = env.step(
+                action_dict
+            )
 
             # Render an episode at some interval
             if args.training.renderer.evaluation and episode % args.training.renderer.eval_checkpoint == 0:
@@ -492,14 +500,22 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
             env_renderer.close_window()
 
         # Save final scores
-        scores.append(score / (env._max_episode_steps * env.get_num_agents()))
+        scores.append(
+            score / (
+                env._max_episode_steps *
+                env.get_num_agents()
+            )
+        )
         custom_scores.append(custom_score / env.get_num_agents())
         completions.append(
-            sum(done[idx] for idx in env.get_agent_handles()) / env.get_num_agents())
+            sum(done[idx] for idx in env.get_agent_handles()) /
+            env.get_num_agents()
+        )
         steps.append(final_step)
-        choices_count.append(len(choices_taken))
         deadlocks.append(
-            sum(int(v) for v in info["deadlocks"].values()) / env.get_num_agents())
+            sum(int(v) for v in info["deadlocks"].values()) /
+            env.get_num_agents()
+        )
 
         # Print evaluation results on one episode
         print(
@@ -517,7 +533,7 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
                 deadlocks[-1],
                 steps[-1],
                 env._max_episode_steps,
-                choices_count[-1]
+                choices_taken[episode]
             ), end="\n"
         )
 
@@ -535,34 +551,34 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
             np.mean(completions),
             np.mean(deadlocks),
             np.mean(steps),
-            np.mean(choices_count)
+            np.mean(choices_taken)
         ), end="\n\n"
     )
 
     # Log validation metrics to tensorboard
     tensorboard_log(
         writer, "evaluation/scores", scores, train_episode,
-        plot=['mean', 'std', 'hist']
+        plot=['mean', 'std']
     )
     tensorboard_log(
         writer, "evaluation/custom_scores", custom_scores, train_episode,
-        plot=['mean', 'std', 'hist']
+        plot=['mean', 'std']
     )
     tensorboard_log(
         writer, "evaluation/completions", completions, train_episode,
-        plot=['mean', 'std', 'hist']
+        plot=['mean', 'std']
     )
     tensorboard_log(
         writer, "evaluation/deadlocks", deadlocks, train_episode,
-        plot=['mean', 'std', 'hist']
+        plot=['mean', 'std']
     )
     tensorboard_log(
         writer, "evaluation/steps", steps, train_episode,
-        plot=['mean', 'std', 'hist']
+        plot=['mean', 'std']
     )
     tensorboard_log(
-        writer, "evaluation/choices_count", choices_count, train_episode,
-        plot=['mean', 'std', 'hist']
+        writer, "evaluation/choices_count", choices_taken, train_episode,
+        plot=['mean', 'std']
     )
 
 

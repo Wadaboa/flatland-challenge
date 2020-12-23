@@ -136,8 +136,12 @@ class DQNPolicy(Policy):
         Perform action selection based on the Q-values returned by the network
         '''
         choice_values = torch.zeros(
-            (moving_agents.shape[0], self.choice_size), dtype=torch.float, device=self.device)
+            (moving_agents.shape[0], self.choice_size),
+            dtype=torch.float, device=self.device
+        )
+        # If no agent is active, then skip computations
         if moving_agents.any():
+
             # Add 1 dimension to state to simulate a mini-batch of size 1
             if isinstance(states[0], np.ndarray):
                 states = torch.tensor(
@@ -146,16 +150,18 @@ class DQNPolicy(Policy):
             elif isinstance(states[0], Data):
                 states = Batch.from_data_list([states[0]]).to(self.device)
 
-            # Add 1 dimension to moving agents to simulate a mini-batch of size 1
+            # Convert moving agents to tensor
             t_moving_agents = torch.from_numpy(
                 moving_agents
             ).bool().to(self.device)
+
             # Call the network
             self.qnetwork_local.eval()
             with torch.no_grad():
                 choice_values = self.qnetwork_local(
                     states, mask=t_moving_agents
                 ).squeeze().detach().cpu().numpy()
+
         # Select a legal choice based on the action selector
         return self.choice_selector.select_many(
             choice_values, moving_agents, np.array(legal_choices),
@@ -187,22 +193,24 @@ class DQNPolicy(Policy):
         # Sample a batch of experiences
         experiences = self.memory.sample()
         states, choices, rewards, next_states, next_legal_choices, finished, moving = experiences
+
         # Get expected Q-values from local model
-        
         q_expected = self.qnetwork_local(states, mask=moving).gather(
             1, choices.flatten().unsqueeze(1)
         ).squeeze(1)
+
         # Get expected Q-values from target model
         q_targets_next = torch.from_numpy(
             self._get_q_targets_next(
                 next_states, next_legal_choices.cpu().numpy(), moving
             )
         ).squeeze(1).to(self.device)
+
         # Compute Q-targets for current states
         q_targets = (
-            rewards + (
+            torch.flatten(rewards) + (
                 self.params.learning.discount *
-                q_targets_next * (1 - finished)
+                q_targets_next * (1 - torch.flatten(finished))
             )
         )
 
@@ -239,17 +247,20 @@ class DQNPolicy(Policy):
             q_locals_next = self.qnetwork_local(
                 next_states, mask=moving
             ).detach().cpu().numpy()
+
             # Softmax Bellman
             if self.params.learning.softmax_bellman:
                 return np.sum(
                     q_targets_next * policy_utils.masked_softmax(
-                        q_locals_next, next_legal_choices
+                        q_locals_next,
+                        next_legal_choices.reshape(q_locals_next.shape)
                     ), axis=1, keepdims=True
                 )
 
             # Standard Bellman
             best_choices = policy_utils.masked_argmax(
-                q_locals_next, next_legal_choices
+                q_locals_next,
+                next_legal_choices.reshape(q_locals_next.shape)
             )
             return np.take_along_axis(q_targets_next, best_choices, axis=1)
 
@@ -260,12 +271,16 @@ class DQNPolicy(Policy):
 
             # Standard or softmax Bellman
             return (
-                policy_utils.masked_max(q_targets_next, next_legal_choices)
+                policy_utils.masked_max(
+                    q_targets_next,
+                    next_legal_choices.reshape(q_targets_next.shape)
+                )
                 if not self.params.learning.softmax_bellman
                 else np.sum(
-                    policy_utils.masked_softmax(
-                        q_targets_next, next_legal_choices
-                    ) * q_targets_next, axis=1, keepdims=True
+                    q_targets_next * policy_utils.masked_softmax(
+                        q_targets_next,
+                        next_legal_choices.reshape(q_targets_next.shape)
+                    ), axis=1, keepdims=True
                 )
             )
 

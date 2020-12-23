@@ -71,8 +71,6 @@ class DuelingDQN(DQN):
                 device=self.device
             )
         mask = torch.flatten(mask)
-        print(states.shape)
-        print(mask.shape)
         mask_val = torch.zeros(
             (states.shape[0], self.action_size),
             device=self.device
@@ -205,6 +203,7 @@ class MultiGNN(nn.Module):
         # Encode the FOV observation of each agent
         # with the convolutional encoder
         encoded = self.convs(states.states)
+
         # Use an MLP from the encoded values to have a
         # consistent number of features
         flattened = torch.flatten(encoded, start_dim=1)

@@ -371,29 +371,35 @@ class RailEnvWrapper(RailEnv):
         legal_actions = np.full(
             (self.get_num_agents(), self.num_actions), False
         )
-        update_values = np.full((self.get_num_agents(),), False)
+        moving_agents = np.full((self.get_num_agents(),), False)
+
+        # Compute which agents need to make a choice
         for agent in self.get_agent_handles():
             legal_actions[
                 agent, self.railway_encoding.get_agent_actions(agent)
             ] = True
-            if self.current_info['action_required'][agent] and self.railway_encoding.is_real_decision(agent):
+            if (self.current_info['action_required'][agent] and
+                    self.railway_encoding.is_real_decision(agent)):
                 legal_choices[agent] = self.railway_encoding.get_legal_choices(
                     agent, legal_actions[agent]
                 )
-                update_values[agent] = True
-        return legal_actions, legal_choices, update_values
+                moving_agents[agent] = True
 
-    def post_act(self, choices, is_best, legal_actions, update_values):
+        return legal_actions, legal_choices, moving_agents
+
+    def post_act(self, choices, is_best, legal_actions, moving_agents):
         '''
+        Return the action dictionary (to be given to the environment step)
+        and a dictionary of training metadatas
         '''
-        action_dict = dict()
+        action_dict, choice_dict = dict(), dict()
         choices_count = np.zeros((env_utils.RailEnvChoices.choice_size(),))
-        choices_taken = choices[~update_values]
         num_exploration_choices = np.zeros_like(choices_count)
-        choice_dict = dict()
 
+        # Assign an action to each agent
         for agent in self.get_agent_handles():
-            if update_values[agent]:
+            action = RailEnvActions.DO_NOTHING.value
+            if moving_agents[agent]:
                 action = self.railway_encoding.map_choice_to_action(
                     choices[agent], legal_actions[agent]
                 )
@@ -404,20 +410,19 @@ class RailEnvWrapper(RailEnv):
                 num_exploration_choices[choices[agent]] += int(
                     not(is_best[agent])
                 )
-                choice_dict.update({agent: choices[agent]})
-            elif not self.dones[agent] and self.agents[agent].speed_data['position_fraction'] == 0:
+                choice_dict[agent] = choices[agent]
+            elif (not self.dones[agent] and
+                  self.agents[agent].speed_data['position_fraction'] == 0):
                 actions = np.flatnonzero(legal_actions[agent])
                 assert actions.shape[0] > 0, actions
+                action = actions[0]
                 if actions.shape[0] > 1:
                     action = RailEnvActions.DO_NOTHING.value
-                else:
-                    action = actions[0]
-            else:
-                action = RailEnvActions.DO_NOTHING.value
-            action_dict.update({agent: action})
+            action_dict[agent] = action
+
+        # Build the metadata dict
         metadata = {
             'choices_count': choices_count,
-            'choices_taken': choices_taken,
             'num_exploration_choices': num_exploration_choices,
             'choice_dict': choice_dict
         }
@@ -425,14 +430,23 @@ class RailEnvWrapper(RailEnv):
         return action_dict, metadata
 
     def pre_step(self, experience):
-        (prev_obs, prev_choices, custom_rewards,
-         obs, legal_choices, update_values) = experience
+        '''
+        To be called before the policy step function, 
+        it returns a list of experiences to be passed to the policy step
+        '''
+        (
+            prev_obs, prev_choices, custom_rewards,
+            obs, legal_choices, update_values
+        ) = experience
         finished = np.array(list(self.current_info['finished'].values()))
         experiences = []
+
+        # Gather valuable experiences
         for agent in self.get_agent_handles():
             if (update_values[agent] or
                     self.current_info['first_time_finished'][agent] or
                     self.current_info['first_time_deadlock'][agent]):
+                # Check for policy type
                 if self.params.policy.type.multi_agent_graph:
                     exp = (
                         prev_obs[agent],
@@ -440,28 +454,41 @@ class RailEnvWrapper(RailEnv):
                         np.array(list(custom_rewards.values())),
                         obs[agent],
                         legal_choices,
-                        finished, update_values
+                        finished,
+                        update_values
                     )
                 else:
                     exp = (
-                        prev_obs[agent], prev_choices[agent], custom_rewards[agent],
-                        obs[agent], legal_choices[agent], finished[agent], update_values[agent]
+                        prev_obs[agent],
+                        prev_choices[agent],
+                        custom_rewards[agent],
+                        obs[agent],
+                        legal_choices[agent],
+                        finished[agent],
+                        update_values[agent]
                     )
                 experiences.append(exp)
+
         return experiences
 
     def post_step(self, obs, choice_dict, next_obs, update_values, rewards, custom_rewards):
-        prev_obs = dict()
-        prev_choices = dict()
-        score = 0.0
-        custom_score = 0.0
+        '''
+        To be called after the policy step function, 
+        it returns a dictionary of training metadatas
+        '''
+        prev_obs, prev_choices = dict(), dict()
+        score, custom_score = 0.0, 0.0
+
         for agent in self.get_agent_handles():
-            if update_values[agent] or self.current_info['first_time_finished'][agent] or self.current_info['first_time_deadlock'][agent]:
+            # Update previous observations and choices
+            if (update_values[agent] or
+                    self.current_info['first_time_finished'][agent] or
+                    self.current_info['first_time_deadlock'][agent]):
+                prev_obs[agent] = env_utils.copy_obs(obs[agent])
                 if self.params.policy.type.multi_agent_graph:
                     prev_choices[agent] = dict(choice_dict)
                 else:
                     prev_choices[agent] = choice_dict[agent]
-                prev_obs[agent] = env_utils.copy_obs(obs[agent])
 
             # Update observation and score
             score += rewards[agent]
@@ -471,14 +498,15 @@ class RailEnvWrapper(RailEnv):
                     obs[agent] = next_obs[agent]
                 else:
                     obs[agent] = env_utils.copy_obs(next_obs[agent])
-        metadata = {
+
+        # Build and return the metadata dict
+        return {
             'obs': obs,
             'prev_obs': prev_obs,
             'prev_choices': prev_choices,
             'score': score,
             'custom_score': custom_score
         }
-        return metadata
 
     def _normalize_obs(self, obs):
         '''

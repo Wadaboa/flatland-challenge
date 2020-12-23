@@ -42,7 +42,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 15
+  max_depth: 7
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -207,7 +207,7 @@ generic:
 # Training config
 training:
   # Checkpoint interval (how often to evaluate and save the model)
-  checkpoint: 200
+  checkpoint: 3
 
   # Train environment config
   train_env:
