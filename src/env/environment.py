@@ -14,8 +14,6 @@ from env import env_utils
 from env.deadlocks import DeadlocksDetector
 from env.railway_encoding import CellOrientationGraph
 from obs.binary_tree import BinaryTreeObservator
-from obs.single_agent_graph import SingleAgentGraphObservator
-from obs.fov import FOVObservator
 
 
 class RailEnvWrapper(RailEnv):
@@ -238,15 +236,18 @@ class RailEnvWrapper(RailEnv):
         info["deadlocks"], info["deadlock_turns"] = self.deadlocks_detector.step(
             self
         )
-        finished = dict()
-        first_time_deadlock = dict()
-        first_time_finished = dict()
+
         # Patch dones dict, update arrived agents turns and stop actions
+        # and store other data in info dict
+        finished, first_time_deadlock, first_time_finished = dict(), dict(), dict()
         remove_all = False
         for agent in range(self.get_num_agents()):
+            # Update dones
             if dones[agent] and not self.railway_encoding.is_done(agent):
                 dones[agent] = False
                 remove_all = True
+
+            # Update arrived agents and first time dones
             if dones[agent] and self.arrived_turns[agent] is None:
                 self.arrived_turns[agent] = current_step
                 first_time_finished[agent] = True
@@ -258,12 +259,15 @@ class RailEnvWrapper(RailEnv):
                 self.stop_actions[agent] += 1
             else:
                 self.stop_actions[agent] = 0
+
+            # Update done or deadlocked agents and first time deadlocked agents
             finished[agent] = dones[agent] or info['deadlocks'][agent]
             first_time_deadlock[agent] = (
                 info['deadlocks'][agent] and
                 current_step == info['deadlock_turns'][agent]
             )
 
+        # Patch info dict
         info['finished'] = finished
         info['first_time_finished'] = first_time_finished
         info['first_time_deadlock'] = first_time_deadlock
@@ -278,6 +282,7 @@ class RailEnvWrapper(RailEnv):
             action_dict_, rewards, dones, info, agents_in_decision_cells
         )
 
+        # Update last info dict
         self.current_info = info
 
         return (self._normalize_obs(obs), rewards, custom_rewards, dones, info)
@@ -447,7 +452,7 @@ class RailEnvWrapper(RailEnv):
                     self.current_info['first_time_finished'][agent] or
                     self.current_info['first_time_deadlock'][agent]):
                 # Check for policy type
-                if self.params.policy.type.multi_agent_graph:
+                if self.params.policy.type.decentralized_fov:
                     exp = (
                         prev_obs[agent],
                         list(prev_choices[agent].values()),
@@ -485,7 +490,7 @@ class RailEnvWrapper(RailEnv):
                     self.current_info['first_time_finished'][agent] or
                     self.current_info['first_time_deadlock'][agent]):
                 prev_obs[agent] = env_utils.copy_obs(obs[agent])
-                if self.params.policy.type.multi_agent_graph:
+                if self.params.policy.type.decentralized_fov:
                     prev_choices[agent] = dict(choice_dict)
                 else:
                     prev_choices[agent] = choice_dict[agent]
@@ -494,7 +499,7 @@ class RailEnvWrapper(RailEnv):
             score += rewards[agent]
             custom_score += custom_rewards[agent]
             if next_obs[agent] is not None:
-                if self.params.policy.type.multi_agent_graph:
+                if self.params.policy.type.decentralized_fov:
                     obs[agent] = next_obs[agent]
                 else:
                     obs[agent] = env_utils.copy_obs(next_obs[agent])

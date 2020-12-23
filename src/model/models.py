@@ -88,17 +88,17 @@ class DuelingDQN(DQN):
 
 
 ######################################################################
-########################## Single agent GNN ##########################
+########################## Entire graph GNN ##########################
 ######################################################################
 
-class SingleGNN(nn.Module):
+class EntireGNN(nn.Module):
     '''
-    Single agent GNN
+    Entire graph GNN
     '''
 
     def __init__(self, state_size, pos_size, embedding_size, nonlinearity="tanh",
                  gnn_hidden_size=16, depth=3, dropout=0.0, device="cpu"):
-        super(SingleGNN, self).__init__()
+        super(EntireGNN, self).__init__()
         self.state_size = state_size
         self.pos_size = pos_size
         self.embedding_size = embedding_size
@@ -122,8 +122,7 @@ class SingleGNN(nn.Module):
         graphs = state.to_data_list()
         embs = torch.empty(
             size=(
-                len(graphs),
-                self.pos_size,
+                len(graphs) * self.pos_size,
                 self.embedding_size
             ), dtype=torch.float,
             device=self.device
@@ -146,12 +145,12 @@ class SingleGNN(nn.Module):
             # Extract useful embeddings
             for j, p in enumerate(pos):
                 if p == -1:
-                    embs[i, j] = torch.tensor(
+                    embs[i + j] = torch.tensor(
                         [-self.depth] * self.embedding_size,
                         dtype=torch.float, device=self.device
                     )
                 else:
-                    embs[i, j] = emb[p.item()]
+                    embs[i + j] = emb[p.item()]
 
         return embs
 

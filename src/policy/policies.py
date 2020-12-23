@@ -11,7 +11,7 @@ from torch_geometric.data import Data, Batch
 from env import env_utils
 from policy import policy_utils
 from policy.action_selectors import ActionSelector, RandomActionSelector
-from model.models import DQN, DuelingDQN, SingleGNN, MultiGNN
+from model.models import DQN, DuelingDQN, EntireGNN, MultiGNN
 from policy.replay_buffers import ReplayBuffer
 
 
@@ -52,19 +52,16 @@ class RandomPolicy(Policy):
     '''
 
     def __init__(self, params=None, state_size=None, choice_selector=None, training=False):
-        self.action_selector = RandomActionSelector()
         super(RandomPolicy, self).__init__(
             params, state_size, choice_size=env_utils.RailEnvChoices.choice_size(),
-            choice_selector=choice_selector, training=training
+            choice_selector=RandomActionSelector(), training=training
         )
 
-    def act(self, state, legal_choices=None, training=False):
-        choices = np.zeros((len(env_utils.RailEnvChoices.values())))
-        legal_choices = np.full(
-            choices.shape, legal_choices, dtype=bool
-        )
-        return self.action_selector.select(
-            choices, legal_choices, training=training
+    def act(self, states, legal_choices, moving_agents, training=False):
+        choice_values = np.zeros((moving_agents.shape[0], self.choice_size))
+        return self.choice_selector.select_many(
+            choice_values, moving_agents, np.array(legal_choices),
+            training=(training and self.training)
         )
 
     def step(self, experience):
@@ -317,7 +314,7 @@ class DQNPolicy(Policy):
                     torch.load(filename + ".target")
                 )
         else:
-            print("Model not found - check given path")
+            print("Model not found. Please, check the given path.")
 
     def save_replay_buffer(self, filename):
         '''
@@ -332,21 +329,21 @@ class DQNPolicy(Policy):
         self.memory.load(filename)
 
 
-class SingleAgentDQNGNNPolicy(DQNPolicy):
+class DQNGNNPolicy(DQNPolicy):
     '''
-    Single agent DQN + GNN policy
+    DQN + GNN policy
     '''
 
     def __init__(self, params, state_size, choice_selector, training=False):
         '''
-        Initialize SingleAgentDQNGNNPolicy object
+        Initialize DQNGNNPolicy object
         '''
-        super(SingleAgentDQNGNNPolicy, self).__init__(
+        super(DQNGNNPolicy, self).__init__(
             params, state_size, choice_selector, training=training
         )
 
         self.qnetwork_local = policy_utils.Sequential(
-            SingleGNN(
+            EntireGNN(
                 state_size,
                 self.params.model.single_gnn.pos_size,
                 self.params.model.single_gnn.embedding_size,
@@ -363,16 +360,16 @@ class SingleAgentDQNGNNPolicy(DQNPolicy):
             self.qnetwork_target = copy.deepcopy(self.qnetwork_local)
 
 
-class MultiAgentDQNGNNPolicy(DQNPolicy):
+class DecentralizedFOVDQNPolicy(DQNPolicy):
     '''
-    Multi agent DQN + GNN policy
+    Decentralized FOV CNN + GNN + DQN policy
     '''
 
     def __init__(self, params, state_size, choice_selector, training=False):
         '''
         Initialize MultiAgentDQNGNNPolicy object
         '''
-        super(MultiAgentDQNGNNPolicy, self).__init__(
+        super(DecentralizedFOVDQNPolicy, self).__init__(
             params, params.model.multi_gnn.embedding_size,
             choice_selector, training=training
         )
@@ -400,7 +397,7 @@ class MultiAgentDQNGNNPolicy(DQNPolicy):
 POLICIES = {
     "tree": DQNPolicy,
     "binary_tree": DQNPolicy,
-    "single_agent_graph": SingleAgentDQNGNNPolicy,
-    "multi_agent_graph": MultiAgentDQNGNNPolicy,
+    "graph": DQNGNNPolicy,
+    "decentralized_fov": DecentralizedFOVDQNPolicy,
     "random": RandomPolicy
 }

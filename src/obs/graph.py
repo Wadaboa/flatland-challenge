@@ -7,7 +7,7 @@ from flatland.core.env_observation_builder import ObservationBuilder
 from env import env_utils
 
 
-class SingleAgentGraphObservator(ObservationBuilder):
+class GraphObservator(ObservationBuilder):
 
     def __init__(self, max_depth, predictor):
         super().__init__()
@@ -15,8 +15,10 @@ class SingleAgentGraphObservator(ObservationBuilder):
         self.predictor = predictor
         self.observations = dict()
         self.observation_dim = 2
+        self.data_object = None
 
     def reset(self):
+        self.data_object = self._init_graph()
         if self.predictor is not None:
             self.predictor.reset()
 
@@ -33,7 +35,11 @@ class SingleAgentGraphObservator(ObservationBuilder):
         self.observations[handle] = self.get_graph_data(handle)
         return self.observations[handle]
 
-    def get_graph_data(self, handle):
+    def _init_graph(self):
+        '''
+        Initialize the graph structure, which is the same
+        for all agents in an episode
+        '''
         # Compute edges and edges attributes
         edges = self.env.railway_encoding.get_graph_edges(
             unpacked=False, data=True
@@ -49,7 +55,14 @@ class SingleAgentGraphObservator(ObservationBuilder):
             edge_index, dtype=torch.long
         ).t().contiguous()
         edge_weight = torch.tensor(edge_weight, dtype=torch.float)
+        return Data(
+            edge_index=edge_index, edge_weight=edge_weight
+        )
 
+    def get_graph_data(self, handle):
+        '''
+        Add features to each node in the graph, based on the given agent 
+        '''
         # Compute node features
         nodes = self.env.railway_encoding.get_graph_nodes(
             unpacked=False, data=True
@@ -59,7 +72,7 @@ class SingleAgentGraphObservator(ObservationBuilder):
             self.env.railway_encoding.get_agent_cell(h)
             for h in range(len(self.env.agents)) if h != handle
         }
-        for n, d in nodes:
+        for n, _ in nodes:
             target_distance = self.env.distance_map.get()[
                 handle, n[0], n[1], n[2]
             ]
@@ -111,7 +124,8 @@ class SingleAgentGraphObservator(ObservationBuilder):
         ], dtype=torch.long)
 
         # Create a PyTorch Geometric Data object
-        data = Data(
-            edge_index=edge_index, edge_weight=edge_weight, pos=pos, x=x
+        return Data(
+            edge_index=self.data_object.edge_index,
+            edge_weight=self.data_object.edge_weight,
+            pos=pos, x=x
         )
-        return data

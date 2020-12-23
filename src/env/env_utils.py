@@ -13,7 +13,7 @@ from flatland.envs.predictions import ShortestPathPredictorForRailEnv
 
 from predictions import ShortestPathPredictor, NullPredictor
 from obs.binary_tree import BinaryTreeObservator
-from obs.single_agent_graph import SingleAgentGraphObservator
+from obs.graph import GraphObservator
 from obs.fov import FOVObservator
 from env.environment import RailEnvWrapper
 
@@ -21,14 +21,14 @@ from env.environment import RailEnvWrapper
 OBSERVATORS = {
     "tree": TreeObsForRailEnv,
     "binary_tree": BinaryTreeObservator,
-    "single_agent_graph": SingleAgentGraphObservator,
-    "multi_agent_graph": FOVObservator
+    "graph": GraphObservator,
+    "decentralized_fov": FOVObservator
 }
 PREDICTORS = {
     "tree": ShortestPathPredictorForRailEnv,
     "binary_tree": ShortestPathPredictor,
-    "single_agent_graph": ShortestPathPredictor,
-    "multi_agent_graph": ShortestPathPredictor
+    "graph": ShortestPathPredictor,
+    "decentralized_fov": ShortestPathPredictor
 }
 
 

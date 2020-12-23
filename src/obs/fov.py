@@ -1,8 +1,7 @@
 
-from flatland.envs import observations
 import torch
 import numpy as np
-from torch_geometric.utils import add_remaining_self_loops, num_nodes
+from torch_geometric.utils import add_remaining_self_loops
 from torch_geometric.data import Data
 
 from flatland.core.env_observation_builder import ObservationBuilder
@@ -15,13 +14,14 @@ class FOVObservator(ObservationBuilder):
     '''
     An Observator that return a local observation of each agent in the form of
     a tensor of size max_depth centered around the agent position
+
     Features:
-    0 - Cell type of the rail in the agent's FOV
-    1 - Cell orientation of the rail in the agent's FOV
-    2 - Cell of the rail in shortest path in the agent's FOV
-    3 - Distance map in direction and FOV of the agent
-    4 - Other agents positions in the agent's FOV (direction of each agent)
-    5 - Agents targets in the agent's FOV (1 agent target, 0 other agent, -1 otherwise)
+        0. Cell type of the rail in the agent's FOV
+        1. Cell orientation of the rail in the agent's FOV
+        2. Cell of the rail in shortest path in the agent's FOV
+        3. Distance map in direction and FOV of the agent
+        4. Other agents positions in the agent's FOV (direction of each agent)
+        5. Agents targets in the agent's FOV (1 agent target, 0 other agent, -1 otherwise)
     '''
 
     def __init__(self, max_depth, predictor):
@@ -60,7 +60,7 @@ class FOVObservator(ObservationBuilder):
             target = agent.target
             if target is not None:
                 self.agent_targets[handle, target[0], target[1]] = 1
-                other_agents = set(self.env.get_agent_handles())-{handle}
+                other_agents = set(self.env.get_agent_handles()) - {handle}
                 for other in other_agents:
                     if self.agent_targets[other, target[0], target[1]] == -1:
                         self.agent_targets[other, target[0], target[1]] = 0
@@ -170,19 +170,19 @@ class FOVObservator(ObservationBuilder):
         edge_index, edge_weight = add_remaining_self_loops(
             edge_index, edge_weight, fill_value=0, num_nodes=self.env.get_num_agents())
 
+        # Add features to PyTorch Geometric Data object
         states = super().get_many(handles)
-
         self.data_object = Data(
             edge_index=edge_index,
             edge_weight=edge_weight,
             num_nodes=self.env.get_num_agents(),
             states=torch.tensor(
-                list(states.values()), dtype=torch.float)
+                list(states.values()), dtype=torch.float
+            )
         )
-
         self.observations = {
-            handle: self.data_object for handle in self.env.get_agent_handles()}
-
+            handle: self.data_object for handle in self.env.get_agent_handles()
+        }
         return self.observations
 
     def get(self, handle=0):
@@ -194,19 +194,23 @@ class FOVObservator(ObservationBuilder):
                 handle
             )
             if agent_position is not None:
-                shortest_pred, deviations_pred = self.predictions[handle]
+                shortest_pred, _ = self.predictions[handle]
+
                 # Cell type of the rail in the agent's FOV
                 cell_type = utils.extract_fov(
                     self.rail_obs[:, :, 0], agent_position, self.max_depth, -1
                 )
+
                 # Cell orientation of the rail in the agent's FOV
                 cell_orientation = utils.extract_fov(
                     self.rail_obs[:, :, 1], agent_position, self.max_depth, -1
                 )
+
                 # Cell of the rail in shortest path in the agent's FOV
                 path_fov = self.extract_path_fov(
                     shortest_pred.positions, pad=-1, fill_value=1
                 )
+
                 # Distance map in direction and FOV of the agent
                 distance_fov = utils.extract_fov(
                     self.env.distance_map.get(
@@ -214,6 +218,7 @@ class FOVObservator(ObservationBuilder):
                     agent_position, self.max_depth, -1
                 )
                 distance_fov[distance_fov == np.inf] = -1
+
                 # Other agents positions in the agent's FOV (direction of each agent)
                 agents_fov = utils.extract_fov(
                     self.agent_positions, agent_position, self.max_depth, -1
@@ -225,10 +230,12 @@ class FOVObservator(ObservationBuilder):
                     agent_position, self.max_depth, -1
                 )
 
+                # Update observations
                 self.observations[handle][0] = cell_type
                 self.observations[handle][1] = cell_orientation
                 self.observations[handle][2] = path_fov
                 self.observations[handle][3] = distance_fov
                 self.observations[handle][4] = agents_fov
                 self.observations[handle][5] = targets_fov
+
         return self.observations[handle]

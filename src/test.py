@@ -6,7 +6,7 @@ import numpy as np
 import yaml
 from tabulate import tabulate
 
-from flatland.envs.rail_env import RailEnvActions, RailAgentStatus
+from flatland.envs.rail_env import RailAgentStatus
 
 import utils
 from env import env_utils
@@ -56,9 +56,9 @@ def test_agents(args):
     '''
     Test agents on the specified environment
     '''
-    action_dict = dict()
-    scores, custom_scores, completions, steps, choices_count, deadlocks = [], [], [], [], [], []
-    avg_score, avg_custom_score, avg_completion, avg_deadlocks = 0.0, 0.0, 0.0, 0.0
+    choices_taken = np.zeros((args.testing.episodes,))
+    scores, custom_scores, completions, steps, deadlocks = [], [], [], [], []
+
     # Initialize threads and seeds
     utils.set_num_threads(args.generic.num_threads)
     if args.generic.fix_random:
@@ -89,18 +89,17 @@ def test_agents(args):
 
     # Perform the given number of episodes
     for episode in range(args.testing.episodes):
-        legal_choices = dict()
-        score, custom_score = 0.0, 0.0
-        final_step = 0
-        choices_taken = []
+        score, custom_score, final_step = 0.0, 0.0, 0
+
         # Generate a new railway and renderer
         obs, info = env.reset(
             regenerate_rail=True, regenerate_schedule=True
         )
         if args.testing.renderer.enabled:
             env_renderer = env.get_renderer()
+
+        # Print agents tasks
         if args.testing.verbose:
-            # Print agents tasks
             _tasks_table = []
             for handle, agent in enumerate(env.agents):
                 _tasks_table.append([
@@ -141,42 +140,30 @@ def test_agents(args):
                     for agent in agents_with_same_start[position]:
                         info['action_required'][agent] = False
 
-            # Choose an action for each agent in the environment
-            for agent in range(env.get_num_agents()):
-                action = RailEnvActions.DO_NOTHING.value
-                if info['action_required'][agent]:
-                    if env.railway_encoding.is_real_decision(agent):
-                        legal_actions = env.railway_encoding.get_agent_actions(
-                            agent
-                        )
-                        legal_choices[agent] = env.railway_encoding.get_legal_choices(
-                            agent, legal_actions
-                        )
-                        choice, is_best = policy.act(
-                            obs[agent], legal_choices[agent], training=False
-                        )
-                        assert is_best == True
-                        choices_taken.append(choice)
-                        action = env.railway_encoding.map_choice_to_action(
-                            choice, legal_actions
-                        )
-                        assert action != RailEnvActions.DO_NOTHING.value, (
-                            choice, legal_actions
-                        )
-                    else:
-                        actions = env.railway_encoding.get_agent_actions(
-                            agent
-                        )
-                        assert len(actions) == 1, actions
-                        action = actions[0]
-                action_dict.update({agent: action})
+            # Policy act
+            legal_actions, legal_choices, moving_agents = env.pre_act()
+            choices, is_best = policy.act(
+                list(obs.values()), legal_choices,
+                moving_agents, training=False
+            )
+            action_dict, metadata = env.post_act(
+                choices, is_best, legal_actions, moving_agents
+            )
+            current_choices_count = metadata['choices_count']
+            choices_taken[episode] += np.sum(current_choices_count)
 
-            # Perform the computed action
-            obs, rewards, custom_rewards, done, info = env.step(action_dict)
+            # Environment step
+            obs, rewards, custom_rewards, done, info = env.step(
+                action_dict
+            )
+
+            # Render an episode at some interval
             if args.testing.renderer.enabled:
                 env_renderer.render_env(
                     show=True, show_observations=False, show_predictions=True, show_rowcols=True
                 )
+
+                # Wait to observe the current frame
                 if args.testing.renderer.sleep > 0:
                     time.sleep(args.testing.sleep)
 
@@ -191,14 +178,14 @@ def test_agents(args):
                 score += rewards[handle]
                 custom_score += custom_rewards[handle]
 
+            # Compute statistics
             if args.testing.verbose:
-                # Compute statistics
                 normalized_score = (
                     score / (env._max_episode_steps * env.get_num_agents())
                 )
                 normalized_custom_score = custom_score / env.get_num_agents()
                 print(
-                    f"Score: {round(normalized_score, 4)} / "
+                    f"Score: {round(normalized_score, 4)} /"
                     f"Custom score: {round(normalized_custom_score, 4)}"
                 )
                 print_agents_info(env, info, action_dict)
@@ -214,16 +201,22 @@ def test_agents(args):
             env_renderer.close_window()
 
         # Save final scores
-        scores.append(score / (env._max_episode_steps * env.get_num_agents()))
+        scores.append(
+            score / (
+                env._max_episode_steps *
+                env.get_num_agents()
+            )
+        )
         custom_scores.append(custom_score / env.get_num_agents())
-        completions.append(sum(
-            done[i] for i in env.get_agent_handles()
-        ) / env.get_num_agents())
+        completions.append(
+            sum(done[idx] for idx in env.get_agent_handles()) /
+            env.get_num_agents()
+        )
         steps.append(final_step)
-        choices_count.append(len(choices_taken))
-        deadlocks.append(sum(
-            int(v) for v in info["deadlocks"].values() if v == True
-        ) / env.get_num_agents())
+        deadlocks.append(
+            sum(int(v) for v in info["deadlocks"].values()) /
+            env.get_num_agents()
+        )
 
         # Print episode info
         print(
@@ -249,15 +242,13 @@ def test_agents(args):
                 np.mean(deadlocks),
                 steps[-1],
                 env._max_episode_steps,
-                choices_count[-1],
+                choices_taken[episode]
             ), end="\n"
         )
 
     # Print final testing info
     print("\n\r🏁 Testing ended \tTested {} trains on {}x{} grid for {} episodes".format(
-        args.env.num_trains,
-        args.env.width, args.env.height,
-        args.testing.episodes,
+        args.env.num_trains, args.env.width, args.env.height, args.testing.episodes
     ))
 
     # Print final testing results
@@ -274,7 +265,7 @@ def test_agents(args):
             np.mean(completions),
             np.mean(deadlocks),
             np.mean(steps),
-            np.mean(choices_count)
+            np.mean(choices_taken)
         ), end="\n\n"
     )
 

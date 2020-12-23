@@ -61,14 +61,14 @@ predictor:
 policy:
   # Select policy type
   type:
-    # Single agent graph observation policy
-    single_agent_graph: False
-    # Multi agent graph observation policy
-    multi_agent_graph: True
+    # Graph observation policy
+    graph: False
+    # Decentralized FOV observation policy
+    decentralized_fov: False
     # Standard tree observation policy
     tree: False
     # Binary tree observation policy
-    binary_tree: False
+    binary_tree: True
     # Random policy
     random: False
 
@@ -246,7 +246,7 @@ testing:
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: "checkpoints/20201221-230143-3400"
+  model: ""
   # Verbose option
   verbose: False
   # Renderer config

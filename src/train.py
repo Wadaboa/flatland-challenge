@@ -182,7 +182,7 @@ def train_agents(args, writer):
 
         # Update initial previous choices based on the policy type
         for handle in range(args.env.num_trains):
-            if args.policy.type.multi_agent_graph:
+            if args.policy.type.decentralized_fov:
                 prev_choices[handle] = dict(choice_dict)
             else:
                 prev_choices[handle] = choice_dict[handle]
@@ -429,15 +429,13 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
     Perform a validation round with the given policy
     in the specified environment
     '''
-    action_dict = dict()
     choices_taken = np.zeros((len(eval_seeds),))
     scores, custom_scores, completions, steps, deadlocks = [], [], [], [], []
 
     # Do the specified number of episodes
     print('\nStarting validation:')
     for episode, seed in enumerate(eval_seeds):
-        score, custom_score = 0.0, 0.0
-        final_step = 0
+        score, custom_score, final_step = 0.0, 0.0, 0
 
         # Reset environment and renderer
         if not args.training.eval_env.all_random:
@@ -466,7 +464,7 @@ def eval_policy(args, writer, env, policy, eval_seeds, train_episode):
             legal_actions, legal_choices, moving_agents = env.pre_act()
             choices, is_best = policy.act(
                 list(obs.values()), legal_choices,
-                moving_agents, training=True
+                moving_agents, training=False
             )
             action_dict, metadata = env.post_act(
                 choices, is_best, legal_actions, moving_agents
