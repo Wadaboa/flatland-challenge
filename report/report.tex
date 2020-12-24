@@ -16,7 +16,7 @@
    urlcolor=cyan
 }
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta,shadows,positioning}
+\usetikzlibrary{arrows.meta,shadows,positioning,shapes.geometric}
 \usepackage{amssymb}
 \usepackage[sc]{mathpazo}
 \linespread{1.05}
@@ -810,11 +810,134 @@ However, depending upon the amount of noise, it is possible that, unlike double 
 In our experiments, the use of the $\softmax$ Bellman operator 
 
 \chapter{GNN}
-The main idea behing GNNs (Graph Neural Networks) is, given an input graph, to map its nodes into an embedding space and use the embedded vectors to perform some kind of downstream task (e.g. node classification or link prediction). 
+The main goal of GNNs (Graph Neural Networks) is, given an input graph, to learn a mapping from nodes into an embedding space and use the embedded vectors to perform some kind of downstream task (e.g. node classification or link prediction). 
 
 GNN architectures take inspiration from CNNs (Convolutional Neural Networks), by focusing on a local portion of the input data, thus recycling the idea of shared weights. Actually, GNNs are usually framed as a general framework that pops up more and more often in different specialized deep learning architectures: for example, the original transformer \cite{transformers} designed for NLP tasks operates on fully connected graphs representing all connections between the words in a sequence (see \cite{gnn-transformers} for a generalization of transformers which leverages the graph connectivity inductive bias).
 
-Formally, given an input graph $G=(V,E)$, where $V$ is the vertex set, $E$ is the edges set ($E\subseteq V\times V$), we denote with $A$ the adjacency matrix of $G$, so that $a_{i,j}=w\neq 0$ if and only if node $i$ is connected to node $j$ via the edge $(i, j)$ that weighs $w$ (otherwise $a_{i,j}=0$). Moreover, we define feature matrices $X_V\in \mathbb{R}^{|V|\cdot n}$ and $X_E\in \mathbb{R}^{|E|\cdot m}$, where $n$ is the number of features associated to each node and $m$ is the number of features associated to each edge.
+Formally, given an input graph $G=(V,E)$, where $V$ is the vertex set, $E$ is the edges set ($E\subseteq V\times V$), we denote with $A$ the adjacency matrix of $G$, so that $a_{i,j}=w\neq 0$ if and only if node $i$ is connected to node $j$ via the edge $(i, j)$ that weighs $w$ (otherwise $a_{i,j}=0$). Moreover, we define feature matrices $X_V\in \mathbb{R}^{|V|\cdot n}$ and $X_E\in \mathbb{R}^{|E|\cdot m}$, where $n$ is the number of features associated to each node and $m$ is the number of features associated to each edge. Whenever features are not available for the problem at hand, simple techniques like using indicator vectors or arrays of constant values could still work, depending on the application.
+
+One of the key ideas in GNNs is the one referred to as message passing: nodes aggregate information from their neighbors using custom functions or function approximators. The depth at which these models operate has the following meaning:
+\begin{itemize}
+	\item Layer $0$: the embedding of node $u$ is equal to its input features $X_V(u)$
+	\item Layer $1$: the embedding of node $u$ is equal to the aggregated features $X_V(N(u))$ from its immediate neighbors $N(u)$
+	\item Layer $k$: the embedding of node $u$ is constituted by the recursive aggregation of features from nodes that are at most $k$ hops away from $u$  
+\end{itemize}
+
+Figure \ref{fig:gnn-drawing} shows an input graph and the corresponding GNN aggregations to compute an embedding for node $A$, with a fixed depth of $2$. Key distinctions between different GNN architectures are on how different approaches aggregate information across the layers (i.e. the implementation of the $AGG$ box in the figure).
+
+As reported in \cite{graphsage}, a general framework to perform GNN aggregations (also called graph convolutions) is the following:
+$$
+h_k(u)=\sigma\left(\left[W_k \cdot f(\{h_{k-1}(v), \forall v \in N(u)\}), B_k h_{k-1}(u)\right]\right)
+$$
+
+$$
+h_k(u)=\sigma\left(W_k\sum_{v\in N(u)}\frac{h_{k-1}(v)}{|N(u)|}+B_k h_{k-1}(u)\right)
+$$
+
+
+\begin{figure}
+	\centering
+	\begin{subfigure}[b]{\linewidth}
+		\center
+		\begin{tikzpicture}
+			\begin{scope}[
+				every node/.style={circle,thick,draw=green!50,fill=green!20},
+				sel/.style={draw=cyan!50, fill=cyan!20}
+			]
+				\node [sel] (A) at (0,0) {A};
+				\node (D) at (0,3) {D};
+				\node (E) at (2.5,4) {E};
+				\node (C) at (2.5,1) {C};
+				\node (B) at (2.5,-3) {B};
+				\node (F) at (5,3) {F};
+			\end{scope}
+			
+			\begin{scope}[every node/.style={circle,thick,draw=green!50,fill=green!20}]
+				\path[draw,thick] 
+					(A) -- (B)
+					(A) -- (D)
+					(A) -- (C)
+					(B) -- (C)
+					(C) -- (E)
+					(C) -- (F)
+					(E) -- (F); 
+			\end{scope}
+		\end{tikzpicture}
+		\caption{Input graph}
+		\label{fig:input-graph}
+	\end{subfigure}%
+	\vspace{10mm}
+	\begin{subfigure}[b]{\linewidth}
+		\center
+		\begin{tikzpicture}[
+			level distance=20mm,
+			level 1/.style={every child/.style={edge from parent}},
+			level 2/.style={every child/.style={edge from parent},sibling distance=25mm},
+			level 3/.style={every child/.style={edge from parent},sibling distance=25mm},
+			level 4/.style={every child/.style={edge from parent},sibling distance=8mm},
+			vertex/.style={circle,thick,draw=green!50,fill=green!20},
+			agg/.style={thick,draw=red!50,fill=red!20},
+			sel/.style={circle,thick,draw=cyan!50, fill=cyan!20},
+			square/.style={regular polygon,regular polygon sides=4},
+			grow'=right
+		]
+		\node (root) [sel] {A}
+			child {
+				node (agg0) [square, agg] {AGG}
+				child {
+					node (b1) [vertex] {B}
+					child {
+						node (agg10) [square, agg] {AGG}
+						child {
+							node (a21) [vertex] {A}
+						}
+						child {
+							node (c21) [vertex] {C}
+						}
+					}
+				}
+				child {
+					node (c1) [vertex] {C}
+					child {
+						node (agg11) [square, agg] {AGG}
+						child {
+							node (a22) [vertex] {A}
+						}
+						child {
+							node (b21) [vertex] {B}
+						}
+						child {
+							node (e21) [vertex] {E}
+						}
+						child {
+							node (f21) [vertex] {F}
+						}
+					}
+				}
+				child {
+					node (d1) [vertex] {D}
+					child {
+						node (agg12) [square, agg] {AGG}
+						child {
+							node (a23) [vertex] {A}
+						}
+					}
+				}
+			};
+		\begin{scope}[every node/.style={text width=2cm, align=center, anchor=center, font=\bfseries,}]
+			\node[above=0.5cm of a21] (labels-level) {Layer 0};
+			\node[at =(labels-level-|b1)] {Layer 1};
+			\node[at =(labels-level-|root)] {Layer 2};
+		\end{scope}
+		\end{tikzpicture}
+		\caption{GNN aggregation}
+		\label{fig:gnn-aggregation}
+	\end{subfigure}%
+
+	\caption{Input graph with GNN aggregation}
+	\label{fig:gnn-drawing}
+\end{figure}
+
 
 \section{Integrating GNNs in DQNs}
 In the literature, there have been lots of promising work towards the integration of GNNs and DQNs, where experiments show great generalization results over graph-structured input data.
