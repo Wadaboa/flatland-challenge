@@ -102,7 +102,8 @@ class DQNPolicy(Policy):
         self.qnetwork_local = net(
             self.state_size, env_utils.RailEnvChoices.choice_size(),
             hidden_sizes=self.params.model.hidden_sizes,
-            nonlinearity=self.params.model.nonlinearity.get_true_key()
+            nonlinearity=self.params.model.nonlinearity.get_true_key(),
+            device=self.device
         ).to(self.device)
 
         # Training parameters
