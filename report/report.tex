@@ -66,6 +66,7 @@
 \DeclareMathOperator*{\argmax}{arg\,max}
 \DeclareMathOperator*{\softmax}{soft\,max}
 \DeclareMathOperator*{\mellowmax}{mellow\,max}
+\DeclareMathOperator*{\mean}{mean}
 
 
 \begin{document}
@@ -371,7 +372,7 @@ Since a $32x16$ map is too small to observe big improvements, in figure \ref{fig
 \section{Predictions}
 As reported in Flatland official FAQs, because railway traffic is limited to rails, many decisions that an agent has to take need to consider future situations and detect upcoming conflicts ahead of time. Therefore, Flatland provides the possibility of predictors that predict where agents will be in the future. The stock predictor simply assumes that each agent travels along its shortest path.
 
-\subsection{Shortest and deviation paths}
+\subsection{Shortest and deviation paths}\label{subsec:shortest-deviation-pred}
 One of the key advantages of COJG is that it enables us to apply standard shortest path algorithms on directed weighted graphs without any kind of overhead. In particular, we decided to use Dijkstra's algorithm since we do not have negatively weighted edges (in that case, Dijkstra's algorithm could get stuck in a cycle containing at least one edge with negative weight, since it may cycle an infinite number of times and sometimes go down with the total cost as much as it likes).
 
 To build our predictor, we took inspiration from the standard predictor given by the Flatland library as a baseline, which computes shortest paths directly on the 2D grid representation. Our predictor instead takes into account two possibilities: an agent either follows its shortest path or deviates from it. The computation of shortest paths is incremental, meaning that once it is done it only gets updated (i.e. the first node is removed). The only event that causes a re-computation of the shortest path is when the agent makes a choice that does not follow the stored path.
@@ -427,8 +428,7 @@ Instead, the choice to action mapping works as follows:
 
 In the previous bullet points, the word "priority" represents the sequential way in which actions should be selected. For example, if a \texttt{CHOICE_RIGHT} has to be mapped back and \texttt{MOVE_RIGHT} is a legal action from the current cell of the agent, then that action would be selected, otherwise \texttt{MOVE_FORWARD} would be chosen (again, if legal).
 
-
-\section{Observations}
+\section{Observations}\label{sec:obs}
 An observation is a representation of the environment in a particular state. Ideally, this snapshot should be rich enough to convey the right amount of information (so as to distinguish between different configurations), but also small enough that it would be efficient to compute at any given time-step. An observation should also be able to integrate information from local (in our case a train) and global (in our case the grid and all the agents) perspectives.
 
 Flatland provides different observators out of the box (the ones roughly depicted in figure \ref{fig:default-obs}). In particular, the implemented global observation is composed of the following elements:
@@ -501,7 +501,7 @@ n = \sum_{i=0}^{d-1}a^i,
 $$
 where $d$ is the height of the tree (i.e. our maximum depth) and the arity $a$ is equal to $4$. Just to make a quick example, if $d=7$ then $n=4^0+4^1+4^2+4^3+4^4+4^5+4^6=\num{5461}$. In this way, in the worst case, for each time-step we would have to examine $t\cdot n$ nodes, where $t$ is the number of trains, since one observation is needed for each agent. Following the previous example, in a scenario with $t=10$ agents and a tree observation with depth $d=7$, the reported features should be computed for each of the $\num{5641}\cdot 10=\num{56410}$ analyzed nodes at every time-step. 
 
-\subsection{Binary tree}
+\subsection{Binary tree}\label{subsec:binary-tree-obs}
 In order to exploit what we've built so far and have an hopefully more efficient computation of each observation, a new observator was created, starting from the same notions described in section \ref{subsec:tree-obs}. 
 
 In particular, our observator builds a feature tensor of shape $(d, d, f)$, where $d$ is the maximum number of hops in the COJG graph to consider and $f$ is the total amount of features for each node. This tensor contains the features of the nodes in the shortest path as the first row and the features of the nodes in the deviation paths (which are exactly $d-1$) as the following rows.
@@ -683,8 +683,8 @@ By tweaking a little bit the $\epsilon$-greedy selector we could also get two ot
 	\item Random: set $\epsilon=1$ and avoid decaying it (always select a random action)
 \end{itemize}
 
-\subsection{Boltzmann}
-The Boltzmann action selector is less common in the RL community. It works by computing a modified softmax of the values associated to actions and using the resulting probability distribution to sample an available action. The balance between exploration and exploitation is controlled by the temperature parameter $\tau$ (which should be in range $[0,1]$), so that higher values of $\tau$ will result in higher exploitation. 
+\subsection{Boltzmann}\label{subsec:boltzmann}
+The Boltzmann action selector is less common in the RL community. It works by computing a modified softmax of the values associated to actions and using the resulting probability distribution to sample an available action. The balance between exploration and exploitation is controlled by the temperature parameter $\tau$ (which should be in range $(0,1]$), so that higher values of $\tau$ will result in higher exploitation. 
 
 In practical terms, we have to model the probability of each action $a_i$ being selected at time $t$ with the following equation:
 $$
@@ -719,9 +719,9 @@ About the network architecture, the literature does not follow a clear definitio
 	\label{fig:fc-dqn}
 \end{figure}
 
-Another thing to notice is that the weights used for the target versus the current (presumably non-optimal) $Q$ values are different. In practical terms, a separate network is used to estimate the TD target. This target network has the same architecture as the function approximator but with frozen parameters. Every $T$ steps (a hyperparameter) the parameters from the $Q$-network are copied to the target network. This leads to more stable training because it keeps the target function fixed (for a while). Because of this, assuming $\theta_i$ to represent the current network weights and $\theta_i^{-}$ the target network weights, the loss function is updated as follows:
+Another thing to notice is that the weights used for the target versus the current (presumably non-optimal) $Q$ values are different. In practical terms, a separate network is used to estimate the TD target. This target network has the same architecture as the function approximator but with frozen parameters. Every $T$ steps (a hyperparameter) the parameters from the $Q$-network are copied to the target network. This leads to more stable training because it keeps the target function fixed (for a while). Because of this, assuming $\theta$ to represent the current network weights and $\theta^{-}$ the target network weights, the loss function is updated as follows:
 $$
-L(\theta_i)=\mathbb{E}_{(s_t,a_t,r_{t+1},s_{t+1})}\left[\left(r_{t+1}+\gamma\max_{a_{t+1}}Q_{\theta_i^{-}}(s_{t+1}, a_{t+1}) - Q_{\theta_i}(s_t, a_t)\right)^2\right]
+L(\theta)=\mathbb{E}_{(s_t,a_t,r_{t+1},s_{t+1})}\left[\left(r_{t+1}+\gamma\max_{a_{t+1}}Q_{\theta^{-}}(s_{t+1}, a_{t+1}) - Q_{\theta}(s_t, a_t)\right)^2\right]
 $$
 
 There are two main ways two copy the weights from the current to the target network:
@@ -777,7 +777,7 @@ $$
 \end{figure}
 
 \subsection{Gradient noise reduction}
-\citeauthor{atari-dqn} observed that large gradients can be detrimental to the optimization of DQNs. This was noted in the context of large reward values, but it is possible that overestimation bias can also introduce variance in the gradient and have a negative effect.
+\citeauthor{atari-dqn} observed that large gradients can be detrimental to the optimization of DQNs. This was noted in the context of large reward values, but it is possible that overestimation bias can also introduce variance in the gradient and have a negative effect overall.
 
 To solve this issue, in \cite{atari-dqn} authors decided to clip gradient values to a fairly small range (fixed to be $[-1,1]$), while in \cite{per} they went for a solution which clips the norm of the gradient to a specific maximum value (which was chosen to be $10$).
 
@@ -786,18 +786,48 @@ By further inspecting the rationale behind \citeauthor{atari-dqn} (quoted below)
 	We also found it helpful to clip the error term from the update to be between $-1$ and $1$. Because the absolute value loss function $|x|$ has a derivative of $-1$ for all negative values of $x$ and a derivative of $1$ for all positive values of $x$, clipping the squared error to be between $-1$ and $1$ corresponds to using an absolute value loss function for errors outside of the $(-1,1)$ interval. This form of error clipping further improved the stability of the algorithm.
 \end{displayquote}
 
-\subsection{Softmax Bellman}
+\subsection{Bellman operators}
 So far, we sticked to training the presented models with the reported losses, by having Bellman optimality in mind. As already discussed in \ref{subsec:double-dqn} and \ref{subsec:dueling-dqn}, the main goal of the authors that developed the double and dueling DQN improvements was to reduce the overestimation bias of the resulting $Q$ values, which is mainly due to the use of the $\max$ operator in Bellman's equation.
 
 In \cite{softmax-bellman}, \citeauthor{softmax-bellman} explore the possibility of directly modifying Bellman's equation to understand if a change in the $\max$ operator therein could be beneficial to the $Q$ function estimates and how this could impact their overoptimistic behavior.
 
-In particular, other Bellman operators had already been presented, but the main two on which authors decided to focus are $\softmax$ and $\mellowmax$. The latter was first conceived in \cite{mellowmax-bellman} to be used as either an alternative action selector (see section \ref{sec:action-selection}) or directly inside Bellman equation. Formally, the $\mellowmax$ operator can be written as follows:
+In particular, other Bellman operators had already been presented, but the main two on which authors decided to focus are $\softmax$ and $\mellowmax$. The latter was first conceived in \cite{mellowmax-bellman} to be used as either an alternative action selector (see section \ref{sec:action-selection}) or directly inside Bellman equation. Formally, the $\mellowmax$ operator can be written as
 $$
-\frac{1}{\omega}log\left(\frac{1}{|A|} \sum_{a'\in A} exp(\omega \cdot Q(s,a'))\right)
+mm_\omega(s) = \frac{1}{\omega}log\left(\frac{1}{|A|} \sum_{a'\in A} exp(\omega \cdot Q(s,a'))\right),
 $$ 
+where $\omega$ is a tuning parameter. \citeauthor{mellowmax-bellman} show that $\mellowmax$ converges to $\mean$ and $\max$ when $\omega\rightarrow 0$ and $\omega\rightarrow \infty$, respectively. Moreover, they also prove that $\mellowmax$ is a contraction, which means that the same convergence properties guaranteed for the $\max$ operator in Bellman's equation still hold. The main disadvantage of $\mellowmax$ is that it doesn't directly provide a probability distribution over actions, so that additional steps are needed to properly inject it into Bellman optimality.
 
+About the other operator discussed in \cite{softmax-bellman}, it leverages a $\softmax$ modified to account for an additional temperature $\tau$ parameter (as already shown in \ref{subsec:boltzmann}), so that when $\tau\rightarrow 0$ we get back the standard Bellman equation. In practical terms, the softmax Bellman operator can be implemented by modifying how the TD error is computed, by substituting the $\max$ computation with the following formula:
+$$
+\sum_{a_{t+1}}\frac{exp(Q_{\theta^-}(s_{t+1}, a_{t+1})/\tau)}{\sum_{\hat{a}}exp(Q_{\theta^-}(s_{t+1}, \hat{a})/\tau)}\cdot Q_{\theta^-}(s_{t+1},a_{t+1})
+$$
+
+Even though $\softmax$ Bellman is not a contraction (as shown in \cite{softmax-contraction} with a counterexample), experiments reveal that its usage can improve test scores over standard double and dueling DQNs with certain temperature values. Moreover, authors in \cite{softmax-bellman} generally observed higher maximum scores and faster
+learning than their $\max$ counterparts: this already suggests that the $\softmax$ operator can mitigate the overestimation bias.
+
+However, depending upon the amount of noise, it is possible that, unlike double DQN, the reduction caused by $\softmax$ could exceed the bias introduced by $\max$ (overcompensation). But, when combined with double Q-learning, this effect becomes very small.
+
+In our experiments, the use of the $\softmax$ Bellman operator 
 
 \chapter{GNN}
+The main idea behing GNNs (Graph Neural Networks) is, given an input graph, to map its nodes into an embedding space and use the embedded vectors to perform some kind of downstream task (e.g. node classification or link prediction). 
+
+GNN architectures take inspiration from CNNs (Convolutional Neural Networks), by focusing on a local portion of the input data, thus recycling the idea of shared weights. Actually, GNNs are usually framed as a general framework that pops up more and more often in different specialized deep learning architectures: for example, the original transformer \cite{transformers} designed for NLP tasks operates on fully connected graphs representing all connections between the words in a sequence (see \cite{gnn-transformers} for a generalization of transformers which leverages the graph connectivity inductive bias).
+
+Formally, given an input graph $G=(V,E)$, where $V$ is the vertex set, $E$ is the edges set ($E\subseteq V\times V$), we denote with $A$ the adjacency matrix of $G$, so that $a_{i,j}=w\neq 0$ if and only if node $i$ is connected to node $j$ via the edge $(i, j)$ that weighs $w$ (otherwise $a_{i,j}=0$). Moreover, we define feature matrices $X_V\in \mathbb{R}^{|V|\cdot n}$ and $X_E\in \mathbb{R}^{|E|\cdot m}$, where $n$ is the number of features associated to each node and $m$ is the number of features associated to each edge.
+
+\section{Integrating GNNs in DQNs}
+In the literature, there have been lots of promising work towards the integration of GNNs and DQNs, where experiments show great generalization results over graph-structured input data.
+
+In \cite{dqn-gnn-routing} authors study the problem of finding the optimal routing configuration for a set of traffic demands (which is NP-hard). Their solution relies on a centralized approach, where the agent has a global view of the current state and is tasked to route messages in an end-to-end fashion. In this scenario, the routing problem is defined as finding the optimal routing policy for each incoming source-destination traffic demand and the learning process is guided by an objective function that aims to maximize the traffic volume allocated in the network in the long-term. The GNN part comes into play with the state representation itself, where the graph is directly defined by the underlying network and features are attached to links between nodes (e.g. the current available capacity).
+
+In \cite{dgn} and \cite{dqn-gnn-robot} authors rely on a different perspective of the input graph, which, instead of being an encoding of the input data, it's used as a form of local communication between agents. In particular, in their decentralized setting each node in the graph is an agent and the links to other agents are determined by a distance metric, so that the actual neighborhood of a node changes over time. Features are instead computed by specialized architectures (sequences of CNNs and MLPs), starting from raw local observations. In this way, both the topology of the network and the features associated to each node evolve together with the multi-agent environment, so that the overall model should be able to adapt to this dynamicity. 
+
+\section{Architectures}
+\subsection{Entire graph embeddings}
+Recalling the railway encoding described in \ref{sec:railway-encoding}, where the environment is represented as a compact graph, the observations described in \ref{sec:obs} do not seem effective enough at exploiting all the underlying knowledge already encoded in the topology of the network. Up to now, the shortest/deviation paths predictor (see \ref{subsec:shortest-deviation-pred}) and the binary tree observator (see \ref{subsec:binary-tree-obs}) relied on the COJG graph only as a way to gain running time efficiency. Because of this, different experiments were made to try and extract features from the COJG graph itself.
+
+\subsection{Multi-agent graph embeddings}
 
 \chapter{Results}
 

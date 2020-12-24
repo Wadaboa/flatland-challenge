@@ -249,11 +249,12 @@ class DQNPolicy(Policy):
             ).detach().cpu().numpy()
 
             # Softmax Bellman
-            if self.params.learning.softmax_bellman:
+            if self.params.learning.softmax_bellman.enabled:
                 return np.sum(
                     q_targets_next * policy_utils.masked_softmax(
                         q_locals_next,
-                        next_legal_choices.reshape(q_locals_next.shape)
+                        next_legal_choices.reshape(q_locals_next.shape),
+                        temperature=self.params.learning.softmax_bellman.temperature
                     ), axis=1, keepdims=True
                 )
 
@@ -275,11 +276,12 @@ class DQNPolicy(Policy):
                     q_targets_next,
                     next_legal_choices.reshape(q_targets_next.shape)
                 )
-                if not self.params.learning.softmax_bellman
+                if not self.params.learning.softmax_bellman.enabled
                 else np.sum(
                     q_targets_next * policy_utils.masked_softmax(
                         q_targets_next,
-                        next_legal_choices.reshape(q_targets_next.shape)
+                        next_legal_choices.reshape(q_targets_next.shape),
+                        temperature=self.params.learning.softmax_bellman.temperature
                     ), axis=1, keepdims=True
                 )
             )
@@ -343,8 +345,8 @@ class DQNGNNPolicy(DQNPolicy):
         '''
         super(DQNGNNPolicy, self).__init__(
             params, (
-                params.model.single_gnn.embedding_size *
-                params.model.single_gnn.pos_size
+                params.model.entire_gnn.embedding_size *
+                params.model.entire_gnn.pos_size
             ),
             choice_selector, training=training
         )
@@ -352,12 +354,12 @@ class DQNGNNPolicy(DQNPolicy):
         self.qnetwork_local = policy_utils.Sequential(
             EntireGNN(
                 state_size,
-                self.params.model.single_gnn.pos_size,
-                self.params.model.single_gnn.embedding_size,
+                self.params.model.entire_gnn.pos_size,
+                self.params.model.entire_gnn.embedding_size,
                 nonlinearity=self.params.model.nonlinearity.get_true_key(),
-                gnn_hidden_size=self.params.model.single_gnn.hidden_size,
+                gnn_hidden_size=self.params.model.entire_gnn.hidden_size,
                 depth=self.params.observator.max_depth,
-                dropout=self.params.model.single_gnn.dropout,
+                dropout=self.params.model.entire_gnn.dropout,
                 device=self.device
             ).to(self.device),
             self.qnetwork_local
