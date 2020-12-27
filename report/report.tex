@@ -807,7 +807,7 @@ learning than their $\max$ counterparts: this already suggests that the $\softma
 
 However, depending upon the amount of noise, it is possible that, unlike double DQN, the reduction caused by $\softmax$ could exceed the bias introduced by $\max$ (overcompensation). But, when combined with double Q-learning, this effect becomes very small.
 
-In our experiments, the use of the $\softmax$ Bellman operator 
+In our experiments, the use of the $\softmax$ Bellman operator resulted in much faster training convergence and higher test scores (see chapter \ref{chap:results}), thus replicating the claims made in the cited paper.
 
 \chapter{GNN}
 The main goal of GNNs (Graph Neural Networks) is, given an input graph, to learn a mapping from nodes into an embedding space and use the embedded vectors to perform some kind of downstream task (e.g. node classification or link prediction). 
@@ -825,14 +825,23 @@ One of the key ideas in GNNs is the one referred to as message passing: nodes ag
 
 Figure \ref{fig:gnn-drawing} shows an input graph and the corresponding GNN aggregations to compute an embedding for node $A$, with a fixed depth of $2$. Key distinctions between different GNN architectures are on how different approaches aggregate information across the layers (i.e. the implementation of the $AGG$ box in the figure).
 
-As reported in \cite{graphsage}, a general framework to perform GNN aggregations (also called graph convolutions) is the following:
+As reported in \cite{graphsage}, a general framework (GraphSAGE) to perform GNN aggregations (also called graph convolutions) is the following:
 $$
-h_k(u)=\sigma\left(\left[W_k \cdot f(\{h_{k-1}(v), \forall v \in N(u)\}), B_k h_{k-1}(u)\right]\right)
+h_k(u)=\sigma\left(\left[W_k \cdot f(\{h_{k-1}(v), \forall v \in N(u)\}), B_k h_{k-1}(u)\right]\right),
 $$
+where $\sigma$ is a non-linearity, $W_k$ and $B_k$ are trainable weight matrices for layer $k$, $h_k$ is the embedding at layer $k$, $[\cdot]$ is the concatenation operator and the function $f$ could be any differentiable function that maps the set of vectors in $N(u)$ to a single vector. Some examples of such functions are:
+\begin{itemize}
+	\item Mean: $\sum_{v\in N(u)}\frac{h_{k-1}(v)}{|N(u)|}$
+	\item Pool: $\gamma(\{Q\cdot h_{k-1}(v), \forall v \in N(u)\})$, where $\gamma$ could be element-wise mean or max
+	\item LSTM: $LSTM(\{h_{k-1}(v), \forall v \in \pi(N(u))\})$
+\end{itemize}
 
+GraphSAGE could also be viewed as a generalization of the previously presented GCN \cite{gcn} (Graph Convolutional Network), where an embedding at layer $k$ is computed as a simpler neighborhood average:
 $$
 h_k(u)=\sigma\left(W_k\sum_{v\in N(u)}\frac{h_{k-1}(v)}{|N(u)|}+B_k h_{k-1}(u)\right)
 $$
+
+The embeddings reported so far are only related to nodes in the graph (even though some of them also consider edge weights when computing them), but other approaches exist to directly compute edge embeddings via edge convolutions \cite{edge-conv-gnn}. Moreover, different methods could be needed when dealing with dynamic graphs (i.e. graphs that evolve over time, both feature-wise and topology-wise).
 
 
 \begin{figure}
@@ -952,7 +961,7 @@ Recalling the railway encoding described in \ref{sec:railway-encoding}, where th
 
 \subsection{Multi-agent graph embeddings}
 
-\chapter{Results}
+\chapter{Results}\label{chap:results}
 
 \chapter{Conclusions}
 
