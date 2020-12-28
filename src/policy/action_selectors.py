@@ -130,7 +130,9 @@ class EpsilonGreedyActionSelector(ActionSelector):
         max_action = policy_utils.masked_argmax(actions, legal_actions, dim=0)
         if not training or random.random() > self.epsilon:
             return max_action, True
-        random_action = random.choice(np.arange(actions.size)[legal_actions])
+        random_action = np.random.choice(
+            np.arange(actions.size)[legal_actions]
+        )
         return (random_action, max_action == random_action)
 
     def decay(self):
@@ -174,7 +176,7 @@ class BoltzmannActionSelector(ActionSelector):
         dist = policy_utils.masked_softmax(
             actions, legal_actions, dim=0, temperature=self.temperature
         )
-        random_action = random.choice(
+        random_action = np.random.choice(
             np.arange(actions.size)[legal_actions], p=dist[legal_actions]
         )
         is_equal = max_action == random_action

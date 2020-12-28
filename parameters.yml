@@ -24,11 +24,11 @@ env:
   # (3 medium - 5 big)
   max_rails_in_cities: 5
   # Enable variable speed
-  variable_speed: False
+  variable_speed: True
   # Malfunctions config
   malfunctions:
     # Enable malfunctions
-    enabled: False
+    enabled: True
     # Malfunction rate
     # (0.0125 medium - 0.0125 big)
     rate: !!float 0.005

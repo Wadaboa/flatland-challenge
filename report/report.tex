@@ -1232,6 +1232,38 @@ Training results are also reflected in the test metrics shown in table \ref{tabl
 
 \section*{Boltzmann vs. $\epsilon$-greedy action selector}\label{sec:action-selectors-res}
 
+\begin{figure}[h]
+	\centering
+	\captionsetup[subfigure]{justification=centering}
+	\begin{subfigure}[b]{\linewidth}
+		\includegraphics[width=\textwidth]{boltzmann-epsgreedy-returns}
+	\end{subfigure}
+	
+	\begin{subfigure}[b]{\linewidth}
+		\includegraphics[width=\textwidth]{boltzmann-epsgreedy-completions}
+	\end{subfigure}
+	
+	\begin{subfigure}[b]{\linewidth}
+		\includegraphics[width=\textwidth]{boltzmann-epsgreedy-steps}
+	\end{subfigure}
+
+	\caption{Boltzmann vs. $\epsilon$-greedy action selector training metrics}
+	\label{fig:boltzmann-epsgreedy-metrics}
+\end{figure}
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{|c|c|c|c|c|c|c|}
+		\hline & \textbf{$\epsilon$-greedy} & \textbf{Boltzmann} \\ \hline
+		\textbf{Dones}      & $89.40\%$ & $84.90\%$  \\ \hline
+		\textbf{Deadlocks}  & $0.0680$ & $0.0860$ \\ \hline
+		\textbf{Return}     & $-0.1145$ & $-0.1388$ \\ \hline
+		\textbf{Steps}      & $93$ & $115$ \\ \hline
+	\end{tabular}
+	\caption{Boltzmann vs. $\epsilon$-greedy action selector results, tested on medium environment}
+	\label{table:bellman-operators-res}
+\end{table}
+
 \section*{Entire graph embeddings}\label{sec:entire-graph-res}
 \subsection*{Single agent entire graph embeddings vs. random baseline}\label{sec:entire-graph-single-agent-res}
 
