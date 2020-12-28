@@ -1,0 +1,6 @@
+-f https://pytorch-geometric.com/whl/torch-1.6.0.html
+torch-scatter==latest+cpu
+torch-sparse==latest+cpu
+torch-cluster==latest+cpu
+torch-spline-conv==latest+cpu
+torch-geometric==1.6.1

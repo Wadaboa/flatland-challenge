@@ -1,7 +1,3 @@
-flatland-rl==2.2.2
-tensorboard==2.3.0
-wandb==0.9.5
-tensorflow==2.1.0
 -f https://pytorch-geometric.com/whl/torch-1.6.0.html
 torch-scatter==latest+cu102
 torch-sparse==latest+cu102
