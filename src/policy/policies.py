@@ -313,11 +313,11 @@ class DQNPolicy(Policy):
         '''
         if os.path.exists(filename + ".local"):
             self.qnetwork_local.load_state_dict(
-                torch.load(filename + ".local")
+                torch.load(filename + ".local", map_location=self.device)
             )
             if self.training and os.path.exists(filename + ".target"):
                 self.qnetwork_target.load_state_dict(
-                    torch.load(filename + ".target")
+                    torch.load(filename + ".target", map_location=self.device)
                 )
         else:
             print("Model not found. Please, check the given path.")

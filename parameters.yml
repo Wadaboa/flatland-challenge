@@ -2,7 +2,7 @@
 env:
   # Random seed used to generate rails
   # (14 medium - 14 big)
-  seed: 1
+  seed: 14
   # Number of trains to spawn
   # (3, 5, 7 medium - 5, 7, 10 big)
   num_trains: 5
@@ -42,7 +42,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 7
+  max_depth: 6
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -55,7 +55,7 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 7
+  max_depth: 6
 
 # Policy config
 policy:
@@ -117,7 +117,7 @@ learning:
     # Enable or disable
     enabled: True
     # Temperature parameter in the softmax
-    temperature: !!float 0.5
+    temperature: !!float 1.0
   # Loss function
   loss:
     # (Masked) Huber loss
@@ -250,7 +250,7 @@ testing:
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: "20201216-145212-latest"
+  model: "checkpoints/20201216-145212-latest"
   # Verbose option
   verbose: False
   # Renderer config
