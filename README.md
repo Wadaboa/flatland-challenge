@@ -8,26 +8,25 @@ Our solutions mostly focus on implementing custom predictors and observators. Mo
 
 ## Installation
 
-### Anaconda
+Before installing the actual Python libraries, make sure that you have installed the system packages listed below.
 
-Install [Anaconda](https://www.anaconda.com/distribution/) and create a new conda environment:
-
+**Ubuntu/Debian**
 ```bash
-conda env create --name flatland-rl -f init/environment.yml
-conda activate flatland-rl
+sudo apt install libcairo2-dev pkg-config python3-dev libbz2-dev liblzma-dev
+```
+------
+
+Next, to install all the libraries required by the Python package, run the following command:
+```bash
+chmod +x init/init.sh 
+./init/init.sh <env> <device>
 ```
 
-### Pip
+Here, `<env>` could be `pip` or `conda`, to choose what type of environment manager you want to use, while `<device>` could be `cpu` or `gpu`, to select the right dependencies based on the resources available.
 
-Make sure that you have `Python 3.6` (the project has been tested both with `Python 3.6.3` and `Python 3.6.8`) installed on your system. Then, `cd` in the root folder of this project and run the following command:
+If you select `conda` as the environment manager, you should have it installed on your system (see [here](https://docs.conda.io/en/latest/miniconda.html) for installation instructions).
 
-```bash
-python3 -m venv venv
-source venv/bin/activate
-pip install -r init/requirements.txt
-```
-
-The command will create a virtual environment (named `venv`), activate it and install all the necessary dependencies.
+Beware that the `pip` environment was only tested with `Python 3.6.3` (you can use [pyenv](https://github.com/pyenv/pyenv) to handle multiple Python versions), while the `conda` environment automatically installs `Python 3.6.8`. 
 
 ## Training
 

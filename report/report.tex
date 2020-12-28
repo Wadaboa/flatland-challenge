@@ -16,7 +16,7 @@
    urlcolor=cyan
 }
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta,shadows,positioning}
+\usetikzlibrary{arrows.meta,shadows,positioning,shapes.geometric}
 \usepackage{amssymb}
 \usepackage[sc]{mathpazo}
 \linespread{1.05}
@@ -48,6 +48,7 @@
 \addbibresource{references.bib}
 \usepackage{blkarray}
 \usepackage{siunitx}
+\usepackage{booktabs}
 \graphicspath{ {./img/} }
 
 % Set TOC depth and sections numbering
@@ -90,6 +91,7 @@
 \newpage
 \tableofcontents
 \listoffigures
+\listoftables
 \newpage
 
 
@@ -807,14 +809,146 @@ learning than their $\max$ counterparts: this already suggests that the $\softma
 
 However, depending upon the amount of noise, it is possible that, unlike double DQN, the reduction caused by $\softmax$ could exceed the bias introduced by $\max$ (overcompensation). But, when combined with double Q-learning, this effect becomes very small.
 
-In our experiments, the use of the $\softmax$ Bellman operator 
+In our experiments, the use of the $\softmax$ Bellman operator resulted in much faster training convergence and higher test scores (see chapter \ref{chap:results}), thus replicating the claims made in the cited paper.
 
 \chapter{GNN}
-The main idea behing GNNs (Graph Neural Networks) is, given an input graph, to map its nodes into an embedding space and use the embedded vectors to perform some kind of downstream task (e.g. node classification or link prediction). 
+The main goal of GNNs (Graph Neural Networks) is, given an input graph, to learn a mapping from nodes into an embedding space and use the embedded vectors to perform some kind of downstream task (e.g. node classification or link prediction). 
 
 GNN architectures take inspiration from CNNs (Convolutional Neural Networks), by focusing on a local portion of the input data, thus recycling the idea of shared weights. Actually, GNNs are usually framed as a general framework that pops up more and more often in different specialized deep learning architectures: for example, the original transformer \cite{transformers} designed for NLP tasks operates on fully connected graphs representing all connections between the words in a sequence (see \cite{gnn-transformers} for a generalization of transformers which leverages the graph connectivity inductive bias).
 
-Formally, given an input graph $G=(V,E)$, where $V$ is the vertex set, $E$ is the edges set ($E\subseteq V\times V$), we denote with $A$ the adjacency matrix of $G$, so that $a_{i,j}=w\neq 0$ if and only if node $i$ is connected to node $j$ via the edge $(i, j)$ that weighs $w$ (otherwise $a_{i,j}=0$). Moreover, we define feature matrices $X_V\in \mathbb{R}^{|V|\cdot n}$ and $X_E\in \mathbb{R}^{|E|\cdot m}$, where $n$ is the number of features associated to each node and $m$ is the number of features associated to each edge.
+Formally, given an input graph $G=(V,E)$, where $V$ is the vertex set, $E$ is the edges set ($E\subseteq V\times V$), we denote with $A$ the adjacency matrix of $G$, so that $a_{i,j}=w\neq 0$ if and only if node $i$ is connected to node $j$ via the edge $(i, j)$ that weighs $w$ (otherwise $a_{i,j}=0$). Moreover, we define feature matrices $X_V\in \mathbb{R}^{|V|\cdot n}$ and $X_E\in \mathbb{R}^{|E|\cdot m}$, where $n$ is the number of features associated to each node and $m$ is the number of features associated to each edge. Whenever features are not available for the problem at hand, simple techniques like using indicator vectors or arrays of constant values could still work, depending on the application.
+
+One of the key ideas in GNNs is the one referred to as message passing: nodes aggregate information from their neighbors using custom functions or function approximators. The depth at which these models operate has the following meaning:
+\begin{itemize}
+	\item Layer $0$: the embedding of node $u$ is equal to its input features $X_V(u)$
+	\item Layer $1$: the embedding of node $u$ is equal to the aggregated features $X_V(N(u))$ from its immediate neighbors $N(u)$
+	\item Layer $k$: the embedding of node $u$ is constituted by the recursive aggregation of features from nodes that are at most $k$ hops away from $u$  
+\end{itemize}
+
+Figure \ref{fig:gnn-drawing} shows an input graph and the corresponding GNN aggregations to compute an embedding for node $A$, with a fixed depth of $2$. Key distinctions between different GNN architectures are on how different approaches aggregate information across the layers (i.e. the implementation of the $AGG$ box in the figure).
+
+\begin{figure}[!h]
+	\centering
+	\begin{subfigure}[b]{\linewidth}
+		\center
+		\begin{tikzpicture}
+			\begin{scope}[
+				every node/.style={circle,thick,draw=green!50,fill=green!20},
+				sel/.style={draw=cyan!50, fill=cyan!20}
+			]
+				\node [sel] (A) at (0,0) {A};
+				\node (D) at (0,3) {D};
+				\node (E) at (2.5,4) {E};
+				\node (C) at (2.5,1) {C};
+				\node (B) at (2.5,-3) {B};
+				\node (F) at (5,3) {F};
+			\end{scope}
+			
+			\begin{scope}[every node/.style={circle,thick,draw=green!50,fill=green!20}]
+				\path[draw,thick] 
+					(A) -- (B)
+					(A) -- (D)
+					(A) -- (C)
+					(B) -- (C)
+					(C) -- (E)
+					(C) -- (F)
+					(E) -- (F); 
+			\end{scope}
+		\end{tikzpicture}
+		\caption{Input graph}
+		\label{fig:input-graph}
+	\end{subfigure}%
+	\vspace{10mm}
+	\begin{subfigure}[b]{\linewidth}
+		\center
+		\begin{tikzpicture}[
+			level distance=20mm,
+			level 1/.style={every child/.style={edge from parent}},
+			level 2/.style={every child/.style={edge from parent},sibling distance=25mm},
+			level 3/.style={every child/.style={edge from parent},sibling distance=25mm},
+			level 4/.style={every child/.style={edge from parent},sibling distance=8mm},
+			vertex/.style={circle,thick,draw=green!50,fill=green!20},
+			agg/.style={thick,draw=red!50,fill=red!20},
+			sel/.style={circle,thick,draw=cyan!50, fill=cyan!20},
+			square/.style={regular polygon,regular polygon sides=4},
+			grow'=right
+		]
+		\node (root) [sel] {A}
+			child {
+				node (agg0) [square, agg] {AGG}
+				child {
+					node (b1) [vertex] {B}
+					child {
+						node (agg10) [square, agg] {AGG}
+						child {
+							node (a21) [vertex] {A}
+						}
+						child {
+							node (c21) [vertex] {C}
+						}
+					}
+				}
+				child {
+					node (c1) [vertex] {C}
+					child {
+						node (agg11) [square, agg] {AGG}
+						child {
+							node (a22) [vertex] {A}
+						}
+						child {
+							node (b21) [vertex] {B}
+						}
+						child {
+							node (e21) [vertex] {E}
+						}
+						child {
+							node (f21) [vertex] {F}
+						}
+					}
+				}
+				child {
+					node (d1) [vertex] {D}
+					child {
+						node (agg12) [square, agg] {AGG}
+						child {
+							node (a23) [vertex] {A}
+						}
+					}
+				}
+			};
+		\begin{scope}[every node/.style={text width=2cm, align=center, anchor=center, font=\bfseries,}]
+			\node[above=0.5cm of a21] (labels-level) {Layer 0};
+			\node[at =(labels-level-|b1)] {Layer 1};
+			\node[at =(labels-level-|root)] {Layer 2};
+		\end{scope}
+		\end{tikzpicture}
+		\caption{GNN aggregation}
+		\label{fig:gnn-aggregation}
+	\end{subfigure}%
+
+	\caption{Input graph with GNN aggregation}
+	\label{fig:gnn-drawing}
+\end{figure}
+\clearpage
+
+As reported in \cite{graphsage}, a general framework (GraphSAGE) to perform GNN aggregations (also called graph convolutions) is the following:
+$$
+h_k(u)=\sigma\left(\left[W_k \cdot f(\{h_{k-1}(v), \forall v \in N(u)\}), B_k h_{k-1}(u)\right]\right),
+$$
+where $\sigma$ is a non-linearity, $W_k$ and $B_k$ are trainable weight matrices for layer $k$, $h_k$ is the embedding at layer $k$, $[\cdot]$ is the concatenation operator and the function $f$ could be any differentiable function that maps the set of vectors in $N(u)$ to a single vector. Some examples of such functions are:
+\begin{itemize}
+	\item Mean: $\sum_{v\in N(u)}\frac{h_{k-1}(v)}{|N(u)|}$
+	\item Pool: $\gamma(\{Q\cdot h_{k-1}(v), \forall v \in N(u)\})$, where $\gamma$ could be element-wise mean or max
+	\item LSTM: $LSTM(\{h_{k-1}(v), \forall v \in \pi(N(u))\})$
+\end{itemize}
+
+GraphSAGE could also be viewed as a generalization of the previously presented GCN \cite{gcn} (Graph Convolutional Network), where an embedding at layer $k$ is computed as a simpler neighborhood average:
+$$
+h_k(u)=\sigma\left(W_k\sum_{v\in N(u)}\frac{h_{k-1}(v)}{|N(u)|}+B_k h_{k-1}(u)\right)
+$$
+
+The embeddings reported so far are only related to nodes in the graph (even though some of them also consider edge weights when computing them), but other approaches exist to directly compute edge embeddings via edge convolutions \cite{edge-conv-gnn}. Moreover, different methods could be needed when dealing with dynamic graphs (i.e. graphs that evolve over time, both feature-wise and topology-wise).
+
 
 \section{Integrating GNNs in DQNs}
 In the literature, there have been lots of promising work towards the integration of GNNs and DQNs, where experiments show great generalization results over graph-structured input data.
@@ -829,7 +963,109 @@ Recalling the railway encoding described in \ref{sec:railway-encoding}, where th
 
 \subsection{Multi-agent graph embeddings}
 
-\chapter{Results}
+\chapter{Results}\label{chap:results}
+This chapter contains a detailed description of all the experiments that were done, based on ideas that were introduced in the previous chapters. In order to present comparable results, we performed training over two types of Flatland environments, i.e. the ones identified as medium and big in table \ref{table:test-envs}.
+
+The training phase should span over different environments, so that agents are able to explore different samples of the same type of environment. To this end, Flatland provides a way to generate new railways out of the box, by relying on a random seed which uniquely identifies the sequence of environments that will be generated when starting from it: when training our agents, we didn't settle on a specific seed (even though seed $1$ is the one we used most frequently), while when evaluating and testing them we sticked to random seed $14$.
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{@{}ccc@{}}
+		\toprule
+		\textbf{Parameter}							& \textbf{Medium} & \textbf{Big} \\ \midrule
+		\texttt{width}                       &   48     &  64   \\
+		\texttt{height}                      &   27     &  36   \\
+		\texttt{max\_cities}                 &   5     &   9  \\
+		\texttt{max\_rails\_between\_cities} &   2     &   5  \\
+		\texttt{max\_rails\_in\_cities}      &   3     &   5  \\ \bottomrule
+	\end{tabular}
+	\caption{Test environments settings}
+	\label{table:test-envs}
+\end{table}
+
+During training, models are evaluated at specific checkpoints (e.g. once every $200$ training episodes), for a specified number of validation episodes (e.g. $20$). A key idea about evaluation is that the model is continuosly tested over the same sequence of environments, at every checkpoint, so that we are able to observe the effectiveness of training, by looking at how agents evolve and if their behavior is getting better over time.
+
+Table \ref{table:common-params} shows some hyperparameters that are common to all the experiments shown in subsequent sections.
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{@{}cc@{}}
+		\toprule
+		\textbf{Parameter}							& \textbf{Value} \\ \midrule
+		\texttt{env.malfunctions.rate} &   $0.005$    \\
+		\texttt{env.malfunctions.min\_duration} &   $15$    \\
+		\texttt{env.malfunctions.max\_duration} &   $50$    \\
+		\texttt{learning.learning\_rate}                 &   $0.5e-4$   \\
+		\texttt{learning.tau}                  &   $1e-3$    \\
+		\texttt{learning.discount}       &  $0.99$     \\ 
+		\texttt{learning.softmax\_bellman.enabled}       &  True     \\  
+		\texttt{model.double}       &  True    \\ 
+		\texttt{model.dueling}       &  True    \\  
+		\texttt{replay\_buffer.size}       &  $\num{100000}$    \\ 
+		\texttt{replay\_buffer.batch\_size}       &  $128$    \\
+		\texttt{replay\_buffer.checkpoint}       &  $4$    \\ \bottomrule
+	\end{tabular}
+	\caption{Common hyperparameters}
+	\label{table:common-params}
+\end{table}
+
+\section*{Binary tree with DQN}
+
+Table \ref{table:bt-common-params} shows some hyperparameters that are common to all the experiments done with the binary tree observator and the DQN architecture.
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{@{}cc@{}}
+		\toprule
+		\textbf{Parameter}							& \textbf{Value} \\ \midrule
+		\texttt{learning.softmax\_bellman.temperature}       &  $1.0$     \\ 
+		\texttt{learning.loss}       &  Huber     \\ 
+		\texttt{model.hidden\_sizes}       &  $[128,128]$    \\ 
+		\texttt{model.nonlinearity}       &  Tanh    \\ 
+		\bottomrule
+	\end{tabular}
+	\caption{Binary tree common hyperparameters}
+	\label{table:bt-common-params}
+\end{table}
+
+\subsection*{Medium environment}
+
+Table \ref{table:bt-medium-params} shows the hyperparameters that resulted in the best training convergence and test results on the medium environment, when all agents travel at the same speed and no malfunction occurs. In particular, testing results are shown in table \ref{bt-medium-res}. 
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{@{}cc@{}}
+		\toprule
+		\textbf{Parameter}							& \textbf{Value} \\ \midrule
+		\texttt{env.seed} &   $1$    \\
+		\texttt{env.num\_trains} &   $7$    \\
+		\texttt{env.variable\_speed} &   False    \\
+		\texttt{env.malfunctions.enabled} &   False    \\
+		\texttt{env.rewards.stop\_penalty} &   $2.0$    \\
+		\texttt{predictor.max\_depth}                 &   $7$   \\
+		\texttt{observator.max\_depth}                  &   $7$    \\
+		\texttt{observator.normalization\_radius}       &  $30$     \\ \bottomrule
+	\end{tabular}
+	\caption{Binary tree hyperparameters in medium environment}
+	\label{table:bt-medium-params}
+\end{table}
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{|c|c|c|c|}
+	\hline
+						   & \textbf{3 agents} & \textbf{5 agents} & \textbf{7 agents} \\ \hline
+	\textbf{Fraction of dones}      &    $93.07\%$      &    $89.40\%$      &    $82.51\%$      \\ \hline
+	\textbf{Fraction of deadlocks}  &    $0.0307$      &    $0.0596$      &    $0.1023$      \\ \hline
+	\textbf{Mean normalized return} &    $-0.1404$      &     $-0.1581$     &    $-0.2057$      \\ \hline
+	\textbf{Mean number of steps} &     $142$     &  $187$        &   $250$       \\ \hline
+	\end{tabular}
+	\caption{Binary tree results in medium environment}
+	\label{table:bt-medium-res}
+\end{table}
+
+\subsection*{Big environment}
+
 
 \chapter{Conclusions}
 

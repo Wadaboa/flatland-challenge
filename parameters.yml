@@ -5,30 +5,30 @@ env:
   seed: 1
   # Number of trains to spawn
   # (3, 5, 7 medium - 5, 7, 10 big)
-  num_trains: 7
+  num_trains: 5
   # Environment width
   # (48 medium - 64 big)
-  width: 48
+  width: 64
   # Environment height
   # (27 medium - 36 big)
-  height: 27
+  height: 36
   # Maximum number of cities where agents can start or end
   # (5 medium - 9 big)
-  max_cities: 5
+  max_cities: 9
   # Type of city distribution
   grid: False
   # Maximum number of tracks allowed between cities
   # (2 medium - 5 big)
-  max_rails_between_cities: 2
+  max_rails_between_cities: 5
   # Maximum number of parallel tracks within a city
   # (3 medium - 5 big)
-  max_rails_in_cities: 3
+  max_rails_in_cities: 5
   # Enable variable speed
-  variable_speed: True
+  variable_speed: False
   # Malfunctions config
   malfunctions:
     # Enable malfunctions
-    enabled: True
+    enabled: False
     # Malfunction rate
     # (0.0125 medium - 0.0125 big)
     rate: !!float 0.005
@@ -117,7 +117,7 @@ learning:
     # Enable or disable
     enabled: True
     # Temperature parameter in the softmax
-    temperature: 1
+    temperature: !!float 0.5
   # Loss function
   loss:
     # (Masked) Huber loss
@@ -211,7 +211,7 @@ generic:
 # Training config
 training:
   # Checkpoint interval (how often to evaluate and save the model)
-  checkpoint: 200
+  checkpoint: 500
 
   # Train environment config
   train_env:
@@ -246,11 +246,11 @@ training:
 
 testing:
   # Number of episodes to run
-  episodes: 100
+  episodes: 500
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: ""
+  model: "20201216-145212-latest"
   # Verbose option
   verbose: False
   # Renderer config
