@@ -551,6 +551,8 @@ To sum up efficiency improvements, each feature is built from scratch, by levera
 	\label{table:tree-bt-48x27}
 \end{table}
 
+\subsection{FOV}\label{subsec:fov-obs}
+
 \subsection{Normalization}
 We already mentioned that an observation should be considered as a snapshot of a state from the point of view of an agent; then we reported that this snapshot should be consistent across different runs and that it should also be shaped as a tensor of fixed size. All of this pre-preprocessing is a required step that should be carefully considered when working with neural models (the ones that will be described in subsequent chapters). 
 
@@ -809,7 +811,7 @@ learning than their $\max$ counterparts: this already suggests that the $\softma
 
 However, depending upon the amount of noise, it is possible that, unlike double DQN, the reduction caused by $\softmax$ could exceed the bias introduced by $\max$ (overcompensation). But, when combined with double Q-learning, this effect becomes very small.
 
-In our experiments, the use of the $\softmax$ Bellman operator resulted in much faster training convergence and higher test scores (see chapter \ref{chap:results}), thus replicating the claims made in the cited paper.
+In our experiments, the use of the $\softmax$ Bellman operator resulted in much faster training convergence and higher test scores (see section \ref{sec:bellman-operators-res}), thus replicating the claims made in the cited paper.
 
 \chapter{GNN}
 The main goal of GNNs (Graph Neural Networks) is, given an input graph, to learn a mapping from nodes into an embedding space and use the embedded vectors to perform some kind of downstream task (e.g. node classification or link prediction). 
@@ -926,7 +928,7 @@ Figure \ref{fig:gnn-drawing} shows an input graph and the corresponding GNN aggr
 		\label{fig:gnn-aggregation}
 	\end{subfigure}%
 
-	\caption{Input graph with GNN aggregation}
+	\caption{Input graph with GNN aggregation (example taken from \cite{gnn-lectures})}
 	\label{fig:gnn-drawing}
 \end{figure}
 \clearpage
@@ -955,13 +957,52 @@ In the literature, there have been lots of promising work towards the integratio
 
 In \cite{dqn-gnn-routing} authors study the problem of finding the optimal routing configuration for a set of traffic demands (which is NP-hard). Their solution relies on a centralized approach, where the agent has a global view of the current state and is tasked to route messages in an end-to-end fashion. In this scenario, the routing problem is defined as finding the optimal routing policy for each incoming source-destination traffic demand and the learning process is guided by an objective function that aims to maximize the traffic volume allocated in the network in the long-term. The GNN part comes into play with the state representation itself, where the graph is directly defined by the underlying network and features are attached to links between nodes (e.g. the current available capacity).
 
-In \cite{dgn} and \cite{dqn-gnn-robot} authors rely on a different perspective of the input graph, which, instead of being an encoding of the input data, it's used as a form of local communication between agents. In particular, in their decentralized setting each node in the graph is an agent and the links to other agents are determined by a distance metric, so that the actual neighborhood of a node changes over time. Features are instead computed by specialized architectures (sequences of CNNs and MLPs), starting from raw local observations. In this way, both the topology of the network and the features associated to each node evolve together with the multi-agent environment, so that the overall model should be able to adapt to this dynamicity. 
+In \cite{dgn}, \cite{dqn-gnn-robot} and \cite{magat} authors rely on a different perspective of the input graph, which, instead of being an encoding of the input data, it's used as a form of local communication between agents. In particular, in their decentralized setting each node in the graph is an agent and the links to other agents are determined by a distance metric, so that the actual neighborhood of a node changes over time. Features are instead computed by specialized architectures (sequences of CNNs and MLPs), starting from raw local observations. In this way, both the topology of the network and the features associated to each node evolve together with the multi-agent environment, so that the overall model should be able to adapt to this dynamicity. 
 
 \section{Architectures}
 \subsection{Entire graph embeddings}
 Recalling the railway encoding described in \ref{sec:railway-encoding}, where the environment is represented as a compact graph, the observations described in \ref{sec:obs} do not seem effective enough at exploiting all the underlying knowledge already encoded in the topology of the network. Up to now, the shortest/deviation paths predictor (see \ref{subsec:shortest-deviation-pred}) and the binary tree observator (see \ref{subsec:binary-tree-obs}) relied on the COJG graph only as a way to gain running time efficiency. Because of this, different experiments were made to try and extract features from the COJG graph itself.
 
+In particular, our very first GNN attempt follows the subsequent workflow:
+\begin{enumerate}
+	\item Build an observation that encodes the COJG graph and assigns the following features to each node, from the point of view of one agent:
+	\begin{enumerate}
+		\item Boolean value to indicate if the cell is free or occupied
+		\item Distance from the agent's target
+	\end{enumerate}
+	\item Associate a set of important positions to each agent:
+	\begin{enumerate}
+		\item The position to the left of the agent, if the agent is in a decision cell
+		\item The position to the right of the agent, if the agent is in a decision cell
+		\item The agent's position, if in the COJG graph, otherwise its previous position in the COJG graph
+	\end{enumerate}
+	\item Train agents as usual, but store graphs in the state element of the replay buffer
+	\item When learning, iterate over all the graphs in a batch and, for each one, compute a specified number of graph convolutions. Then, extract only the embeddings related to the previously saved important positions
+	\item Concatenate the extracted embeddings and use this new vector as an input for the DQN
+\end{enumerate}
+
+This architecture was mainly tested in the single agent navigation round, since it didn't seem strong enough to generalize well in a multi-agent environment: in-depth results are shown in section \ref{sec:entire-graph-res} of the next chapter.
+
 \subsection{Multi-agent graph embeddings}
+In this complex architecture we are following the same reasoning introduced in \cite{dqn-gnn-robot} and \cite{magat}, where the GNN is used as a communication channel to exchange information between agents. The great thing about this architecture is that it is end-to-end differentiable, meaning that both features and actions are computed by a neural model, so that we shouldn't need all the feature engineering steps that are instead mandatory when working with simpler observations (like the tree and binary tree ones, described in sections \ref{subsec:tree-obs} and \ref{subsec:binary-tree-obs}, respectively).
+
+Figure \ref{fig:dqn-gnn-robot} shows the entire architecture, which in our case leverages the FOV observation (see section \ref{subsec:fov-obs}), a CNN as the encoder, a GNN as the communication framework and a DQN as the $Q$ values estimator.  
+
+\begin{figure}[h]
+	\includegraphics[width=\textwidth]{dqn-gnn-robot.png}
+	\caption{Multi-agent graph embeddings architecture (image taken from \cite{dqn-gnn-robot})}
+	\label{fig:dqn-gnn-robot}
+\end{figure}
+
+Thanks to the FOV observator, each agent has a local field of view of dimension $d\times d$, where $d$, the observator's maximum depth, should be an odd number, so that the agent's position is always at the central position of the rectangular observation. The computed observation is then fed into a CNN, built by blocks of convolution, batch normalization, activation function and (optionally) max pooling layers. The intuition behind using a CNN is that we want to enforce a local paradigm, by processing the input observation into a higher-level feature tensor.
+
+The feature tensor produced by the CNN is then passed into a sequence of fully connected layers, so that it gets mapped to a fixed-size. Then, the encoded and down-scaled observation is assigned as the feature node representing each agent in the communication graph (which encodes agent distances by edges' weights). Finally, graph convolutions are performed to obtain an aggregated observation from all the neighboring agents w.r.t. a single agent (the number of executed hops is limited by a parameter).
+
+The final aggregated information is then used as an input to the DQN, to compute the estimated $Q$ values. Training is done by following the usual DQN pipeline, where a regression loss between the current $Q$ function and the optimal one (according to Bellman's equation) is used to backpropagate the errors that were made during that epoch, all the way up to the initial CNN encoder.
+
+Since this algorithm was conceived to be used in a multi-agent environment, one important modification needs to be taken into account when implementing it: an experience in the replay buffer is not related to a single agent anymore, but to all the agents in the environment.
+
+Again, in-depth results are shown in section \ref{sec:fov-dqn-gnn-robot-res}.
 
 \chapter{Results}\label{chap:results}
 This chapter contains a detailed description of all the experiments that were done, based on ideas that were introduced in the previous chapters. In order to present comparable results, we performed training over two types of Flatland environments, i.e. the ones identified as medium and big in table \ref{table:test-envs}.
@@ -1120,7 +1161,7 @@ The best results were obtained when training over the medium environment with co
 \end{table}
 \clearpage
 
-\section*{Standard vs. softmax Bellman}
+\section*{Standard vs. softmax Bellman}\label{sec:bellman-operators-res}
 In order to check the correctness of our softmax Bellman operator (introduced in \ref{subsec:bellman-operators}) and see if we could actually observe higher test scores in the Flatland problem, we trained a DQN model using the binary tree observator (as described in \ref{sec:bt-dqn-res}), over a rather simple setting (the one specified in table \ref{table:bellman-operators-params}). 
 
 Training was performed on the medium environment, while models were tested on the same environment type, but using a different random seed (i.e. seed $14$).
@@ -1189,8 +1230,12 @@ Training results are also reflected in the test metrics shown in table \ref{tabl
 	\label{table:bellman-operators-res}
 \end{table}
 
-\section*{FOV with multi-agent graph embeddings}
+\section*{Boltzmann vs. $\epsilon$-greedy action selector}\label{sec:action-selectors-res}
 
+\section*{Entire graph embeddings}\label{sec:entire-graph-res}
+\subsection*{Single agent entire graph embeddings vs. random baseline}\label{sec:entire-graph-single-agent-res}
+
+\section*{FOV with multi-agent graph embeddings}\label{sec:fov-dqn-gnn-robot-res}
 
 \chapter{Conclusions}
 
