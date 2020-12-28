@@ -639,7 +639,7 @@ $$
 Q^*(s,a)=\max_\pi\mathbb{E}\left[G_t\mid s_t=s,a_t=a,\pi\right]
 $$
 
-\section{Rewards and shaping}
+\section{Rewards and shaping}\label{sec:rewards-shaping}
 Designing rewards is a key property for the success of reinforcement learning agents. Rewards should be simple and straightforward, but they should also encode the right amount of information extracted from the domain of the application. Hence, they cannot be designed in a general fashion, because they are problem-dependent.
 
 Flatland provides the following rewards out of the box:
@@ -743,7 +743,7 @@ In practical terms, there are two main ways to implement an experience replay $E
 	\item Prioritized \cite{per}: authors propose to more frequently replay transitions with high expected learning progress, as measured by the magnitude of their TD error
 \end{itemize}
 
-\section{Improvements}
+\section{Improvements}\label{sec:dqn-improvements}
 \subsection{Double}\label{subsec:double-dqn}
 One important issue of standard DQNs is that they tend to overestimate $Q$ values (which is mostly due to the $\max$ operator in the Bellman optimality equation), leading to unstable training and low quality policies. 
 
@@ -788,7 +788,7 @@ By further inspecting the rationale behind \citeauthor{atari-dqn} (quoted below)
 	We also found it helpful to clip the error term from the update to be between $-1$ and $1$. Because the absolute value loss function $|x|$ has a derivative of $-1$ for all negative values of $x$ and a derivative of $1$ for all positive values of $x$, clipping the squared error to be between $-1$ and $1$ corresponds to using an absolute value loss function for errors outside of the $(-1,1)$ interval. This form of error clipping further improved the stability of the algorithm.
 \end{displayquote}
 
-\subsection{Bellman operators}
+\subsection{Bellman operators}\label{subsec:bellman-operators}
 So far, we sticked to training the presented models with the reported losses, by having Bellman optimality in mind. As already discussed in \ref{subsec:double-dqn} and \ref{subsec:dueling-dqn}, the main goal of the authors that developed the double and dueling DQN improvements was to reduce the overestimation bias of the resulting $Q$ values, which is mainly due to the use of the $\max$ operator in Bellman's equation.
 
 In \cite{softmax-bellman}, \citeauthor{softmax-bellman} explore the possibility of directly modifying Bellman's equation to understand if a change in the $\max$ operator therein could be beneficial to the $Q$ function estimates and how this could impact their overoptimistic behavior.
@@ -966,11 +966,9 @@ Recalling the railway encoding described in \ref{sec:railway-encoding}, where th
 \chapter{Results}\label{chap:results}
 This chapter contains a detailed description of all the experiments that were done, based on ideas that were introduced in the previous chapters. In order to present comparable results, we performed training over two types of Flatland environments, i.e. the ones identified as medium and big in table \ref{table:test-envs}.
 
-The training phase should span over different environments, so that agents are able to explore different samples of the same type of environment. To this end, Flatland provides a way to generate new railways out of the box, by relying on a random seed which uniquely identifies the sequence of environments that will be generated when starting from it: when training our agents, we didn't settle on a specific seed (even though seed $1$ is the one we used most frequently), while when evaluating and testing them we sticked to random seed $14$.
-
 \begin{table}[h]
 	\center
-	\begin{tabular}{@{}ccc@{}}
+	\begin{tabular}{@{}lcc@{}}
 		\toprule
 		\textbf{Parameter}							& \textbf{Medium} & \textbf{Big} \\ \midrule
 		\texttt{width}                       &   48     &  64   \\
@@ -983,18 +981,67 @@ The training phase should span over different environments, so that agents are a
 	\label{table:test-envs}
 \end{table}
 
-During training, models are evaluated at specific checkpoints (e.g. once every $200$ training episodes), for a specified number of validation episodes (e.g. $20$). A key idea about evaluation is that the model is continuosly tested over the same sequence of environments, at every checkpoint, so that we are able to observe the effectiveness of training, by looking at how agents evolve and if their behavior is getting better over time.
+Each environment type is then combined with a specific range of agents ($[3,5,7]$ in the medium environment and $[5,7,10]$ in the big one) and a complication type, which could be one of the following:
+\begin{itemize}
+	\item Complication \textbf{A}
+	\begin{itemize}
+		\item Malfunctions: absent
+		\item Speeds: $1.0$ for each agent
+	\end{itemize}
+	\item Complication \textbf{B} 
+	\begin{itemize}
+		\item Malfunctions: $\frac{1}{200}=0.005$ rate, $15$ minimum duration and $50$ maximum duration
+		\item Speeds: $0.25$ probability of having each of the speeds in $\{1, \frac{1}{2}, \frac{1}{3}, \frac{1}{4}\}$)
+	\end{itemize}
+\end{itemize}
 
-Table \ref{table:common-params} shows some hyperparameters that are common to all the experiments shown in subsequent sections.
+Ideally, the training phase should span over different environments, so that agents are able to explore different samples of the same type of environment. To this end, Flatland provides a way to generate new railways out of the box, by relying on a random seed which uniquely identifies the sequence of environments that will be generated when starting from it: when training our agents, we didn't settle on a specific seed (even though seed $1$ is the one we used most frequently), while when evaluating and testing them we sticked to random seed $14$.
+
+During training, models are evaluated at specific checkpoints (e.g. once every $200$ training episodes), for a specified number of validation episodes (e.g. $20$). A key idea about evaluation is that the model is continuosly tested over the same sequence of environments, at every checkpoint, so that we are able to observe the effectiveness of training, by looking at how agents evolve and if their behavior is getting better over time on the same set of examples.
 
 \begin{table}[h]
 	\center
-	\begin{tabular}{@{}cc@{}}
+	\begin{tabular}{@{}lm{5cm}@{}}
+		\toprule
+		\textbf{Parameter}							& \textbf{Description} \\ \midrule
+		\texttt{training.train_env.episodes} &   Number of training episodes    \\
+		\texttt{env.seed} &   Random seed to generate new railways during training    \\
+		\texttt{env.num\_trains} &   Number of agents    \\
+		\texttt{env.rewards.stop\_penalty} &  Stop penalty coefficient (see \ref{sec:rewards-shaping})    \\
+		\texttt{predictor.max\_depth} &  Maximum predictor depth   \\
+		\texttt{observator.max\_depth} & Maximum observator depth    \\
+		\texttt{observator.normalization\_radius} & Maximum distance to consider in feature normalization \\
+		\texttt{learning.learning\_rate} & Learning rate for the Adam optimizer \\
+		\texttt{learning.tau} & DQN soft update weight \\
+		\texttt{learning.discount} & DQN discount factor \\ 
+		\texttt{learning.softmax\_bellman.enabled} & Enable or disable softmax Bellman \\  
+		\texttt{learning.softmax\_bellman.temperature} & $\tau$ parameter in softmax Bellman (see \ref{subsec:bellman-operators}) \\ 
+		\texttt{learning.loss} & Regression loss to use (Huber or MSE) \\ 
+		\texttt{model.hidden\_sizes} & Number and size of FC layers \\ 
+		\texttt{model.nonlinearity} & Activation function (Tanh or ReLU) \\ 
+		\texttt{model.double} & Enable or disable double DQN \\ 
+		\texttt{model.dueling} & Enable or disable dueling DQN  \\  
+		\texttt{action_selector.type} & Action selector to use ($\epsilon$-greedy, Random, Greedy, Boltzmann or Categorical) \\
+		\texttt{parameter_decay.decaying_episodes} & Percentage of episodes in which the exploration parameter should reach its minimum \\
+		\texttt{parameter_decay.start} & Initial exploration value \\
+		\texttt{parameter_decay.end} & Final exploration value \\
+		\texttt{parameter_decay.type} & Exploration type (Linear or Exponential) \\
+		\texttt{replay\_buffer.size} & Replay buffer maximum size \\ 
+		\texttt{replay\_buffer.batch\_size} & Size of a batch of experiences \\
+		\texttt{replay\_buffer.checkpoint} & How often to learn \\ \bottomrule
+	\end{tabular}
+	\caption{Hyperparameters description}
+	\label{table:params-desc}
+\end{table}
+\clearpage
+
+Table \ref{table:params-desc} contains a high-level description of all the required hyperparameters, while table \ref{table:common-params} shows some hyperparameters that are common to all the experiments shown in subsequent sections.
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{@{}lc@{}}
 		\toprule
 		\textbf{Parameter}							& \textbf{Value} \\ \midrule
-		\texttt{env.malfunctions.rate} &   $0.005$    \\
-		\texttt{env.malfunctions.min\_duration} &   $15$    \\
-		\texttt{env.malfunctions.max\_duration} &   $50$    \\
 		\texttt{learning.learning\_rate}                 &   $0.5e-4$   \\
 		\texttt{learning.tau}                  &   $1e-3$    \\
 		\texttt{learning.discount}       &  $0.99$     \\ 
@@ -1009,62 +1056,140 @@ Table \ref{table:common-params} shows some hyperparameters that are common to al
 	\label{table:common-params}
 \end{table}
 
-\section*{Binary tree with DQN}
+\section*{Binary tree with DQN}\label{sec:bt-dqn-res}
 
-Table \ref{table:bt-common-params} shows some hyperparameters that are common to all the experiments done with the binary tree observator and the DQN architecture.
+Tables \ref{table:bt-medium-res} and \ref{table:bt-big-res} show testing results obtained by training agents using the binary tree observator (shown in section \ref{subsec:binary-tree-obs}) with the shortest/deviation paths predictor (shown in section \ref{subsec:shortest-deviation-pred}) and a DQN model improved with all the features described in \ref{sec:dqn-improvements}, which computes legal choices instead of actions (see \ref{subsec:choices}) and aims at maximizing the expected return, where rewards are shaped as outlined in \ref{sec:rewards-shaping}. Under the hood, both the observator and the predictor leverage the COJG graph (the one introduced in \ref{sec:railway-encoding}), while the environment skips unneeded computations when an agent is not in a real decision cell (see \ref{subsec:real-decisions}).
+
+The best results were obtained when training over the medium environment with complication \textbf{A}, with all the hyperparameters listed in table \ref{table:bt-params}, since agents were able to generalize in different ways: both w.r.t. the same environment type with a different random seed and with what regards another environment type (which in addition is also bigger and sparser).
 
 \begin{table}[h]
 	\center
-	\begin{tabular}{@{}cc@{}}
+	\begin{tabular}{@{}lc@{}}
 		\toprule
 		\textbf{Parameter}							& \textbf{Value} \\ \midrule
+		\texttt{training.train_env.episodes} &   $\num{5000}$    \\
+		\texttt{env.seed} &   $1$    \\
+		\texttt{env.num\_trains} &   $7$    \\
+		\texttt{env.rewards.stop\_penalty} &   $2.0$    \\
+		\texttt{predictor.max\_depth}                 &   $6$   \\
+		\texttt{observator.max\_depth}                  &   $6$    \\
+		\texttt{observator.normalization\_radius}       &  $30$     \\ 
 		\texttt{learning.softmax\_bellman.temperature}       &  $1.0$     \\ 
 		\texttt{learning.loss}       &  Huber     \\ 
 		\texttt{model.hidden\_sizes}       &  $[128,128]$    \\ 
 		\texttt{model.nonlinearity}       &  Tanh    \\ 
+		\texttt{action_selector.type} & $\epsilon$-greedy \\
+		\texttt{parameter_decay.decaying_episodes} & $0.7$ \\
+		\texttt{parameter_decay.start} & $1.0$ \\
+		\texttt{parameter_decay.end} & $0.01$ \\
+		\texttt{parameter_decay.type} & Linear \\
 		\bottomrule
 	\end{tabular}
-	\caption{Binary tree common hyperparameters}
-	\label{table:bt-common-params}
-\end{table}
-
-\subsection*{Medium environment}
-
-Table \ref{table:bt-medium-params} shows the hyperparameters that resulted in the best training convergence and test results on the medium environment, when all agents travel at the same speed and no malfunction occurs. In particular, testing results are shown in table \ref{bt-medium-res}. 
-
-\begin{table}[h]
-	\center
-	\begin{tabular}{@{}cc@{}}
-		\toprule
-		\textbf{Parameter}							& \textbf{Value} \\ \midrule
-		\texttt{env.seed} &   $1$    \\
-		\texttt{env.num\_trains} &   $7$    \\
-		\texttt{env.variable\_speed} &   False    \\
-		\texttt{env.malfunctions.enabled} &   False    \\
-		\texttt{env.rewards.stop\_penalty} &   $2.0$    \\
-		\texttt{predictor.max\_depth}                 &   $7$   \\
-		\texttt{observator.max\_depth}                  &   $7$    \\
-		\texttt{observator.normalization\_radius}       &  $30$     \\ \bottomrule
-	\end{tabular}
-	\caption{Binary tree hyperparameters in medium environment}
-	\label{table:bt-medium-params}
+	\caption{Binary tree hyperparameters, trained on medium environment}
+	\label{table:bt-params}
 \end{table}
 
 \begin{table}[h]
 	\center
-	\begin{tabular}{|c|c|c|c|}
-	\hline
-						   & \textbf{3 agents} & \textbf{5 agents} & \textbf{7 agents} \\ \hline
-	\textbf{Fraction of dones}      &    $93.07\%$      &    $89.40\%$      &    $82.51\%$      \\ \hline
-	\textbf{Fraction of deadlocks}  &    $0.0307$      &    $0.0596$      &    $0.1023$      \\ \hline
-	\textbf{Mean normalized return} &    $-0.1404$      &     $-0.1581$     &    $-0.2057$      \\ \hline
-	\textbf{Mean number of steps} &     $142$     &  $187$        &   $250$       \\ \hline
+	\begin{tabular}{|c|c|c|c|c|c|c|}
+		\hline
+							   & \multicolumn{2}{c|}{\textbf{3 agents}} & \multicolumn{2}{c|}{\textbf{5 agents}} & \multicolumn{2}{c|}{\textbf{7 agents}} \\ \hline
+							   & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} \\ \hline
+		\textbf{Dones}      & $93.07\%$ & $83.80\%$ & $89.40\%$ & $76.64\%$ & $82.51\%$ & $67.66\%$ \\ \hline
+		\textbf{Deadlocks}  & $0.0307$ & $0.0580$ & $0.0596$ & $0.1340$ & $0.1023$ & $0.1254$ \\ \hline
+		\textbf{Return} & $-0.1404$ & $-0.1459$ & $-0.1581$ & $-0.1688$ & $-0.2057$ & $-0.1940$ \\ \hline
+		\textbf{Steps}   & $142$ & $339$ & $187$ & $415$ & $250$ & $445$ \\ \hline
 	\end{tabular}
-	\caption{Binary tree results in medium environment}
+	\caption{Binary tree results, tested on medium environment}
 	\label{table:bt-medium-res}
 \end{table}
 
-\subsection*{Big environment}
+\begin{table}[h]
+	\center
+	\begin{tabular}{|c|c|c|c|c|c|c|}
+		\hline
+							   & \multicolumn{2}{c|}{\textbf{5 agents}} & \multicolumn{2}{c|}{\textbf{7 agents}} & \multicolumn{2}{c|}{\textbf{10 agents}} \\ \hline
+							   & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} \\ \hline
+		\textbf{Dones}      & $86.28\%$ & & $84.17\%$ & & $76.90\%$ & \\ \hline
+		\textbf{Deadlocks}  & $0.0324$ & & $0.0589$ & & $0.1254$ & \\ \hline
+		\textbf{Return} & $-0.2331$ &  & $-0.2449$ &  & $-0.2790$ &  \\ \hline
+		\textbf{Steps}   & $400$ &  & $447$ &  & $497$ & \\ \hline
+	\end{tabular}
+	\caption{Binary tree results, tested on big environment}
+	\label{table:bt-big-res}
+\end{table}
+\clearpage
+
+\section*{Standard vs. softmax Bellman}
+In order to check the correctness of our softmax Bellman operator (introduced in \ref{subsec:bellman-operators}) and see if we could actually observe higher test scores in the Flatland problem, we trained a DQN model using the binary tree observator (as described in \ref{sec:bt-dqn-res}), over a rather simple setting (the one specified in table \ref{table:bellman-operators-params}). 
+
+Training was performed on the medium environment, while models were tested on the same environment type, but using a different random seed (i.e. seed $14$).
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{@{}lc@{}}
+		\toprule
+		\textbf{Parameter}							& \textbf{Value} \\ \midrule
+		\texttt{training.train_env.episodes} &   $\num{3000}$    \\
+		\texttt{env.seed} &   $1$    \\
+		\texttt{env.num\_trains} &   $2$    \\
+		\texttt{env.rewards.stop\_penalty} &   $2.0$    \\
+		\texttt{predictor.max\_depth}                 &   $5$   \\
+		\texttt{observator.max\_depth}                  &   $5$    \\
+		\texttt{observator.normalization\_radius}       &  $30$     \\ 
+		\texttt{learning.softmax\_bellman.temperature}       &  $0.5$     \\ 
+		\texttt{learning.loss}       &  Huber     \\ 
+		\texttt{model.hidden\_sizes}       &  $[128,128]$    \\ 
+		\texttt{model.nonlinearity}       &  Tanh    \\ 
+		\texttt{action_selector.type} & $\epsilon$-greedy \\
+		\texttt{parameter_decay.decaying_episodes} & $0.7$ \\
+		\texttt{parameter_decay.start} & $1.0$ \\
+		\texttt{parameter_decay.end} & $0.01$ \\
+		\texttt{parameter_decay.type} & Linear \\
+		\bottomrule
+	\end{tabular}
+	\caption{Standard vs. softmax Bellman hyperparameters, trained on medium environment}
+	\label{table:bellman-operators-params}
+\end{table}
+
+The training results reported in figure \ref{fig:bellman-operators-metrics} show that both models achieve relatively good metrics, even though the one using softmax Bellman converges much faster and to better scores than the one which makes use of the standard Bellman's equation. We can also observe much lower variances in the softmax Bellman plots. 
+
+\begin{figure}[h]
+	\centering
+	\captionsetup[subfigure]{justification=centering}
+	\begin{subfigure}[b]{\linewidth}
+		\includegraphics[width=\textwidth]{bellman-operators-returns}
+	\end{subfigure}
+	
+	\begin{subfigure}[b]{\linewidth}
+		\includegraphics[width=\textwidth]{bellman-operators-completions}
+	\end{subfigure}
+	
+	\begin{subfigure}[b]{\linewidth}
+		\includegraphics[width=\textwidth]{bellman-operators-steps}
+	\end{subfigure}
+
+	\caption{Standard vs. softmax Bellman training metrics}
+	\label{fig:bellman-operators-metrics}
+\end{figure}
+\clearpage
+
+Training results are also reflected in the test metrics shown in table \ref{table:bellman-operators-res}, where softmax Bellman outperforms the standard Bellman operator by a good margin. 
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{|c|c|c|c|c|c|c|}
+		\hline & \textbf{Standard} & \textbf{Softmax} \\ \hline
+		\textbf{Dones}      & $87.10\%$ & $89.40\%$ \\ \hline
+		\textbf{Deadlocks}  & $0.0640$ & $0.0680$ \\ \hline
+		\textbf{Return}     & $-0.1437$ & $-0.1145$ \\ \hline
+		\textbf{Steps}      & $120$ & $93$ \\ \hline
+	\end{tabular}
+	\caption{Standard vs. softmax Bellman results, tested on medium environment}
+	\label{table:bellman-operators-res}
+\end{table}
+
+\section*{FOV with multi-agent graph embeddings}
 
 
 \chapter{Conclusions}
