@@ -1061,10 +1061,10 @@ During training, models are evaluated at specific checkpoints (e.g. once every $
 		\texttt{learning.softmax\_bellman.enabled} & Enable or disable softmax Bellman \\  
 		\texttt{learning.softmax\_bellman.temperature} & $\tau$ parameter in softmax Bellman (see \ref{subsec:bellman-operators}) \\ 
 		\texttt{learning.loss} & Regression loss to use (Huber or MSE) \\ 
-		\texttt{model.hidden\_sizes} & Number and size of FC layers \\ 
-		\texttt{model.nonlinearity} & Activation function (Tanh or ReLU) \\ 
-		\texttt{model.double} & Enable or disable double DQN \\ 
-		\texttt{model.dueling} & Enable or disable dueling DQN  \\  
+		\texttt{model.dqn.hidden\_sizes} & Number and size of FC layers in DQN \\ 
+		\texttt{model.dqn.nonlinearity} & DQN activation function (Tanh or ReLU) \\ 
+		\texttt{model.dqn.double} & Enable or disable double DQN \\ 
+		\texttt{model.dqn.dueling.enabled} & Enable or disable dueling DQN  \\  
 		\texttt{action_selector.type} & Action selector to use ($\epsilon$-greedy, Random, Greedy, Boltzmann or Categorical) \\
 		\texttt{parameter_decay.decaying_episodes} & Percentage of episodes in which the exploration parameter should reach its minimum \\
 		\texttt{parameter_decay.start} & Initial exploration value \\
@@ -1090,8 +1090,8 @@ Table \ref{table:params-desc} contains a high-level description of all the requi
 		\texttt{learning.tau}                  &   $1e-3$    \\
 		\texttt{learning.discount}       &  $0.99$     \\ 
 		\texttt{learning.softmax\_bellman.enabled}       &  True     \\  
-		\texttt{model.double}       &  True    \\ 
-		\texttt{model.dueling}       &  True    \\  
+		\texttt{model.dqn.double}       &  True    \\ 
+		\texttt{model.dqn.dueling.enabled}       &  True    \\  
 		\texttt{replay\_buffer.size}       &  $\num{100000}$    \\ 
 		\texttt{replay\_buffer.batch\_size}       &  $128$    \\
 		\texttt{replay\_buffer.checkpoint}       &  $4$    \\ \bottomrule
@@ -1120,8 +1120,8 @@ The best results were obtained when training over the medium environment with co
 		\texttt{observator.normalization\_radius}       &  $30$     \\ 
 		\texttt{learning.softmax\_bellman.temperature}       &  $1.0$     \\ 
 		\texttt{learning.loss}       &  Huber     \\ 
-		\texttt{model.hidden\_sizes}       &  $[128,128]$    \\ 
-		\texttt{model.nonlinearity}       &  Tanh    \\ 
+		\texttt{model.dqn.hidden\_sizes}       &  $[128,128]$    \\ 
+		\texttt{model.dqn.nonlinearity}       &  Tanh    \\ 
 		\texttt{action_selector.type} & $\epsilon$-greedy \\
 		\texttt{parameter_decay.decaying_episodes} & $0.7$ \\
 		\texttt{parameter_decay.start} & $1.0$ \\
@@ -1183,8 +1183,8 @@ Training was performed on the medium environment, while models were tested on th
 		\texttt{observator.normalization\_radius}       &  $30$     \\ 
 		\texttt{learning.softmax\_bellman.temperature}       &  $0.5$     \\ 
 		\texttt{learning.loss}       &  Huber     \\ 
-		\texttt{model.hidden\_sizes}       &  $[128,128]$    \\ 
-		\texttt{model.nonlinearity}       &  Tanh    \\ 
+		\texttt{model.dqn.hidden\_sizes}       &  $[128,128]$    \\ 
+		\texttt{model.dqn.nonlinearity}       &  Tanh    \\ 
 		\texttt{action_selector.type} & $\epsilon$-greedy \\
 		\texttt{parameter_decay.decaying_episodes} & $0.7$ \\
 		\texttt{parameter_decay.start} & $1.0$ \\

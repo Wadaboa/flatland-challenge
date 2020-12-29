@@ -98,12 +98,10 @@ class DQNPolicy(Policy):
             print("🐇 Using GPU")
 
         # Q-Network
-        net = DuelingDQN if self.params.model.dueling else DQN
+        net = DuelingDQN if self.params.model.dqn.dueling.enabled else DQN
         self.qnetwork_local = net(
             self.state_size, env_utils.RailEnvChoices.choice_size(),
-            hidden_sizes=self.params.model.hidden_sizes,
-            nonlinearity=self.params.model.nonlinearity.get_true_key(),
-            device=self.device
+            self.params.model.dqn, device=self.device
         ).to(self.device)
 
         # Training parameters
@@ -294,7 +292,7 @@ class DQNPolicy(Policy):
                 )
             )
 
-        return _double_dqn() if self.params.model.double else _dqn()
+        return _double_dqn() if self.params.model.dqn.double else _dqn()
 
     def _soft_update(self, local_model, target_model):
         '''
@@ -361,14 +359,8 @@ class DQNGNNPolicy(DQNPolicy):
 
         self.qnetwork_local = policy_utils.Sequential(
             EntireGNN(
-                state_size,
-                self.params.model.entire_gnn.pos_size,
-                self.params.model.entire_gnn.embedding_size,
-                nonlinearity=self.params.model.nonlinearity.get_true_key(),
-                gnn_hidden_size=self.params.model.entire_gnn.hidden_size,
-                depth=self.params.observator.max_depth,
-                dropout=self.params.model.entire_gnn.dropout,
-                device=self.device
+                state_size, self.params.observator.max_depth,
+                self.params.model.entire_gnn, device=self.device
             ).to(self.device),
             self.qnetwork_local
         )
@@ -387,7 +379,7 @@ class DecentralizedFOVDQNPolicy(DQNPolicy):
         Initialize MultiAgentDQNGNNPolicy object
         '''
         super(DecentralizedFOVDQNPolicy, self).__init__(
-            params, params.model.multi_gnn.embedding_size,
+            params, params.model.multi_gnn.gnn_communication.embedding_size,
             choice_selector, training=training
         )
 
@@ -395,13 +387,7 @@ class DecentralizedFOVDQNPolicy(DQNPolicy):
             MultiGNN(
                 self.params.observator.max_depth,
                 self.params.observator.max_depth,
-                state_size,
-                self.params.model.multi_gnn.output_channels,
-                hidden_channels=self.params.model.multi_gnn.hidden_channels,
-                pool=self.params.model.multi_gnn.pool,
-                embedding_size=self.params.model.multi_gnn.embedding_size,
-                hidden_sizes=self.params.model.hidden_sizes,
-                nonlinearity=self.params.model.nonlinearity.get_true_key(),
+                state_size, self.params.model.multi_gnn,
                 device=self.device
             ).to(self.device),
             self.qnetwork_local

@@ -9,11 +9,12 @@ def get_linear(input_size, output_size, hidden_sizes, nonlinearity="tanh"):
     non-linear activation functions, by following the given input/hidden/output sizes
     '''
     assert len(hidden_sizes) >= 1
-    nl = nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
-    fc = [nn.Linear(input_size, hidden_sizes[0]), nl]
-    for i in range(1, len(hidden_sizes)):
-        fc.extend([nn.Linear(hidden_sizes[i - 1], hidden_sizes[i]), nl])
-    fc.extend([nn.Linear(hidden_sizes[-1], output_size)])
+
+    fc = []
+    nl = nn.ReLU(inplace=True) if nonlinearity == "relu" else nn.Tanh()
+    sizes = [input_size] + hidden_sizes + [output_size]
+    for i in range(1, len(sizes)):
+        fc.extend([nn.Linear(sizes[i - 1], sizes[i]), nl])
     return nn.Sequential(*fc)
 
 
@@ -29,52 +30,44 @@ def conv_bn_act(input_channels, output_channels, kernel_size=3,
             kernel_size=kernel_size, stride=stride, padding=padding
         ),
         nn.BatchNorm2d(output_channels),
-        nn.ReLU() if nonlinearity == "relu" else nn.Tanh()
+        nn.ReLU(inplace=True) if nonlinearity == "relu" else nn.Tanh()
     ]
 
 
-def conv_bn_act_maxpool(input_channels, output_channels, kernel_size=3,
-                        stride=1, padding=0, nonlinearity="relu"):
-    '''
-    Returns a block composed by a convolutional layer and a batch norm one,
-    followed by a non-linearity (e.g. ReLU or Tanh), with a final max pooling layer
-    '''
-    return (
-        conv_bn_act(
-            input_channels, output_channels, kernel_size=kernel_size,
-            stride=stride, padding=padding, nonlinearity=nonlinearity
-        ) +
-        [nn.MaxPool2d(kernel_size=kernel_size, stride=stride, padding=padding)]
-    )
-
-
 def get_conv(input_channels, output_channels, hidden_channels,
-             kernel_size=3, stride=1, padding=0, nonlinearity="relu", pool=False):
+             conv_params, pool_params, nonlinearity="relu"):
     '''
-    Returns a PyTorch Sequential object containing `conv_bn_act` or `conv_bn_act_pool` blocks,
-    by following the given input/hidden/output number of channels
+    Returns a PyTorch Sequential object containing `conv_bn_act` blocks
+    interleaved with max pooling layers, following the given 
+    input/hidden/output number of channels
+
+    Note: the `conv_params` and `pool_params` arguments should be tuples
+    containing (kernel_size, stride, padding) to use with the respective layer
     '''
     assert len(hidden_channels) >= 1
-    conv_block = conv_bn_act if not pool else conv_bn_act_maxpool
-    conv = conv_block(
-        input_channels, hidden_channels[0], kernel_size=kernel_size,
-        stride=stride, padding=padding, nonlinearity=nonlinearity
-    )
-    for i in range(1, len(hidden_channels)):
-        conv.extend(
-            conv_block(
-                hidden_channels[i - 1], hidden_channels[i],
-                kernel_size=kernel_size, stride=stride, padding=padding,
-                nonlinearity=nonlinearity
-            )
+
+    convs = []
+    channels = [input_channels] + hidden_channels + [output_channels]
+    conv_kernel_size, conv_stride, conv_padding = conv_params
+    pool_kernel_size, pool_stride, pool_padding = pool_params
+    for i in range(1, len(channels)):
+        block = conv_bn_act(
+            channels[i - 1], channels[i],
+            kernel_size=conv_kernel_size, stride=conv_stride,
+            padding=conv_padding, nonlinearity=nonlinearity
         )
-    conv.extend(
-        conv_block(
-            hidden_channels[-1], output_channels, kernel_size=kernel_size,
-            stride=stride, padding=padding, nonlinearity=nonlinearity
-        )
-    )
-    return nn.Sequential(*conv)
+        # Add pooling once every two layers
+        if i % 2 == 0:
+            block += [
+                nn.MaxPool2d(
+                    kernel_size=pool_kernel_size,
+                    stride=pool_stride,
+                    padding=pool_padding
+                )
+            ]
+        convs.extend(block)
+
+    return nn.Sequential(*convs)
 
 
 def conv_block_output_size(modules, input_width, input_height):

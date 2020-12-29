@@ -2,10 +2,10 @@
 env:
   # Random seed used to generate rails
   # (14 medium - 14 big)
-  seed: 14
+  seed: 1
   # Number of trains to spawn
   # (3, 5, 7 medium - 5, 7, 10 big)
-  num_trains: 1
+  num_trains: 3
   # Environment width
   # (48 medium - 64 big)
   width: 48
@@ -42,7 +42,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 6
+  max_depth: 15
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -55,16 +55,16 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 6
+  max_depth: 10
 
 # Policy config
 policy:
   # Select policy type
   type:
     # Graph observation policy
-    graph: True
+    graph: False
     # Decentralized FOV observation policy
-    decentralized_fov: False
+    decentralized_fov: True
     # Standard tree observation policy
     tree: False
     # Binary tree observation policy
@@ -117,7 +117,7 @@ learning:
     # Enable or disable
     enabled: True
     # Temperature parameter in the softmax
-    temperature: !!float 1.0
+    temperature: !!float 0.5
   # Loss function
   loss:
     # (Masked) Huber loss
@@ -137,42 +137,97 @@ learning:
 
 # Model config
 model:
-  # Enable or disable dueling DQN
-  dueling: True
-  # Enable or disable double DQN
-  double: True
-  # The number of hidden layer with their hidden sizes
-  hidden_sizes:
-    - 128
-    - 128
-  # Non-linear function
-  nonlinearity:
-    # ReLU function
-    relu: False
-    # Tanh function
-    tanh: True
+  # DQN configuration
+  dqn:
+    # Dueling DQN configurations
+    dueling:
+      # Enable or disable dueling DQN
+      enabled: True
+      # How to aggregate advantages
+      aggregation:
+        # Use the mean function
+        mean: True
+        # Use the max function
+        max: False
+    # Enable or disable double DQN
+    double: True
+    # The number of hidden layer with their hidden sizes
+    hidden_sizes:
+      - 128
+      - 128
+    # Non-linear function
+    nonlinearity:
+      # ReLU function
+      relu: True
+      # Tanh function
+      tanh: False
   # Entire GNN configuration
   entire_gnn:
-    # Size of the hidden layers
-    hidden_size: 8
     # Size of the output embedding
     embedding_size: 4
-    # Number of embeddings to pass to the DQN
+    # Hidden embedding size in GNN layers
+    hidden_size: 8
+    # Number of embeddings to use as DQN input
     pos_size: 3
     # Dropout value
     dropout: !!float 0.2
+    # Non-linear function
+    nonlinearity:
+      # ReLU function
+      relu: True
+      # Tanh function
+      tanh: False
   # Multi GNN configuration
   multi_gnn:
-    # Size of the output embedding
-    embedding_size: 128
-    # CNN encoder hidden channels number and sizes
-    hidden_channels:
-      - 16
-      - 32
-    # CNN encoder size of the output channel
-    output_channels: 32
-    # Add max pooling to the CNN encoder block
-    pool: True
+    # CNN configuration
+    cnn_encoder:
+      # Conv2d settings
+      conv:
+        # Filter dimension
+        kernel_size: 3
+        # Filter stride
+        stride: 1
+        # Filter padding
+        padding: 1
+      # MaxPool2d settings
+      pool:
+        # Filter dimension
+        kernel_size: 2
+        # Filter stride
+        stride: 2
+        # Filter padding
+        padding: 0
+      # CNN encoder hidden channels number and sizes
+      hidden_channels:
+        - 32
+        - 32
+        - 64
+        - 64
+      # CNN encoder size of the output channel
+      output_channels: 128
+    # MLP configuration
+    mlp_compression:
+      # The number of hidden FC layers with their hidden sizes
+      # (to map the encoder output to a fixed size)
+      hidden_sizes:
+        - 512
+      # Final MLP output size
+      output_size: 256
+    # GNN configuration
+    gnn_communication:
+      # Number and hidden embedding sizes of graph convs to perform
+      hidden_sizes:
+        - 256
+      # Size of the output embedding
+      embedding_size: 128
+      # Dropout value
+      dropout: !!float 0.2
+    # Non-linear function
+    nonlinearity:
+      # ReLU function
+      relu: True
+      # Tanh function
+      tanh: False
 
 # Replay buffer config
 replay_buffer:
@@ -198,7 +253,7 @@ generic:
   # Device config
   use_gpu: False
   # Enable wandb logging
-  enable_wandb: True
+  enable_wandb: False
   # Checkpoint to save model to wandb
   wandb_checkpoint: 500
   # Gradients logging in wandb

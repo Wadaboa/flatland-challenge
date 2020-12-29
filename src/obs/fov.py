@@ -170,7 +170,7 @@ class FOVObservator(ObservationBuilder):
             adjacency[np.nonzero(adjacency)]
         ).float()
         edge_index, edge_weight = add_remaining_self_loops(
-            edge_index, edge_weight, fill_value=0, num_nodes=self.env.get_num_agents()
+            edge_index, edge_weight, fill_value=1, num_nodes=self.env.get_num_agents()
         )
 
         # Add features to PyTorch Geometric Data object
