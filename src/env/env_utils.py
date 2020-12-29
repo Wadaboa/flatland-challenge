@@ -11,7 +11,7 @@ from flatland.envs.schedule_generators import sparse_schedule_generator
 from flatland.envs.observations import TreeObsForRailEnv
 from flatland.envs.predictions import ShortestPathPredictorForRailEnv
 
-from predictions import ShortestPathPredictor, NullPredictor
+from predictions import ShortestDeviationPathPredictor, NullPredictor
 from obs.binary_tree import BinaryTreeObservator
 from obs.graph import GraphObservator
 from obs.fov import FOVObservator
@@ -26,9 +26,9 @@ OBSERVATORS = {
 }
 PREDICTORS = {
     "tree": ShortestPathPredictorForRailEnv,
-    "binary_tree": ShortestPathPredictor,
-    "graph": ShortestPathPredictor,
-    "decentralized_fov": ShortestPathPredictor
+    "binary_tree": ShortestDeviationPathPredictor,
+    "graph": NullPredictor,
+    "decentralized_fov": ShortestDeviationPathPredictor
 }
 
 
@@ -103,7 +103,13 @@ def create_rail_env(args, load_env=""):
 
     # Build predictor and observator
     obs_type = args.policy.type.get_true_key()
-    predictor = PREDICTORS[obs_type](max_depth=args.predictor.max_depth)
+    if PREDICTORS[obs_type] is ShortestDeviationPathPredictor:
+        predictor = PREDICTORS[obs_type](
+            max_depth=args.observator.max_depth,
+            max_deviations=args.predictor.max_depth
+        )
+    else:
+        predictor = PREDICTORS[obs_type](max_depth=args.predictor.max_depth)
     observator = OBSERVATORS[obs_type](args.observator.max_depth, predictor)
 
     # Initialize malfunctions

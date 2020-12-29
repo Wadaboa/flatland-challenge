@@ -55,7 +55,9 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 10
+  # (for the shortest/deviation predictor
+  # it indicates the maximum number of deviations)
+  max_depth: 3
 
 # Policy config
 policy:

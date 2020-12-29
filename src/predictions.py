@@ -40,10 +40,11 @@ class NullPredictor(PredictionBuilder):
         return None
 
 
-class ShortestPathPredictor(PredictionBuilder):
+class ShortestDeviationPathPredictor(PredictionBuilder):
 
-    def __init__(self, max_depth=5):
+    def __init__(self, max_depth, max_deviations):
         super().__init__(max_depth)
+        self.max_deviations = max_deviations
 
     def set_env(self, env):
         super().set_env(env)
@@ -117,20 +118,20 @@ class ShortestPathPredictor(PredictionBuilder):
 
     def get_deviation_paths(self, handle, lenght, path):
         '''
-        Return one deviation path for at most `max_depth` nodes in the given path
+        Return one deviation path for at most `max_deviations` nodes in the given path
         and limit the computed path lenghts by `max_depth`
         '''
         start = 0
-        depth = min(self.max_depth, len(path))
+        depth = min(self.max_deviations, len(path) - 1)
         deviation_paths = []
-        padding = self.max_depth - 1
+        padding = self.max_deviations
         if lenght < np.inf:
             padding -= len(path)
             source, _ = self.env.railway_encoding.next_node(path[0])
             if source != path[0]:
                 start = 1
                 deviation_paths.append(_empty_prediction())
-            for i in range(start, depth - 1):
+            for i in range(start, depth):
                 paths = self.env.railway_encoding.deviation_paths(
                     handle, path[i], path[i + 1]
                 )
@@ -159,7 +160,6 @@ class ShortestPathPredictor(PredictionBuilder):
         deviation_paths.extend(
             [_empty_prediction()] * (padding)
         )
-
         return deviation_paths
 
     def get_many(self):

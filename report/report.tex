@@ -50,6 +50,7 @@
 \usepackage{blkarray}
 \usepackage{siunitx}
 \usepackage{booktabs}
+\usepackage{longtable}
 \graphicspath{ {./img/} }
 
 % Set TOC depth and sections numbering
@@ -70,6 +71,15 @@
 \DeclareMathOperator*{\mellowmax}{mellow\,max}
 \DeclareMathOperator*{\mean}{mean}
 
+% Change texttt line breaks
+\renewcommand{\texttt}[1]{%
+  \begingroup
+  \ttfamily
+  \begingroup\lccode`~=`.\lowercase{\endgroup\def~}{.\discretionary{}{}{}}%
+  \catcode`/=\active\catcode`[=\active\catcode`.=\active
+  \scantokens{#1\noexpand}%
+  \endgroup
+}
 
 \begin{document}
 \frenchspacing
@@ -372,7 +382,7 @@ Since a $32x16$ map is too small to observe big improvements, in figure \ref{fig
 \end{table}
 \clearpage
 
-\section{Predictions}
+\section{Predictions}\label{sec:predictions}
 As reported in Flatland official FAQs, because railway traffic is limited to rails, many decisions that an agent has to take need to consider future situations and detect upcoming conflicts ahead of time. Therefore, Flatland provides the possibility of predictors that predict where agents will be in the future. The stock predictor simply assumes that each agent travels along its shortest path.
 
 \subsection{Shortest and deviation paths}\label{subsec:shortest-deviation-pred}
@@ -382,7 +392,7 @@ To build our predictor, we took inspiration from the standard predictor given by
 
 Deviation paths are instead computed on the fly and they represent alternatives from each node of the shortest path. The computation of deviation path $i$, given the shortest path $n_1, \dots, n_i, n_{i+1}, \dots, n_d$, is simply another call to the Dijkstra's routine, where edge $(n_i, n_{i+1})$ is forbidden. In this example, $d$ represents the maximum depth of both shortest and deviation paths.
 
-In this way, the prediction becomes a list of paths, where the first one is the shortest path, composed by at most $d$ nodes, and the following ones are $d-1$ deviation paths, still composed by at most $d$ nodes. When an agent is relatively close to its target (i.e. less than $d$ nodes away from it), the actual path could have a dimension which is less than $d$: to avoid troubles when dealing with dynamically sized vectors, paths are padded to the full depth with special symbols.
+In this way, the prediction becomes a list of paths, where the first one is the shortest path, composed by at most $d$ nodes, and the following ones are $m-1$ deviation paths, still composed by at most $d$ nodes. When an agent is relatively close to its target (i.e. less than $d$ nodes away from it), the actual path could have a dimension which is less than $d$: to avoid troubles when dealing with dynamically sized vectors, paths are padded to the full depth with special symbols.
 
 In case an agent cannot reach its target anymore, the prediction only comprises a path of two nodes, i.e. the agent's position and the next node in the COJG graph. This mini-path is stored because predictions are used to compute possible deadlocks and, even if an agent cannot arrive at its target anymore, it is still present in the railway environment and it could be a possible source of conflicts.
 
@@ -440,7 +450,7 @@ Flatland provides different observators out of the box (the ones roughly depicte
 	\item A tensor with shape $(h, w, 2)$, containing the position of the given agent's target in the first channel and the positions of the other agents' targets in the second channel (flag only, no counter)
 	\item A tensor of shape $(h, w, 5)$ with the following channels:
 	\begin{enumerate}
-		\item Agents position and direction
+		\item Agent position and direction
 		\item Other agents positions and direction
 		\item Agents malfunctions
 		\item Agents fractional speeds
@@ -553,6 +563,24 @@ To sum up efficiency improvements, each feature is built from scratch, by levera
 \end{table}
 
 \subsection{FOV}\label{subsec:fov-obs}
+Starting from the already provided, but deprecated, local observation present in the Flatland package, the FOV observator provides a Field Of View around the position of a given agent. In particular, the FOV observator builds a feature map of size $(6 + m, d, d)$, where $m$ is the maximum number of deviation paths (the ones described in \ref{subsec:shortest-deviation-pred}) and $d$ is the side of the square view associated to each agent.
+
+Since we want to emphasize the agent related to the observation, $d$ should be an odd number, so that the agent's position can always be represented by the central cell $(\lfloor d / 2 \rfloor, \lfloor d / 2 \rfloor)$ of the FOV.
+
+About individual features reported in the agent's FOV channels:
+\begin{itemize}
+	\item Cell type: empty cell $0$ is encoded as $-1$, while cell types $1$ to $10$ are encoded as-is
+	\item Cell orientation: $0, 90, 180, 270$ degrees are encoded as $0, 1, 2, 3$
+	\item Shortest path: $1$ for cells in the shortest path and $-1$ otherwise
+	\item Distance map: distances from each cell to the agent's target ($-1$ if not reachable), based on the agent's current direction 
+	\item Positions: other agents are represented by their current direction
+	\item Targets: $1$ for the agent target, $0$ for other agent's targets, $-1$ otherwise
+	\item Malfunctions: number of remaining malfunctioning turns for all the agents in the FOV
+	\item Speeds: fractional speeds of all the agents in the FOV
+	\item Deviation paths: one channel for each deviation path, following the same encoding of the shortest path
+\end{itemize}
+
+In addition, the FOV observator returns an adjacency matrix $A$ representing the current state of the environment. In particular, $A$ would be a square matrix of dimension $n\times n$, where $n$ is the number of agents, such that $a_{ij}=w\neq 0$ if and only if agent $i$ is distant $w\leq d$ from agent $j$. This adjacency matrix is used to record some kind of local communication network, that will be exploited by the architectures described in \ref{subsec:multi-agent-gnn}.
 
 \subsection{Normalization}
 We already mentioned that an observation should be considered as a snapshot of a state from the point of view of an agent; then we reported that this snapshot should be consistent across different runs and that it should also be shaped as a tensor of fixed size. All of this pre-preprocessing is a required step that should be carefully considered when working with neural models (the ones that will be described in subsequent chapters). 
@@ -677,7 +705,7 @@ In practical terms, given a random number $r\in[0,1]$ sampled from a uniform dis
 \[a_t = \left\{
 \begin{array}{ll}
       \max_{a\in A} Q_{\pi_t}(s_t,a) & \text{if } r \ge \epsilon \\
-      \texttt{random_choice}(A) & \text{if } r < \epsilon \\
+      \text{\texttt{random_choice}}(A) & \text{if } r < \epsilon \\
 \end{array} 
 \right., \]
 where \texttt{random_choice} is a routine that samples from the given set, with a uniform distribution. 
@@ -961,7 +989,7 @@ In \cite{dqn-gnn-routing} authors study the problem of finding the optimal routi
 In \cite{dgn}, \cite{dqn-gnn-robot} and \cite{magat} authors rely on a different perspective of the input graph, which, instead of being an encoding of the input data, it's used as a form of local communication between agents. In particular, in their decentralized setting each node in the graph is an agent and the links to other agents are determined by a distance metric, so that the actual neighborhood of a node changes over time. Features are instead computed by specialized architectures (sequences of CNNs and MLPs), starting from raw local observations. In this way, both the topology of the network and the features associated to each node evolve together with the multi-agent environment, so that the overall model should be able to adapt to this dynamicity. 
 
 \section{Architectures}
-\subsection{Entire graph embeddings}
+\subsection{Entire graph embeddings}\label{subsec:entire-gnn}
 Recalling the railway encoding described in \ref{sec:railway-encoding}, where the environment is represented as a compact graph, the observations described in \ref{sec:obs} do not seem effective enough at exploiting all the underlying knowledge already encoded in the topology of the network. Up to now, the shortest/deviation paths predictor (see \ref{subsec:shortest-deviation-pred}) and the binary tree observator (see \ref{subsec:binary-tree-obs}) relied on the COJG graph only as a way to gain running time efficiency. Because of this, different experiments were made to try and extract features from the COJG graph itself.
 
 In particular, our very first GNN attempt follows the subsequent workflow:
@@ -984,7 +1012,9 @@ In particular, our very first GNN attempt follows the subsequent workflow:
 
 This architecture was mainly tested in the single agent navigation round, since it didn't seem strong enough to generalize well in a multi-agent environment: in-depth results are shown in section \ref{sec:entire-graph-single-agent-res} of the next chapter.
 
-\subsection{Multi-agent graph embeddings}
+For future improvements, it could be interesting to see if adding more relevant features to each node in the COJG graph could boost the performance of its associated GNN, since by using the simple features listed above the model was not able to converge as expected and generalize to unseen environments. 
+
+\subsection{Multi-agent graph embeddings}\label{subsec:multi-agent-gnn}
 In this complex architecture we are following the same reasoning introduced in \cite{dqn-gnn-robot} and \cite{magat}, where the GNN is used as a communication channel to exchange information between agents. The great thing about this architecture is that it is end-to-end differentiable, meaning that both features and actions are computed by a neural model, so that we shouldn't need all the feature engineering steps that are instead mandatory when working with simpler observations (like the tree and binary tree ones, described in sections \ref{subsec:tree-obs} and \ref{subsec:binary-tree-obs}, respectively).
 
 Figure \ref{fig:dqn-gnn-robot} shows the entire architecture, which in our case leverages the FOV observation (see section \ref{subsec:fov-obs}), a CNN as the encoder, a GNN as the communication framework and a DQN as the $Q$ values estimator.  
@@ -1041,46 +1071,67 @@ Ideally, the training phase should span over different environments, so that age
 
 During training, models are evaluated at specific checkpoints (e.g. once every $200$ training episodes), for a specified number of validation episodes (e.g. $20$). A key idea about evaluation is that the model is continuosly tested over the same sequence of environments, at every checkpoint, so that we are able to observe the effectiveness of training, by looking at how agents evolve and if their behavior is getting better over time on the same set of examples.
 
-\begin{table}[h]
-	\center
-	\rowcolors{2}{gray!25}{white}
-	\begin{tabular}{@{}lm{5cm}@{}}
-		\rowcolor{gray!50}
-		\toprule
-		\textbf{Parameter}							& \textbf{Description} \\ \midrule
-		\texttt{training.train_env.episodes} &   Number of training episodes    \\
-		\texttt{env.seed} &   Random seed to generate new railways during training    \\
-		\texttt{env.num\_trains} &   Number of agents    \\
-		\texttt{env.rewards.stop\_penalty} &  Stop penalty coefficient (see \ref{sec:rewards-shaping})    \\
-		\texttt{predictor.max\_depth} &  Maximum predictor depth   \\
-		\texttt{observator.max\_depth} & Maximum observator depth    \\
-		\texttt{observator.normalization\_radius} & Maximum distance to consider in feature normalization \\
-		\texttt{learning.learning\_rate} & Learning rate for the Adam optimizer \\
-		\texttt{learning.tau} & DQN soft update weight \\
-		\texttt{learning.discount} & DQN discount factor \\ 
-		\texttt{learning.softmax\_bellman.enabled} & Enable or disable softmax Bellman \\  
-		\texttt{learning.softmax\_bellman.temperature} & $\tau$ parameter in softmax Bellman (see \ref{subsec:bellman-operators}) \\ 
-		\texttt{learning.loss} & Regression loss to use (Huber or MSE) \\ 
-		\texttt{model.dqn.hidden\_sizes} & Number and size of FC layers in DQN \\ 
-		\texttt{model.dqn.nonlinearity} & DQN activation function (Tanh or ReLU) \\ 
-		\texttt{model.dqn.double} & Enable or disable double DQN \\ 
-		\texttt{model.dqn.dueling.enabled} & Enable or disable dueling DQN  \\  
-		\texttt{action_selector.type} & Action selector to use ($\epsilon$-greedy, Random, Greedy, Boltzmann or Categorical) \\
-		\texttt{parameter_decay.decaying_episodes} & Percentage of episodes in which the exploration parameter should reach its minimum \\
-		\texttt{parameter_decay.start} & Initial exploration value \\
-		\texttt{parameter_decay.end} & Final exploration value \\
-		\texttt{parameter_decay.type} & Exploration decay type (Linear or Exponential) \\
-		\texttt{replay\_buffer.size} & Replay buffer maximum size \\ 
-		\texttt{replay\_buffer.batch\_size} & Size of a batch of experiences \\
-		\texttt{replay\_buffer.checkpoint} & How often to learn \\ \bottomrule
-	\end{tabular}
+\rowcolors{3}{}{gray!25}
+\begin{longtable}{@{}m{5cm}m{5cm}@{}}
+	\toprule
+	\textbf{Parameter} & \textbf{Description} \\ \midrule
+	\texttt{training.train_env.episodes} &   Number of training episodes    \\
+	\texttt{env.seed} &   Random seed to generate new railways during training    \\
+	\texttt{env.num\_trains} &   Number of agents    \\
+	\texttt{env.rewards.stop\_penalty} &  Stop penalty coefficient (see \ref{sec:rewards-shaping})    \\
+	\texttt{predictor.max\_depth} &  Maximum predictor depth   \\
+	\texttt{observator.max\_depth} & Maximum observator depth    \\
+	\texttt{observator.normalization\_radius} & Maximum distance to consider in feature normalization \\
+	\texttt{learning.learning\_rate} & Learning rate for the Adam optimizer \\
+	\texttt{learning.tau} & DQN soft update weight \\
+	\texttt{learning.discount} & DQN discount factor \\ 
+	\texttt{learning.softmax\_bellman.enabled} & Enable or disable softmax Bellman \\  
+	\texttt{learning.softmax\_bellman.temperature} & $\tau$ parameter in softmax Bellman (see \ref{subsec:bellman-operators}) \\ 
+	\texttt{learning.loss} & Regression loss to use (Huber or MSE) \\
+	\texttt{action_selector.type} & Action selector to use ($\epsilon$-greedy, Random, Greedy, Boltzmann or Categorical) \\
+	\texttt{parameter_decay.decaying_episodes} & Percentage of episodes in which the exploration parameter should reach its minimum \\
+	\texttt{parameter_decay.start} & Initial exploration value \\
+	\texttt{parameter_decay.end} & Final exploration value \\
+	\texttt{parameter_decay.type} & Exploration decay type (Linear or Exponential) \\
+	\texttt{replay\_buffer.size} & Replay buffer maximum size \\ 
+	\texttt{replay\_buffer.batch\_size} & Size of a batch of experiences \\
+	\texttt{replay\_buffer.checkpoint} & How often to learn \\ 
+	\rowcolor{red!50}\multicolumn{2}{@{}c@{}}{\textbf{DQN}} \\
+	\texttt{model.dqn.hidden\_sizes} & Number and size of FC layers \\ 
+	\texttt{model.dqn.nonlinearity} & Activation function (Tanh or ReLU) \\ 
+	\texttt{model.dqn.double} & Enable or disable double DQN \\ 
+	\texttt{model.dqn.dueling.enabled} & Enable or disable dueling DQN  \\
+	\texttt{model.dqn.dueling.aggregation} & Advantage function aggregation in dueling DQN (Max or Mean)  \\
+	\rowcolor{red!50}\multicolumn{2}{@{}c@{}}{\textbf{Entire graph embeddings}} \\
+	\texttt{model.entire_gnn.embedding_size} & Size of the output GNN embeddings \\
+	\texttt{model.entire_gnn.hidden_size} & Hidden embedding size of GNN layers  \\
+	\texttt{model.entire_gnn.pos_size} & Number of graph embeddings to use as DQN input \\
+	\texttt{model.entire_gnn.dropout} & Probability of dropout \\
+	\texttt{model.entire_gnn.nonlinearity} & Graph convolutions activation function (Tanh or ReLU) \\
+	\rowcolor{red!50}\multicolumn{2}{@{}c@{}}{\textbf{Multi-agent graph embeddings}} \\
+	\texttt{model.multi_gnn.cnn_encoder.conv.kernel_size} & Kernel size of convolutions in the CNN encoder \\
+	\texttt{model.multi_gnn.cnn_encoder.conv.stride} & Stride of convolutions in the CNN encoder \\
+	\texttt{model.multi_gnn.cnn_encoder.conv.padding} & Padding of convolutions in the CNN encoder \\
+	\texttt{model.multi_gnn.cnn_encoder.pool.kernel_size} & Kernel size of pooling in the CNN encoder \\
+	\texttt{model.multi_gnn.cnn_encoder.pool.stride} & Stride of pooling in the CNN encoder \\
+	\texttt{model.multi_gnn.cnn_encoder.pool.padding} & Padding of pooling in the CNN encoder \\
+	\texttt{model.multi_gnn.cnn_encoder.hidden_channels} & Number and sizes of hidden channels in the CNN encoder \\
+	\texttt{model.multi_gnn.cnn_encoder.output_channels} & Number of output channels in the CNN encoder \\
+	\texttt{model.multi_gnn.mlp_compression.hidden_sizes} & Number and sizes of FC layers in the MLP compressor \\
+	\texttt{model.multi_gnn.mlp_compression.output_size} & Output size of FC layers in the MLP compressor \\
+	\texttt{model.multi_gnn.gnn_communication.hidden_sizes} & Number and sizes of GNN layers in the communicator\\
+	\texttt{model.multi_gnn.gnn_communication.embedding_size} & Final embedding size in the GNN communicator \\
+	\texttt{model.multi_gnn.gnn_communication.dropout} & Probability of dropout in the GNN layers \\
+	\texttt{model.multi_gnn.nonlinearity} & Activation function (Tanh or ReLU) \\
+	\bottomrule
 	\caption{Hyperparameters description}
 	\label{table:params-desc}
-\end{table}
+\end{longtable}
 \clearpage
 
 Table \ref{table:params-desc} contains a high-level description of all the required hyperparameters, while table \ref{table:common-params} shows some hyperparameters that are common to all the experiments presented in subsequent sections.
 
+\rowcolors{1}{}{}
 \begin{table}[h]
 	\center
 	\begin{tabular}{@{}lc@{}}

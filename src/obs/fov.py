@@ -22,6 +22,7 @@ class FOVObservator(ObservationBuilder):
         3. Distance map in direction and FOV of the agent
         4. Other agents positions in the agent's FOV (direction of each agent)
         5. Agents targets in the agent's FOV (1 agent target, 0 other agent, -1 otherwise)
+        6+. Cell of the rails in deviation paths in the agent's FOV 
     '''
 
     def __init__(self, max_depth, predictor):
@@ -32,7 +33,7 @@ class FOVObservator(ObservationBuilder):
         self.max_depth = max_depth
         self.predictor = predictor
         self.observations = dict()
-        self.observation_dim = 6
+        self.observation_dim = 8 + self.predictor.max_deviations
         self.possible_transitions_dict = self.compute_all_possible_transitions()
         self.agent_positions = None
         self.agent_malfunctions = None
@@ -72,9 +73,11 @@ class FOVObservator(ObservationBuilder):
 
     def convert_transitions_map(self, obs_transitions_map):
         '''
-        Given np.array of shape (env_height, env_width_, 16) convert to (env_height,env_width, 2) where
-        the first channel encodes cell_types (0,.. 10 as -1 empty cell and cell type otherwise)
-        and the second channel orientation (0, 90, 180, 270 as 0 1 2 3)
+        Given an np.array of shape (env_height, env_width_, 16), 
+        convert it to (env_height,env_width, 2) where the first channel 
+        encodes cell types (empty cell 0 is encoded as -1, 
+        while cell types 1 to 10 are encoded as-is)
+        and the second channel orientations (0, 90, 180, 270 as 0, 1, 2, 3)
         '''
         new_transitions_map = np.full(
             (obs_transitions_map.shape[0], obs_transitions_map.shape[1], 2), -1
@@ -97,8 +100,8 @@ class FOVObservator(ObservationBuilder):
 
     def compute_all_possible_transitions(self):
         '''
-        Given transitions list considering cell types, 
-        outputs all possible transitions bitmap, 
+        Given transitions list considering cell types,
+        outputs all possible transitions bitmap,
         considering cell rotations too
         '''
         # Bitmaps are read in decimal numbers
@@ -121,13 +124,13 @@ class FOVObservator(ObservationBuilder):
         the first position as the center one of the fov
         '''
         path_fov = np.full((self.max_depth, self.max_depth), pad)
-        y, x = self.max_depth//2, self.max_depth//2
+        y, x = self.max_depth // 2, self.max_depth // 2
         prev_pos = path[0]
         for pos in path[1:]:
             if y >= 0 and y < self.max_depth and x >= 0 and x < self.max_depth:
                 path_fov[y, x] = fill_value
-            y += pos[0]-prev_pos[0]
-            x += pos[1]-prev_pos[1]
+            y += pos[0] - prev_pos[0]
+            x += pos[1] - prev_pos[1]
             prev_pos = pos
         return path_fov
 
@@ -197,7 +200,8 @@ class FOVObservator(ObservationBuilder):
                 handle
             )
             if agent_position is not None:
-                shortest_pred, _ = self.predictions[handle]
+                shortest_pred, deviations_pred = self.predictions[handle]
+                num_devs = self.predictor.max_deviations
 
                 # Cell type of the rail in the agent's FOV
                 cell_type = utils.extract_fov(
@@ -214,10 +218,33 @@ class FOVObservator(ObservationBuilder):
                     shortest_pred.positions, pad=-1, fill_value=1
                 )
 
+                # Cell of the rails in deviation paths in the agent's FOV
+                dev_paths_fov = np.full(
+                    (num_devs, self.max_depth, self.max_depth), -1
+                )
+                for i, dev_pred in enumerate(deviations_pred):
+                    dev_path_fov = np.full(
+                        (self.max_depth, self.max_depth), -1
+                    )
+                    if dev_pred.lenght < np.inf:
+                        source_index = shortest_pred.positions.index(
+                            dev_pred.positions[0]
+                        )
+                        if source_index != -1:
+                            dev_path = (
+                                shortest_pred.positions[:source_index] +
+                                dev_pred.positions
+                            )
+                            dev_path_fov = self.extract_path_fov(
+                                dev_path, pad=-1, fill_value=1
+                            )
+                    dev_paths_fov[i] = dev_path_fov
+
                 # Distance map in direction and FOV of the agent
                 distance_fov = utils.extract_fov(
-                    self.env.distance_map.get(
-                    )[handle, :, :, agent_position[2]],
+                    self.env.distance_map.get()[
+                        handle, :, :, agent_position[2]
+                    ],
                     agent_position, self.max_depth, -1
                 )
                 distance_fov[distance_fov == np.inf] = -1
@@ -233,6 +260,16 @@ class FOVObservator(ObservationBuilder):
                     agent_position, self.max_depth, -1
                 )
 
+                # Malfunctioning turns
+                malf_fov = utils.extract_fov(
+                    self.agent_malfunctions, agent_position, self.max_depth, -1
+                )
+
+                # Speed information
+                speed_fov = utils.extract_fov(
+                    self.agent_speeds, agent_position, self.max_depth, -1
+                )
+
                 # Update observations
                 self.observations[handle][0] = cell_type
                 self.observations[handle][1] = cell_orientation
@@ -240,5 +277,8 @@ class FOVObservator(ObservationBuilder):
                 self.observations[handle][3] = distance_fov
                 self.observations[handle][4] = agents_fov
                 self.observations[handle][5] = targets_fov
+                self.observations[handle][6] = malf_fov
+                self.observations[handle][7] = speed_fov
+                self.observations[handle][8: 8 + num_devs + 1] = dev_paths_fov
 
         return self.observations[handle]

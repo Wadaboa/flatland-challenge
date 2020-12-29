@@ -149,18 +149,14 @@ class EntireGNN(nn.Module):
                 x = F.dropout(x, p=self.dropout, training=self.training)
 
             # Extract useful embeddings
-            tmp_embs = torch.zeros(
+            tmp_embs = torch.full(
                 (self.pos_size, self.embedding_size),
+                [-self.depth] * self.embedding_size,
                 dtype=torch.float,
                 device=self.device
             )
             for j, p in enumerate(pos):
-                if p == -1:
-                    tmp_embs[j] = torch.tensor(
-                        [-self.depth] * self.embedding_size,
-                        dtype=torch.float, device=self.device
-                    )
-                else:
+                if p != -1:
                     tmp_embs[j] = emb[p.item()]
             embs[i] = torch.flatten(tmp_embs)
 

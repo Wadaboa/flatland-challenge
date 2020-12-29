@@ -18,7 +18,7 @@ from obs import normalization
 '''
 Observation:
     - Structure:
-        * Tensor of shape (max_depth, max_depth, features), where max_depth
+        * Tensor of shape (1 + max_deviations, max_depth, features), where max_depth
           is the maximum number of nodes in the packed graph to consider and
           features is the total amount of features for each node
         * The feature matrix contains the features of the nodes in the shortest path
@@ -177,7 +177,10 @@ class BinaryTreeObservator(ObservationBuilder):
         dim = sum(2 ** i for i in range(self.max_depth)) * self.observation_dim
         self.observations[handle] = np.full(dim, normalization.BT_UNDER)
         features = np.full(
-            (self.max_depth, self.max_depth, self.observation_dim), -np.inf
+            (
+                1 + self.predictor.max_deviations,
+                self.max_depth, self.observation_dim
+            ), -np.inf
         )
 
         # Compute features if necessary
