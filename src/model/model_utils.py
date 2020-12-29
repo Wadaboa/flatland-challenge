@@ -8,8 +8,6 @@ def get_linear(input_size, output_size, hidden_sizes, nonlinearity="tanh"):
     Returns a PyTorch Sequential object containing FC layers with
     non-linear activation functions, by following the given input/hidden/output sizes
     '''
-    assert len(hidden_sizes) >= 1
-
     fc = []
     nl = nn.ReLU(inplace=True) if nonlinearity == "relu" else nn.Tanh()
     sizes = [input_size] + hidden_sizes + [output_size]

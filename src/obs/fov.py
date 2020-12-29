@@ -22,7 +22,9 @@ class FOVObservator(ObservationBuilder):
         3. Distance map in direction and FOV of the agent
         4. Other agents positions in the agent's FOV (direction of each agent)
         5. Agents targets in the agent's FOV (1 agent target, 0 other agent, -1 otherwise)
-        6+. Cell of the rails in deviation paths in the agent's FOV 
+        6. Agents malfunctioning turns
+        7. Agents fractional speeds
+        8+. Cell of the rails in deviation paths in the agent's FOV 
     '''
 
     def __init__(self, max_depth, predictor):

@@ -211,15 +211,14 @@ model:
     mlp_compression:
       # The number of hidden FC layers with their hidden sizes
       # (to map the encoder output to a fixed size)
-      hidden_sizes:
-        - 512
+      hidden_sizes: []
       # Final MLP output size
-      output_size: 256
+      output_size: 128
     # GNN configuration
     gnn_communication:
       # Number and hidden embedding sizes of graph convs to perform
       hidden_sizes:
-        - 256
+        - 128
       # Size of the output embedding
       embedding_size: 128
       # Dropout value
@@ -236,7 +235,7 @@ replay_buffer:
   # Maximum buffer dimension
   size: 100000
   # Batch size
-  batch_size: 128
+  batch_size: 32
   # Try to learn after this many steps
   checkpoint: 4
   # Replay buffer to restore
@@ -255,7 +254,7 @@ generic:
   # Device config
   use_gpu: False
   # Enable wandb logging
-  enable_wandb: False
+  enable_wandb: True
   # Checkpoint to save model to wandb
   wandb_checkpoint: 500
   # Gradients logging in wandb

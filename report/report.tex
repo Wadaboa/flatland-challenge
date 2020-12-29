@@ -17,7 +17,7 @@
    urlcolor=cyan
 }
 \usepackage{tikz}
-\usetikzlibrary{arrows.meta,shadows,positioning,shapes.geometric}
+\usetikzlibrary{arrows.meta,shadows,positioning,shapes.geometric,fit}
 \usepackage{amssymb}
 \usepackage[sc]{mathpazo}
 \linespread{1.05}
@@ -80,6 +80,21 @@
   \scantokens{#1\noexpand}%
   \endgroup
 }
+
+% Matrix highlighting
+\tikzset{%
+  highlight/.style={rectangle,rounded corners,fill=red!15,draw,fill opacity=0.5,thick,inner sep=0pt}
+}
+\newcommand{\tikzmark}[2]{
+	\tikz[overlay,remember picture,baseline=(#1.base)] \node (#1) {#2};
+}
+%
+\newcommand{\highlightfov}[1][submatrix]{%
+    \tikz[overlay,remember picture]{
+		\node[highlight,fit=(left.north west) (right.south east)] (#1) {};
+	}
+}
+
 
 \begin{document}
 \frenchspacing
@@ -568,7 +583,7 @@ Starting from the already provided, but deprecated, local observation present in
 Since we want to emphasize the agent related to the observation, $d$ should be an odd number, so that the agent's position can always be represented by the central cell $(\lfloor d / 2 \rfloor, \lfloor d / 2 \rfloor)$ of the FOV.
 
 About individual features reported in the agent's FOV channels:
-\begin{itemize}
+\begin{enumerate}
 	\item Cell type: empty cell $0$ is encoded as $-1$, while cell types $1$ to $10$ are encoded as-is
 	\item Cell orientation: $0, 90, 180, 270$ degrees are encoded as $0, 1, 2, 3$
 	\item Shortest path: $1$ for cells in the shortest path and $-1$ otherwise
@@ -578,7 +593,32 @@ About individual features reported in the agent's FOV channels:
 	\item Malfunctions: number of remaining malfunctioning turns for all the agents in the FOV
 	\item Speeds: fractional speeds of all the agents in the FOV
 	\item Deviation paths: one channel for each deviation path, following the same encoding of the shortest path
-\end{itemize}
+\end{enumerate}
+
+Figure \ref{fig:fov-example} shows an example of two channels taken from a $3\times 3$ FOV in a $4\times 5$ toy environment, where the first channel represents positions in the shortest path of the agent and the second channel represents distances from the agent's target, only in the current direction of the agent. Moreover, the square submatrix highlighted in red is the agent's FOV (so the agent is in its central position) and $\cdot$ symbols are used to indicate absence of information. 
+
+\begin{figure}[h]
+	\center
+	\[
+	\left(\begin{array}{*5{c}}
+		\tikzmark{left}{$\cdot$} & \cdot & \cdot & \cdot & \cdot \\
+		\cdot & 1 & 1 & \cdot & \cdot \\
+		\cdot & \cdot & \tikzmark{right}{$1$} & \cdot & \cdot \\
+		\cdot & \cdot & 1 & \cdot & \cdot
+	\end{array}\right)
+	\highlightfov[first]
+	\qquad
+	\left(\begin{array}{*5{c}}
+		\tikzmark{left}{$\cdot$} & \cdot & \cdot & \cdot & \cdot \\
+		4 & 3 & 2 & 5 & 4 \\
+		\cdot & \cdot & \tikzmark{right}{$\cdot$} & \cdot & \cdot \\
+		\cdot & \cdot & \cdot & \cdot & \cdot
+	\end{array}\right)
+	\]
+	\highlightfov[second]
+	\caption{Shortest path and distance map channels extracted from a $3\times 3$ FOV in a $4\times 5$ toy environment}
+	\label{fig:fov-example}
+\end{figure}
 
 In addition, the FOV observator returns an adjacency matrix $A$ representing the current state of the environment. In particular, $A$ would be a square matrix of dimension $n\times n$, where $n$ is the number of agents, such that $a_{ij}=w\neq 0$ if and only if agent $i$ is distant $w\leq d$ from agent $j$. This adjacency matrix is used to record some kind of local communication network, that will be exploited by the architectures described in \ref{subsec:multi-agent-gnn}.
 
@@ -735,6 +775,15 @@ Computing legal and illegal actions is not a problem in the Flatland environment
 
 A more all-round solution would instead completely prevent agents to pick a move that is not available (i.e. agents should directly ignore those actions). To do so, we decided to mask out illegal moves whenever the algorithm has to do some kind of computation or selection on the set of actions. Specifically, in the action selectors we replaced every instance of the $\max$, $\argmax$ and $\softmax$ operator with their ad-hoc masked counterparts and we did the same when computing Bellman optimality.
 
+\begin{figure}[h]
+	\center
+	\includegraphics[width=0.4\linewidth]{legal-actions.png}
+	\caption{Agent with a subset of legal actions}
+	\label{fig:legal-actions}
+\end{figure}
+
+Figure \ref{fig:legal-actions} shows an example in which the blue agent can only decide if it wants to move forward (to the join cell) or stay in its current cell (a cell before a join). Moreover, if the agent is the only one remaining in the environment, even stop moving wouldn't be a viable action to take. 
+
 \chapter{DQN}
 A DQN (Deep $Q$-Network), as was first presented in \cite{atari-dqn}, leverages neural networks from the point of view of universal function approximators, to estimate the optimal $Q^*$ state-action function. 
 
@@ -744,13 +793,6 @@ L(\theta)=\mathbb{E}_{(s_t,a_t,r_{t+1},s_{t+1})}\left[\left(\underbrace{r_{t+1}+
 $$
 
 About the network architecture, the literature does not follow a clear definition, so that the term DQN is mostly linked to the whole training pipeline required to reach good estimates of the optimal $Q$ function. For example, in the original paper \cite{atari-dqn} DeepMind researchers use an initial CNN (Convolutional Neural Network), since their input is represented by videogame frames, followed by an MLP (Multi-Layer Perceptron). In our case, we sticked to just using the final fully-connected layers, as shown in figure \ref{fig:fc-dqn}, where the number of input neurons is given by the linearization of the selected observation, the number of hidden cells and the number of hidden layers are hyperparameters, while the number of outputs is equal to the size of the action space (in our case we have exactly $3$ choices). 
-
-\begin{figure}[h]
-	\centering
-	\includesvg[width = 200pt]{fc-dqn}
-	\caption{Simple DQN example with FC layers}
-	\label{fig:fc-dqn}
-\end{figure}
 
 Another thing to notice is that the weights used for the target versus the current (presumably non-optimal) $Q$ values are different. In practical terms, a separate network is used to estimate the TD target. This target network has the same architecture as the function approximator but with frozen parameters. Every $T$ steps (a hyperparameter) the parameters from the $Q$-network are copied to the target network. This leads to more stable training because it keeps the target function fixed (for a while). Because of this, assuming $\theta$ to represent the current network weights and $\theta^{-}$ the target network weights, the loss function is updated as follows:
 $$
@@ -762,6 +804,13 @@ There are two main ways two copy the weights from the current to the target netw
 	\item Hard update: every $T$ steps, the current network is cloned into the target network
 	\item Soft update (or Polyak average): at every time-step a portion of the current weights are shifted onto the target ones, so that at step $i$ we have $\theta_i^{-}=\tau \cdot \theta_i + (1-\tau)\cdot \theta_i^{-}$, where $\tau$ is an hyperparameter that controls the weight transfer amount 
 \end{enumerate}
+
+\begin{figure}[h]
+	\centering
+	\includesvg[width = 200pt]{fc-dqn}
+	\caption{Simple DQN example with FC layers}
+	\label{fig:fc-dqn}
+\end{figure}
 
 \section{Experience replay}
 We already mentioned the problem of non-stationarity related to MARL, when agents have to deal with a stochastic environment, but in practice that same problem is also present in simpler RL algorithms, since the data distribution still changes as the agent learns new behaviours (which is in contrast with the standard assumption of a fixed underlying distribution of deep learning methods). Moreover, we know that supervised learning algorithms assume samples in a dataset to be \textit{i.i.d.} (independent and identically distributed), so that if we model the RL problem as a supervised one (e.g. a DQN can be framed as a regression problem that minimizes the distance from the optimal $Q$ function) we break the independence assumption since sequences of states are usually highly correlated. 
@@ -1025,7 +1074,7 @@ Figure \ref{fig:dqn-gnn-robot} shows the entire architecture, which in our case 
 	\label{fig:dqn-gnn-robot}
 \end{figure}
 
-Thanks to the FOV observator, each agent has a local field of view of dimension $d\times d$, where $d$, the observator's maximum depth, should be an odd number, so that the agent's position is always at the centre of the rectangular observation. The computed observation is then fed into a CNN, built by blocks of convolution, batch normalization, activation function and (optionally) max pooling layers. The intuition behind using a CNN is that we want to enforce a local paradigm, by processing the input observation into a higher-level feature tensor.
+Thanks to the FOV observator, each agent has a local Field Of View of dimension $d\times d$, where the observator's maximum depth $d$ should be an odd number (for the reasons described in \ref{subsec:fov-obs}). First of all, the observation is fed into a CNN, built by blocks of convolution, batch normalization, activation function and (optionally) max pooling layers. The intuition behind using a CNN is that we want to enforce a local paradigm, by processing the input observation into a higher-level feature tensor.
 
 The feature tensor produced by the CNN is then passed into a sequence of fully connected layers, so that it gets mapped to a fixed-size. Then, the encoded and down-scaled observation is assigned as the feature node representing each agent in the communication graph (which encodes agent distances by edges' weights). Finally, graph convolutions are performed to obtain an aggregated observation from all the neighboring agents w.r.t. a single agent (the number of executed hops is limited by a parameter).
 
@@ -1033,7 +1082,18 @@ The final aggregated information is then used as an input to the DQN, to compute
 
 Since this algorithm was conceived to be used in a multi-agent environment, one important modification needs to be taken into account when implementing it: an experience in the replay buffer is not related to a single agent anymore, but to all the agents in the environment.
 
-Again, in-depth results are shown in section \ref{sec:fov-dqn-gnn-robot-res}.
+About the specific graph filters in use in \cite{dqn-gnn-robot}, authors do not give clear hints, so that we tried to implement both the simple neighborhood aggregator known as GCN \cite{gcn} and a more advanced convolutional layer called GAT \cite{gat}, which leverages a multi-head attention architecture.
+
+About GAT, in its essence is just a different aggregation function with attention over features of neighbors, instead of a simple mean aggregation. The following is a description of how GAT works:
+\begin{enumerate}
+	\item Compute $z_k(u)=W_k\cdot h_k(u)$, where $z_k(u)$ is a linear transformation of the lower layer embedding $h_k(u)$ and $W_k$ is its learnable weight matrix
+	\item Compute $s_k(u, v)=LeakyReLU\left(A_k\cdot [z_k(u), z_k(v)]\right)$, where $s_k(u, v)$ represents un-normalized attention scores between two neighbors and $A_k$ is the additive attention weight matrix
+	\item Compute $a_k(u, v)=\frac{exp(s_k(u, v))}{\sum_{w\in N(u)}exp(s_k(u,w))}$, where $a_k(u, v)$ are the normalized attention scores on each node's incoming edges
+	\item Compute $h_{k+1}(u)=\sigma\left(\sum_{v\in N(u)}a_k(u,v)\cdot z_k(v)\right)$, where $h_{k+1}(u)$ represents the aggregation of neighbors embeddings, scaled by the attention scores
+\end{enumerate}
+
+In-depth results using both GCN and GAT layers are shown in section \ref{sec:fov-dqn-gnn-robot-res}.
+
 
 \chapter{Results}\label{chap:results}
 This chapter contains a detailed description of all the experiments that were done, based on ideas that were introduced in the previous chapters. In order to present comparable results, we performed training over two types of Flatland environments, i.e. the ones identified as medium and big in table \ref{table:test-envs}.
