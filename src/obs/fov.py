@@ -97,7 +97,9 @@ class FOVObservator(ObservationBuilder):
 
     def compute_all_possible_transitions(self):
         '''
-        Given transitions list considering cell types outputs all possible transitions bitmap considering cell rotations too
+        Given transitions list considering cell types, 
+        outputs all possible transitions bitmap, 
+        considering cell rotations too
         '''
         # Bitmaps are read in decimal numbers
         transitions = RailEnvTransitions()
@@ -168,7 +170,8 @@ class FOVObservator(ObservationBuilder):
             adjacency[np.nonzero(adjacency)]
         ).float()
         edge_index, edge_weight = add_remaining_self_loops(
-            edge_index, edge_weight, fill_value=0, num_nodes=self.env.get_num_agents())
+            edge_index, edge_weight, fill_value=0, num_nodes=self.env.get_num_agents()
+        )
 
         # Add features to PyTorch Geometric Data object
         states = super().get_many(handles)

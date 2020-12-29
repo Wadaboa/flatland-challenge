@@ -32,37 +32,6 @@ class GraphObservator(ObservationBuilder):
         return super().get_many(handles)
 
     def get(self, handle=0):
-        self.observations[handle] = self.get_graph_data(handle)
-        return self.observations[handle]
-
-    def _init_graph(self):
-        '''
-        Initialize the graph structure, which is the same
-        for all agents in an episode
-        '''
-        # Compute edges and edges attributes
-        edges = self.env.railway_encoding.get_graph_edges(
-            unpacked=False, data=True
-        )
-        edge_index, edge_weight = [], []
-        for u, v, d in edges:
-            edge_index.append([
-                self.env.railway_encoding.node_to_index[u],
-                self.env.railway_encoding.node_to_index[v]
-            ])
-            edge_weight.append(d['weight'])
-        edge_index = torch.tensor(
-            edge_index, dtype=torch.long
-        ).t().contiguous()
-        edge_weight = torch.tensor(edge_weight, dtype=torch.float)
-        return Data(
-            edge_index=edge_index, edge_weight=edge_weight
-        )
-
-    def get_graph_data(self, handle):
-        '''
-        Add features to each node in the graph, based on the given agent 
-        '''
         # Compute node features
         nodes = self.env.railway_encoding.get_graph_nodes(
             unpacked=False, data=True
@@ -124,8 +93,33 @@ class GraphObservator(ObservationBuilder):
         ], dtype=torch.long)
 
         # Create a PyTorch Geometric Data object
-        return Data(
+        self.observations[handle] = Data(
             edge_index=self.data_object.edge_index,
             edge_weight=self.data_object.edge_weight,
             pos=pos, x=x
+        )
+        return self.observations[handle]
+
+    def _init_graph(self):
+        '''
+        Initialize the graph structure, which is the same
+        for all agents in an episode
+        '''
+        # Compute edges and edges attributes
+        edges = self.env.railway_encoding.get_graph_edges(
+            unpacked=False, data=True
+        )
+        edge_index, edge_weight = [], []
+        for u, v, d in edges:
+            edge_index.append([
+                self.env.railway_encoding.node_to_index[u],
+                self.env.railway_encoding.node_to_index[v]
+            ])
+            edge_weight.append(d['weight'])
+        edge_index = torch.tensor(
+            edge_index, dtype=torch.long
+        ).t().contiguous()
+        edge_weight = torch.tensor(edge_weight, dtype=torch.float)
+        return Data(
+            edge_index=edge_index, edge_weight=edge_weight
         )

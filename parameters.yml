@@ -2,10 +2,10 @@
 env:
   # Random seed used to generate rails
   # (14 medium - 14 big)
-  seed: 1
+  seed: 14
   # Number of trains to spawn
   # (3, 5, 7 medium - 5, 7, 10 big)
-  num_trains: 2
+  num_trains: 1
   # Environment width
   # (48 medium - 64 big)
   width: 48
@@ -42,7 +42,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 15
+  max_depth: 6
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -55,16 +55,16 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 15
+  max_depth: 6
 
 # Policy config
 policy:
   # Select policy type
   type:
     # Graph observation policy
-    graph: False
+    graph: True
     # Decentralized FOV observation policy
-    decentralized_fov: True
+    decentralized_fov: False
     # Standard tree observation policy
     tree: False
     # Binary tree observation policy
@@ -250,13 +250,13 @@ testing:
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: ""
+  model: "checkpoints/20201229-002029-3000"
   # Verbose option
-  verbose: False
+  verbose: True
   # Renderer config
   renderer:
     # Enable renderer
-    enabled: False
+    enabled: True
     # Seconds to sleep between moves
     sleep: 0
     # Save intermediate renderer frames

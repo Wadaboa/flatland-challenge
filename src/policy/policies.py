@@ -225,6 +225,17 @@ class DQNPolicy(Policy):
             )
         self.optimizer.step()
 
+        '''
+        print(
+            q_expected.shape, 
+            q_targets_next.shape, 
+            q_targets.shape, 
+            rewards.shape, 
+            finished.shape, 
+            self.loss
+        )
+        '''
+
         # Log loss to wandb
         if self.params.generic.enable_wandb and self.params.generic.wandb_gradients.enabled:
             wandb.log({"loss": self.loss})
