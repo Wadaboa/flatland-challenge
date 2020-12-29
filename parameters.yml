@@ -2,33 +2,33 @@
 env:
   # Random seed used to generate rails
   # (14 medium - 14 big)
-  seed: 14
+  seed: 1
   # Number of trains to spawn
   # (3, 5, 7 medium - 5, 7, 10 big)
-  num_trains: 5
+  num_trains: 2
   # Environment width
   # (48 medium - 64 big)
-  width: 64
+  width: 48
   # Environment height
   # (27 medium - 36 big)
-  height: 36
+  height: 27
   # Maximum number of cities where agents can start or end
   # (5 medium - 9 big)
-  max_cities: 9
+  max_cities: 5
   # Type of city distribution
   grid: False
   # Maximum number of tracks allowed between cities
   # (2 medium - 5 big)
-  max_rails_between_cities: 5
+  max_rails_between_cities: 2
   # Maximum number of parallel tracks within a city
   # (3 medium - 5 big)
-  max_rails_in_cities: 5
+  max_rails_in_cities: 3
   # Enable variable speed
-  variable_speed: True
+  variable_speed: False
   # Malfunctions config
   malfunctions:
     # Enable malfunctions
-    enabled: True
+    enabled: False
     # Malfunction rate
     # (0.0125 medium - 0.0125 big)
     rate: !!float 0.005
@@ -42,7 +42,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 6
+  max_depth: 15
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -55,7 +55,7 @@ observator:
 # Predictor config
 predictor:
   # Maximum depth for the predictor
-  max_depth: 6
+  max_depth: 15
 
 # Policy config
 policy:
@@ -64,11 +64,11 @@ policy:
     # Graph observation policy
     graph: False
     # Decentralized FOV observation policy
-    decentralized_fov: False
+    decentralized_fov: True
     # Standard tree observation policy
     tree: False
     # Binary tree observation policy
-    binary_tree: True
+    binary_tree: False
     # Random policy
     random: False
 
@@ -160,7 +160,7 @@ model:
     # Number of embeddings to pass to the DQN
     pos_size: 3
     # Dropout value
-    dropout: !!float 0.0
+    dropout: !!float 0.2
   # Multi GNN configuration
   multi_gnn:
     # Size of the output embedding
@@ -218,7 +218,7 @@ training:
     # Path to the train environment file
     load: ""
     # Number of training episodes to run
-    episodes: 7500
+    episodes: 5000
     # Train on random enviroments or on the same one
     all_random: True
 
@@ -250,7 +250,7 @@ testing:
   # Path to the environment file
   load: ""
   # Path to the model to load
-  model: "checkpoints/20201216-145212-latest"
+  model: ""
   # Verbose option
   verbose: False
   # Renderer config

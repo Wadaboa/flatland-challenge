@@ -133,23 +133,19 @@ class DQNPolicy(Policy):
         '''
         Perform action selection based on the Q-values returned by the network
         '''
-        choice_values = torch.zeros(
-            (moving_agents.shape[0], self.choice_size),
-            dtype=torch.float, device=self.device
-        )
+        choice_values = np.zeros((moving_agents.shape[0], self.choice_size),)
         # If no agent is active, then skip computations
         if moving_agents.any():
 
             # Add 1 dimension to state to simulate a mini-batch of size 1
-            if isinstance(states[0], np.ndarray):
+            if self.params.policy.type.decentralized_fov:
+                states = Batch.from_data_list([states[0]]).to(self.device)
+            elif self.params.policy.type.graph:
+                states = Batch.from_data_list(states).to(self.device)
+            else:
                 states = torch.tensor(
                     states, dtype=torch.float, device=self.device
                 )
-            elif isinstance(states[0], Data):
-                if self.params.policy.type.decentralized_fov:
-                    states = Batch.from_data_list([states[0]]).to(self.device)
-                else:
-                    states = Batch.from_data_list(states).to(self.device)
 
             # Convert moving agents to tensor
             t_moving_agents = torch.from_numpy(
@@ -161,7 +157,7 @@ class DQNPolicy(Policy):
             with torch.no_grad():
                 choice_values = self.qnetwork_local(
                     states, mask=t_moving_agents
-                ).squeeze().detach().cpu().numpy()
+                ).detach().cpu().numpy()
 
         # Select a legal choice based on the action selector
         return self.choice_selector.select_many(

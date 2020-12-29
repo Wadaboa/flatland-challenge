@@ -1,5 +1,6 @@
 \documentclass[a4paper,10pt]{report}
 \usepackage[T1]{fontenc}
+\usepackage[table]{xcolor}
 \usepackage{titlesec}
 \usepackage{graphicx}
 \usepackage{svg}
@@ -981,7 +982,7 @@ In particular, our very first GNN attempt follows the subsequent workflow:
 	\item Concatenate the extracted embeddings and use this new vector as an input for the DQN
 \end{enumerate}
 
-This architecture was mainly tested in the single agent navigation round, since it didn't seem strong enough to generalize well in a multi-agent environment: in-depth results are shown in section \ref{sec:entire-graph-res} of the next chapter.
+This architecture was mainly tested in the single agent navigation round, since it didn't seem strong enough to generalize well in a multi-agent environment: in-depth results are shown in section \ref{sec:entire-graph-single-agent-res} of the next chapter.
 
 \subsection{Multi-agent graph embeddings}
 In this complex architecture we are following the same reasoning introduced in \cite{dqn-gnn-robot} and \cite{magat}, where the GNN is used as a communication channel to exchange information between agents. The great thing about this architecture is that it is end-to-end differentiable, meaning that both features and actions are computed by a neural model, so that we shouldn't need all the feature engineering steps that are instead mandatory when working with simpler observations (like the tree and binary tree ones, described in sections \ref{subsec:tree-obs} and \ref{subsec:binary-tree-obs}, respectively).
@@ -994,7 +995,7 @@ Figure \ref{fig:dqn-gnn-robot} shows the entire architecture, which in our case 
 	\label{fig:dqn-gnn-robot}
 \end{figure}
 
-Thanks to the FOV observator, each agent has a local field of view of dimension $d\times d$, where $d$, the observator's maximum depth, should be an odd number, so that the agent's position is always at the central position of the rectangular observation. The computed observation is then fed into a CNN, built by blocks of convolution, batch normalization, activation function and (optionally) max pooling layers. The intuition behind using a CNN is that we want to enforce a local paradigm, by processing the input observation into a higher-level feature tensor.
+Thanks to the FOV observator, each agent has a local field of view of dimension $d\times d$, where $d$, the observator's maximum depth, should be an odd number, so that the agent's position is always at the centre of the rectangular observation. The computed observation is then fed into a CNN, built by blocks of convolution, batch normalization, activation function and (optionally) max pooling layers. The intuition behind using a CNN is that we want to enforce a local paradigm, by processing the input observation into a higher-level feature tensor.
 
 The feature tensor produced by the CNN is then passed into a sequence of fully connected layers, so that it gets mapped to a fixed-size. Then, the encoded and down-scaled observation is assigned as the feature node representing each agent in the communication graph (which encodes agent distances by edges' weights). Finally, graph convolutions are performed to obtain an aggregated observation from all the neighboring agents w.r.t. a single agent (the number of executed hops is limited by a parameter).
 
@@ -1042,7 +1043,9 @@ During training, models are evaluated at specific checkpoints (e.g. once every $
 
 \begin{table}[h]
 	\center
+	\rowcolors{2}{gray!25}{white}
 	\begin{tabular}{@{}lm{5cm}@{}}
+		\rowcolor{gray!50}
 		\toprule
 		\textbf{Parameter}							& \textbf{Description} \\ \midrule
 		\texttt{training.train_env.episodes} &   Number of training episodes    \\
@@ -1066,7 +1069,7 @@ During training, models are evaluated at specific checkpoints (e.g. once every $
 		\texttt{parameter_decay.decaying_episodes} & Percentage of episodes in which the exploration parameter should reach its minimum \\
 		\texttt{parameter_decay.start} & Initial exploration value \\
 		\texttt{parameter_decay.end} & Final exploration value \\
-		\texttt{parameter_decay.type} & Exploration type (Linear or Exponential) \\
+		\texttt{parameter_decay.type} & Exploration decay type (Linear or Exponential) \\
 		\texttt{replay\_buffer.size} & Replay buffer maximum size \\ 
 		\texttt{replay\_buffer.batch\_size} & Size of a batch of experiences \\
 		\texttt{replay\_buffer.checkpoint} & How often to learn \\ \bottomrule
@@ -1076,7 +1079,7 @@ During training, models are evaluated at specific checkpoints (e.g. once every $
 \end{table}
 \clearpage
 
-Table \ref{table:params-desc} contains a high-level description of all the required hyperparameters, while table \ref{table:common-params} shows some hyperparameters that are common to all the experiments shown in subsequent sections.
+Table \ref{table:params-desc} contains a high-level description of all the required hyperparameters, while table \ref{table:common-params} shows some hyperparameters that are common to all the experiments presented in subsequent sections.
 
 \begin{table}[h]
 	\center
@@ -1137,7 +1140,7 @@ The best results were obtained when training over the medium environment with co
 							   & \multicolumn{2}{c|}{\textbf{3 agents}} & \multicolumn{2}{c|}{\textbf{5 agents}} & \multicolumn{2}{c|}{\textbf{7 agents}} \\ \hline
 							   & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} \\ \hline
 		\textbf{Dones}      & $93.07\%$ & $83.80\%$ & $89.40\%$ & $76.64\%$ & $82.51\%$ & $67.66\%$ \\ \hline
-		\textbf{Deadlocks}  & $0.0307$ & $0.0580$ & $0.0596$ & $0.1340$ & $0.1023$ & $0.1254$ \\ \hline
+		\textbf{Deadlocks}  & $03.07\%$ & $05.80\%$ & $05.96\%$ & $13.40\%$ & $10.23\%$ & $12.54\%$ \\ \hline
 		\textbf{Return} & $-0.1404$ & $-0.1459$ & $-0.1581$ & $-0.1688$ & $-0.2057$ & $-0.1940$ \\ \hline
 		\textbf{Steps}   & $142$ & $339$ & $187$ & $415$ & $250$ & $445$ \\ \hline
 	\end{tabular}
@@ -1151,10 +1154,10 @@ The best results were obtained when training over the medium environment with co
 		\hline
 							   & \multicolumn{2}{c|}{\textbf{5 agents}} & \multicolumn{2}{c|}{\textbf{7 agents}} & \multicolumn{2}{c|}{\textbf{10 agents}} \\ \hline
 							   & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} \\ \hline
-		\textbf{Dones}      & $86.28\%$ & & $84.17\%$ & & $76.90\%$ & \\ \hline
-		\textbf{Deadlocks}  & $0.0324$ & & $0.0589$ & & $0.1254$ & \\ \hline
-		\textbf{Return} & $-0.2331$ &  & $-0.2449$ &  & $-0.2790$ &  \\ \hline
-		\textbf{Steps}   & $400$ &  & $447$ &  & $497$ & \\ \hline
+		\textbf{Dones}      & $86.28\%$ & $68.76\%$ & $84.17\%$ & $61.43\%$ & $76.90\%$ & $50.28\%$ \\ \hline
+		\textbf{Deadlocks}  & $03.24\%$ & $12.88\%$ & $05.89\%$ & $20.97\%$ & $12.54\%$ & $31.82\%$ \\ \hline
+		\textbf{Return} & $-0.2331$ & $-0.2081$ & $-0.2449$ & $-0.2260$ & $-0.2790$ & $-0.2615$ \\ \hline
+		\textbf{Steps}   & $400$ & $637$ & $447$ & $650$ & $497$ & $675$ \\ \hline
 	\end{tabular}
 	\caption{Binary tree results, tested on big environment}
 	\label{table:bt-big-res}
@@ -1231,6 +1234,13 @@ Training results are also reflected in the test metrics shown in table \ref{tabl
 \end{table}
 
 \section*{Boltzmann vs. $\epsilon$-greedy action selector}\label{sec:action-selectors-res}
+This experiment aims to compare the performance of two action selectors, namely the standard $\epsilon$-greedy and the Boltzmann ones. 
+
+Since the DQN model using softmax Bellman in \ref{sec:bellman-operators-res} was trained with the $\epsilon$-greedy exploration strategy, we are going to train the same model with the Boltzmann strategy and finally observe which selector behaves the best in this particular setting. Because of this, we are keeping the same hyperparameters shown in \ref{table:bellman-operators-params}, with the only difference being in the exploration strategy.
+
+Figure \ref{fig:boltzmann-epsgreedy-metrics} shows training metrics comparing \texttt{bt-softmaxbellman} (orange in the plots), which is the DQN model using the binary tree observator, the softmax Bellman operator and an $\epsilon$-greedy selection strategy, and \texttt{bt-softmax\-bellman-boltzmann} (light orange in the plots), which is the same model as the one above, with the excpetion of leveraging the Boltzmann action selector. Both exploration parameters ($\epsilon$ and the temperature $\tau$) followed the same starting/ending values and decay, i.e. a linear one over a pre-defined percentage of training episodes.
+
+Training results show that $\epsilon$-greedy leads to faster convergence and better final scores, at least in this particular experiment.
 
 \begin{figure}[h]
 	\centering
@@ -1250,6 +1260,9 @@ Training results are also reflected in the test metrics shown in table \ref{tabl
 	\caption{Boltzmann vs. $\epsilon$-greedy action selector training metrics}
 	\label{fig:boltzmann-epsgreedy-metrics}
 \end{figure}
+\clearpage
+
+Models were tested on the same environment type as the training one (i.e. a medium environment), but using a different random seed, as done with the previous experiments. Table \ref{table:bellman-operators-res} shows that testing results mirror what we observed in figure \ref{fig:boltzmann-epsgreedy-metrics}, so that the model using $\epsilon$-greedy achieves much better scores.  
 
 \begin{table}[h]
 	\center
@@ -1264,8 +1277,7 @@ Training results are also reflected in the test metrics shown in table \ref{tabl
 	\label{table:bellman-operators-res}
 \end{table}
 
-\section*{Entire graph embeddings}\label{sec:entire-graph-res}
-\subsection*{Single agent entire graph embeddings vs. random baseline}\label{sec:entire-graph-single-agent-res}
+\section*{Single agent entire graph embeddings vs. random baseline}\label{sec:entire-graph-single-agent-res}
 
 \section*{FOV with multi-agent graph embeddings}\label{sec:fov-dqn-gnn-robot-res}
 
