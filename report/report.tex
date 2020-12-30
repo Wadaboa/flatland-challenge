@@ -116,6 +116,7 @@
 \maketitle
 \newpage
 \tableofcontents
+\setcounter{tocdepth}{1}
 \listoffigures
 \listoftables
 \newpage
@@ -1213,13 +1214,36 @@ The best results were obtained when training over the medium environment with co
 	\label{table:bt-params}
 \end{table}
 
-Other experiments were made when training the DQN model using the binary tree observator: 
-\begin{enumerate}
-	\item Training over the big environment didn't work out very well: maybe, using higher depths could have helped convergence, but much more computing power was needed to perform those tests
-	\item Training with malfunctions and variable speeds (i.e. using complication \textbf{B}) didn't bring exciting results, but maybe training with just variable speeds could have been beneficial
-	\item Training without giving an increasing penalty for agents choosing to consequently take a stop moving action was detrimental: agents learned to stop in order to completely avoid deadlocks
-	\item Training with higher hidden sizes for the FC layers in the DQN model was also ineffective: actually, we observed worse results w.r.t. using the default values reported in \ref{table:params-desc}
-\end{enumerate}
+Figure \ref{fig:bt-medium-metrics} reports the evolution of return (the one used for comparing test results), custom return (the one used for training the agents, described in \ref{sec:rewards-shaping}), number of choices taken, number of elapsed turns, fraction of completions and deadlocks w.r.t. the episode number on the $x$-axis. As we can see, training converges to relatively high scores. Another observation is that the custom return has a much lower variance w.r.t. the standard return, which could help the stability of the DQN model. Moreover, the number of choices taken seems to remain more or less constant, independently of the decreasing value of elapsed steps as training approaches the end.
+
+\begin{figure}[h]
+	\begin{subfigure}{0.48\textwidth}
+	\includegraphics[width=\linewidth]{bt-medium-returns.png}
+	\end{subfigure}\hspace*{\fill}
+	\begin{subfigure}{0.48\textwidth}
+	\includegraphics[width=\linewidth]{bt-medium-custom-returns.png}
+	\end{subfigure}
+	
+	\medskip
+	\begin{subfigure}{0.48\textwidth}
+	\includegraphics[width=\linewidth]{bt-medium-choices.png}
+	\end{subfigure}\hspace*{\fill}
+	\begin{subfigure}{0.48\textwidth}
+	\includegraphics[width=\linewidth]{bt-medium-steps.png}
+	\end{subfigure}
+	
+	\medskip
+	\begin{subfigure}{0.48\textwidth}
+	\includegraphics[width=\linewidth]{bt-medium-completions.png}
+	\end{subfigure}\hspace*{\fill}
+	\begin{subfigure}{0.48\textwidth}
+	\includegraphics[width=\linewidth]{bt-medium-deadlocks.png}
+	\end{subfigure}
+	
+	\caption{Binary tree training metrics on the medium environment}
+	\label{fig:bt-medium-metrics}
+\end{figure}
+\clearpage
 
 Test results show that agents behave well in differently-sized environments (i.e. the medium and the big ones), where the most difficult scenario is represented by the big environment with complication \textbf{B}. Surprisingly enough, even though agents were trained without malfunctions and with single equal speeds, they are able to adapt to both environmental complications. 
 
@@ -1252,12 +1276,19 @@ Test results show that agents behave well in differently-sized environments (i.e
 	\caption{Binary tree results, tested on big environment}
 	\label{table:bt-big-res}
 \end{table}
-\clearpage
+
+To conclude this section, we report other experiments that were made when training the DQN model using the binary tree observator: 
+\begin{enumerate}
+	\item Training over the big environment didn't work out very well: maybe, using higher depths could have helped convergence, but much more computing power was needed to perform those tests
+	\item Training with malfunctions and variable speeds (i.e. using complication \textbf{B}) didn't bring exciting results, but maybe training with just variable speeds could have been beneficial
+	\item Training without giving an increasing penalty for agents choosing to consequently take a stop moving action was detrimental: agents learned to continuously stop in order to completely avoid deadlocks
+	\item Training with higher hidden sizes for the FC layers in the DQN model was also ineffective: actually, we observed worse results w.r.t. using the default values reported in \ref{table:params-desc}
+\end{enumerate}
 
 \section{Standard vs. softmax Bellman}\label{sec:bellman-operators-res}
 In order to check the correctness of our softmax Bellman operator (introduced in \ref{subsec:bellman-operators}) and see if we could actually observe higher test scores in the Flatland problem, we trained a DQN model using the binary tree observator (as described in \ref{sec:bt-dqn-res}), over a rather simple setting (the one specified in table \ref{table:bellman-operators-params}). 
 
-Training was performed on the medium environment, while models were tested on the same environment type, but using a different random seed (i.e. seed $14$).
+Training was performed on the medium environment with complication \textbf{A}, while models were tested on the same environment type, but using a different random seed (i.e. seed $14$).
 
 \begin{table}[h]
 	\center
@@ -1280,10 +1311,10 @@ Training results are also reflected in the test metrics shown in table \ref{tabl
 
 \begin{table}[h]
 	\center
-	\begin{tabular}{|c|c|c|c|c|c|c|}
+	\begin{tabular}{|c|c|c|}
 		\hline & \textbf{Standard} & \textbf{Softmax} \\ \hline
 		\textbf{Dones}      & $87.10\%$ & $89.40\%$ \\ \hline
-		\textbf{Deadlocks}  & $0.0640$ & $0.0680$ \\ \hline
+		\textbf{Deadlocks}  & $06.40\%$ & $06.80\%$ \\ \hline
 		\textbf{Return}     & $-0.1437$ & $-0.1145$ \\ \hline
 		\textbf{Steps}      & $120$ & $93$ \\ \hline
 	\end{tabular}
@@ -1312,51 +1343,88 @@ Training results are also reflected in the test metrics shown in table \ref{tabl
 \clearpage
 
 
-\section{Boltzmann vs. $\epsilon$-greedy action selector}\label{sec:action-selectors-res}
-This experiment aims to compare the performance of two action selectors, namely the standard $\epsilon$-greedy and the Boltzmann ones. 
+\section{Comparing action selectors}\label{sec:action-selectors-res}
+This experiment aims to compare the performance of different action selectors, namely the standard $\epsilon$-greedy and the Boltzmann ones w.r.t. random and greedy exploration baselines. 
 
 Since the DQN model using softmax Bellman in \ref{sec:bellman-operators-res} was trained with the $\epsilon$-greedy exploration strategy, we are going to train the same model with the Boltzmann strategy and finally observe which selector behaves the best in this particular setting. Because of this, we are keeping the same hyperparameters shown in \ref{table:bellman-operators-params}, with the only difference being in the exploration strategy.
 
-Figure \ref{fig:boltzmann-epsgreedy-metrics} shows training metrics comparing \texttt{bt-softmaxbellman} (orange in the plots), which is the DQN model using the binary tree observator, the softmax Bellman operator and an $\epsilon$-greedy selection strategy, and \texttt{bt-softmax\-bellman-boltzmann} (light orange in the plots), which is the same model as the one above, with the excpetion of leveraging the Boltzmann action selector. Both exploration parameters ($\epsilon$ and the temperature $\tau$) followed the same starting/ending values and decay, i.e. a linear one over a pre-defined percentage of training episodes.
+Figure \ref{fig:action-selectors-metrics} shows training metrics comparing \texttt{bt-softmaxbellman} (orange in the plots), which is the DQN model using the binary tree observator, the softmax Bellman operator and an $\epsilon$-greedy selection strategy, and \texttt{bt-softmax\-bellman-boltzmann} (light orange in the plots), which is the same model as the one above, with the exception of leveraging the Boltzmann action selector. Both exploration parameters ($\epsilon$ and the temperature $\tau$) followed the same starting/ending values and decay, i.e. a linear one over a pre-defined percentage of training episodes. Moreover, the random baseline is identified by \texttt{bt-softmaxbellman-randomexploration} (red in the plots) and the greedy one by the term \texttt{bt-softmaxbellman-greedy} (blue in the plots).
 
 Training results show that $\epsilon$-greedy leads to faster convergence and better final scores, at least in this particular experiment.
 
-Models were tested on the same environment type as the training one (i.e. a medium environment), but using a different random seed, as done with the previous experiments. Table \ref{table:bellman-operators-res} shows that testing results mirror what we observed in figure \ref{fig:boltzmann-epsgreedy-metrics}, so that the model using $\epsilon$-greedy achieves much better scores.  
+Models were tested on the same environment type as the training one (i.e. a medium environment), but using a different random seed, as done with the previous experiments. Table \ref{table:action-selectors-res} shows that testing results mirror what we observed in figure \ref{fig:action-selectors-metrics}, so that the model using $\epsilon$-greedy achieves much better scores.  
 
 \begin{table}[h]
 	\center
-	\begin{tabular}{|c|c|c|c|c|c|c|}
-		\hline & \textbf{$\epsilon$-greedy} & \textbf{Boltzmann} \\ \hline
-		\textbf{Dones}      & $89.40\%$ & $84.90\%$  \\ \hline
-		\textbf{Deadlocks}  & $0.0680$ & $0.0860$ \\ \hline
-		\textbf{Return}     & $-0.1145$ & $-0.1388$ \\ \hline
-		\textbf{Steps}      & $93$ & $115$ \\ \hline
+	\begin{tabular}{|c|c|c|c|c|}
+		\hline & \textbf{Random} & \textbf{Greedy} & \textbf{$\epsilon$-greedy} & \textbf{Boltzmann} \\ \hline
+		\textbf{Dones}    & $07.40\%$ & $86.10\%$ & $89.40\%$ & $84.90\%$  \\ \hline
+		\textbf{Deadlocks} & $28.40\%$ & $07.80\%$ & $06.80\%$ & $08.60\%$ \\ \hline
+		\textbf{Return}    & $-0.6995$ & $-0.1361$ & $-0.1145$ & $-0.1388$ \\ \hline
+		\textbf{Steps}     & $447$ & $118$ & $93$ & $115$ \\ \hline
 	\end{tabular}
-	\caption{Boltzmann vs. $\epsilon$-greedy action selector results, tested on medium environment}
-	\label{table:bellman-operators-res}
+	\caption{Action selectors comparison results, tested on medium environment}
+	\label{table:action-selectors-res}
 \end{table}
 
 \begin{figure}[h]
 	\centering
 	\captionsetup[subfigure]{justification=centering}
 	\begin{subfigure}[b]{\linewidth}
-		\includegraphics[width=\textwidth]{boltzmann-epsgreedy-returns}
+		\includegraphics[width=\textwidth]{action-selectors-returns}
 	\end{subfigure}
 	
 	\begin{subfigure}[b]{\linewidth}
-		\includegraphics[width=\textwidth]{boltzmann-epsgreedy-completions}
+		\includegraphics[width=\textwidth]{action-selectors-completions}
 	\end{subfigure}
 	
 	\begin{subfigure}[b]{\linewidth}
-		\includegraphics[width=\textwidth]{boltzmann-epsgreedy-steps}
+		\includegraphics[width=\textwidth]{action-selectors-steps}
 	\end{subfigure}
 
-	\caption{Boltzmann vs. $\epsilon$-greedy action selector training metrics}
-	\label{fig:boltzmann-epsgreedy-metrics}
+	\caption{Action selectors comparison training metrics}
+	\label{fig:action-selectors-metrics}
 \end{figure}
 \clearpage
 
-\section*{Single agent entire graph embeddings vs. random baseline}\label{sec:entire-graph-single-agent-res}
+\section{Single agent entire graph embeddings vs. random baseline}\label{sec:entire-graph-single-agent-res}
+
+In this section we are reporting experiments with the model described in \ref{subsec:entire-gnn}, where the COJG graph is used as the input data to a GNN model that computes node embeddings and aggregates them in a local fashion. These embeddings are then merged together and used as the state representation input in a DQN model.
+
+As already pointed out, training was done in the medium environment with complication \textbf{A} and a single agent, using the parameters listed in \ref{table:entire-gnn-params}, where the superscript indicates two different training runs. Unfortunately, training didn't converge to acceptable values, since the monitored metrics remained more or less constant throughout the entirity of executions.
+
+Nevertheless, we tested the best obtained models using the same training settings (but with a different random seed) and compared the obtained results with a random baseline, i.e. a policy that chooses actions at random. Table \ref{table:entire-gnn-res} shows the outcome of such experiments.
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{@{}lc@{}}
+		\toprule
+		\textbf{Parameter}							& \textbf{Value} \\ \midrule
+		\texttt{training.train_env.episodes} &   $\num{3000}$    \\
+		\texttt{env.num\_trains} &   $1$    \\
+		\texttt{predictor.max\_depth}                 &   $4^{(1)}, 6^{(2)}$   \\
+		\texttt{observator.max\_depth}                  &   $2^{(1)}, 6^{(2)}$    \\
+		\texttt{model.entire\_gnn.embedding\_size}                  &   $1^{(1)},4^{(2)}$    \\
+		\texttt{model.entire\_gnn.hidden\_size}                  &   $2^{(1)}, 8^{(2)}$    \\
+		\bottomrule
+	\end{tabular}
+	\caption{Single agent entire graph embeddings vs. random baseline hyperparameters, trained on medium environment}
+	\label{table:entire-gnn-params}
+\end{table}
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{|c|c|c|c|}
+		\hline & \textbf{Random} & \textbf{Entire GNN (1)} & \textbf{Entire GNN (2)} \\ \hline
+		\textbf{Dones} & $22.80\%$ & $31.80\%$ & $53.60\%$ \\ \hline
+		\textbf{Return}& $-0.7947$ & $-0.7169$   & $-0.5160$ \\ \hline
+		\textbf{Steps}& $477$ & $433$  & $310$ \\ \hline
+	\end{tabular}
+	\caption{Single agent entire graph embeddings vs. random baseline, tested on medium environment}
+	\label{table:entire-gnn-res}
+\end{table}
+
+One thing that should be noticed by looking at test results is that at least the GNN model outperforms the random one by a good margin. Moreover, there seems to be a positive correlation between the size of node embeddings and final scores, which means that increasing the embedding size even further could lead to much better results.
 
 \section*{FOV with multi-agent graph embeddings}\label{sec:fov-dqn-gnn-robot-res}
 

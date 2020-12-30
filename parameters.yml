@@ -2,10 +2,10 @@
 env:
   # Random seed used to generate rails
   # (14 medium - 14 big)
-  seed: 35
+  seed: 1
   # Number of trains to spawn
   # (3, 5, 7 medium - 5, 7, 10 big)
-  num_trains: 3
+  num_trains: 7
   # Environment width
   # (48 medium - 64 big)
   width: 48
@@ -42,7 +42,7 @@ env:
 # Observator config
 observator:
   # Maximum depth for the observator
-  max_depth: 15
+  max_depth: 2
   # Binary tree observation configs
   binary_tree:
     # Observation radius
@@ -57,7 +57,7 @@ predictor:
   # Maximum depth for the predictor
   # (for the shortest/deviation predictor
   # it indicates the maximum number of deviations)
-  max_depth: 3
+  max_depth: 20
 
 # Policy config
 policy:
@@ -66,9 +66,9 @@ policy:
     # Graph observation policy
     graph: False
     # Decentralized FOV observation policy
-    decentralized_fov: True
+    decentralized_fov: False
     # Standard tree observation policy
-    tree: False
+    tree: True
     # Binary tree observation policy
     binary_tree: False
     # Random policy
@@ -119,7 +119,7 @@ learning:
     # Enable or disable
     enabled: True
     # Temperature parameter in the softmax
-    temperature: !!float 0.5
+    temperature: !!float 1.0
   # Loss function
   loss:
     # (Masked) Huber loss
@@ -160,9 +160,9 @@ model:
     # Non-linear function
     nonlinearity:
       # ReLU function
-      relu: True
+      relu: False
       # Tanh function
-      tanh: False
+      tanh: True
   # Entire GNN configuration
   entire_gnn:
     # Size of the output embedding
@@ -235,7 +235,7 @@ replay_buffer:
   # Maximum buffer dimension
   size: 100000
   # Batch size
-  batch_size: 32
+  batch_size: 128
   # Try to learn after this many steps
   checkpoint: 4
   # Replay buffer to restore
