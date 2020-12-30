@@ -245,7 +245,7 @@ class FOVObservator(ObservationBuilder):
                                 dev_pred.positions
                             )
                             dev_path_fov = self.extract_path_fov(
-                                dev_pos, dev_pred.lenght, pad=-1
+                                dev_pos, len(dev_pos), pad=-1
                             )
                     dev_paths_fov[i] = dev_path_fov
 

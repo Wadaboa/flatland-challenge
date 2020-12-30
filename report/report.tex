@@ -586,8 +586,7 @@ About individual features reported in the agent's FOV channels:
 \begin{enumerate}
 	\item Cell type: empty cell $0$ is encoded as $-1$, while cell types $1$ to $10$ are encoded as-is
 	\item Cell orientation: $0, 90, 180, 270$ degrees are encoded as $0, 1, 2, 3$
-	\item Shortest path: $1$ for cells in the shortest path and $-1$ otherwise
-	\item Distance map: distances from each cell to the agent's target ($-1$ if not reachable), based on the agent's current direction 
+	\item Shortest path: distance from target for cells in the shortest path and $-1$ otherwise
 	\item Positions: other agents are represented by their current direction
 	\item Targets: $1$ for the agent target, $0$ for other agent's targets, $-1$ otherwise
 	\item Malfunctions: number of remaining malfunctioning turns for all the agents in the FOV
@@ -595,28 +594,28 @@ About individual features reported in the agent's FOV channels:
 	\item Deviation paths: one channel for each deviation path, following the same encoding of the shortest path
 \end{enumerate}
 
-Figure \ref{fig:fov-example} shows an example of two channels taken from a $3\times 3$ FOV in a $4\times 5$ toy environment, where the first channel represents positions in the shortest path of the agent and the second channel represents distances from the agent's target, only in the current direction of the agent. Moreover, the square submatrix highlighted in red is the agent's FOV (so the agent is in its central position) and $\cdot$ symbols are used to indicate absence of information. 
+Figure \ref{fig:fov-example} shows an example of two channels taken from a $3\times 3$ FOV in a $4\times 5$ toy environment, where the first channel represents distances in the shortest path of the agent and the second channel represents distances from the agent's target in one of the available deviation paths. Moreover, the square submatrix highlighted in red is the agent's FOV (so the agent is in its central position) and $\cdot$ symbols are used to indicate absence of information. 
 
 \begin{figure}[h]
 	\center
 	\[
 	\left(\begin{array}{*5{c}}
 		\tikzmark{left}{$\cdot$} & \cdot & \cdot & \cdot & \cdot \\
-		\cdot & 1 & 1 & \cdot & \cdot \\
+		\cdot & 3 & 2 & \cdot & \cdot \\
 		\cdot & \cdot & \tikzmark{right}{$1$} & \cdot & \cdot \\
-		\cdot & \cdot & 1 & \cdot & \cdot
+		\cdot & \cdot & 0 & \cdot & \cdot
 	\end{array}\right)
 	\highlightfov[first]
 	\qquad
 	\left(\begin{array}{*5{c}}
 		\tikzmark{left}{$\cdot$} & \cdot & \cdot & \cdot & \cdot \\
-		4 & 3 & 2 & 5 & 4 \\
-		\cdot & \cdot & \tikzmark{right}{$\cdot$} & \cdot & \cdot \\
-		\cdot & \cdot & \cdot & \cdot & \cdot
+		\cdot & 7 & 6 & 5 & 4 \\
+		\cdot & \cdot & \tikzmark{right}{$\cdot$} & \cdot & 3 \\
+		\cdot & \cdot & 0 & 1 & 2
 	\end{array}\right)
 	\]
 	\highlightfov[second]
-	\caption{Shortest path and distance map channels extracted from a $3\times 3$ FOV in a $4\times 5$ toy environment}
+	\caption{Shortest path and one deviation path channels extracted from a $3\times 3$ FOV in a $4\times 5$ toy environment}
 	\label{fig:fov-example}
 \end{figure}
 
@@ -1095,6 +1094,7 @@ About GAT, in its essence is just a different aggregation function with attentio
 In-depth results using both GCN and GAT layers are shown in section \ref{sec:fov-dqn-gnn-robot-res}.
 
 
+\addtocontents{toc}{\protect\setcounter{tocdepth}{0}}
 \chapter{Results}\label{chap:results}
 This chapter contains a detailed description of all the experiments that were done, based on ideas that were introduced in the previous chapters. In order to present comparable results, we performed training over two types of Flatland environments, i.e. the ones identified as medium and big in table \ref{table:test-envs}.
 
@@ -1132,86 +1132,67 @@ Ideally, the training phase should span over different environments, so that age
 During training, models are evaluated at specific checkpoints (e.g. once every $200$ training episodes), for a specified number of validation episodes (e.g. $20$). A key idea about evaluation is that the model is continuosly tested over the same sequence of environments, at every checkpoint, so that we are able to observe the effectiveness of training, by looking at how agents evolve and if their behavior is getting better over time on the same set of examples.
 
 \rowcolors{3}{}{gray!25}
-\begin{longtable}{@{}m{5cm}m{5cm}@{}}
+\begin{longtable}{@{}m{4cm}m{5cm}c@{}}
 	\toprule
-	\textbf{Parameter} & \textbf{Description} \\ \midrule
-	\texttt{training.train_env.episodes} &   Number of training episodes    \\
-	\texttt{env.seed} &   Random seed to generate new railways during training    \\
-	\texttt{env.num\_trains} &   Number of agents    \\
-	\texttt{env.rewards.stop\_penalty} &  Stop penalty coefficient (see \ref{sec:rewards-shaping})    \\
-	\texttt{predictor.max\_depth} &  Maximum predictor depth   \\
-	\texttt{observator.max\_depth} & Maximum observator depth    \\
-	\texttt{observator.normalization\_radius} & Maximum distance to consider in feature normalization \\
-	\texttt{learning.learning\_rate} & Learning rate for the Adam optimizer \\
-	\texttt{learning.tau} & DQN soft update weight \\
-	\texttt{learning.discount} & DQN discount factor \\ 
-	\texttt{learning.softmax\_bellman.enabled} & Enable or disable softmax Bellman \\  
-	\texttt{learning.softmax\_bellman.temperature} & $\tau$ parameter in softmax Bellman (see \ref{subsec:bellman-operators}) \\ 
-	\texttt{learning.loss} & Regression loss to use (Huber or MSE) \\
-	\texttt{action_selector.type} & Action selector to use ($\epsilon$-greedy, Random, Greedy, Boltzmann or Categorical) \\
-	\texttt{parameter_decay.decaying_episodes} & Percentage of episodes in which the exploration parameter should reach its minimum \\
-	\texttt{parameter_decay.start} & Initial exploration value \\
-	\texttt{parameter_decay.end} & Final exploration value \\
-	\texttt{parameter_decay.type} & Exploration decay type (Linear or Exponential) \\
-	\texttt{replay\_buffer.size} & Replay buffer maximum size \\ 
-	\texttt{replay\_buffer.batch\_size} & Size of a batch of experiences \\
-	\texttt{replay\_buffer.checkpoint} & How often to learn \\ 
-	\rowcolor{red!50}\multicolumn{2}{@{}c@{}}{\textbf{DQN}} \\
-	\texttt{model.dqn.hidden\_sizes} & Number and size of FC layers \\ 
-	\texttt{model.dqn.nonlinearity} & Activation function (Tanh or ReLU) \\ 
-	\texttt{model.dqn.double} & Enable or disable double DQN \\ 
-	\texttt{model.dqn.dueling.enabled} & Enable or disable dueling DQN  \\
-	\texttt{model.dqn.dueling.aggregation} & Advantage function aggregation in dueling DQN (Max or Mean)  \\
-	\rowcolor{red!50}\multicolumn{2}{@{}c@{}}{\textbf{Entire graph embeddings}} \\
-	\texttt{model.entire_gnn.embedding_size} & Size of the output GNN embeddings \\
-	\texttt{model.entire_gnn.hidden_size} & Hidden embedding size of GNN layers  \\
-	\texttt{model.entire_gnn.pos_size} & Number of graph embeddings to use as DQN input \\
-	\texttt{model.entire_gnn.dropout} & Probability of dropout \\
-	\texttt{model.entire_gnn.nonlinearity} & Graph convolutions activation function (Tanh or ReLU) \\
-	\rowcolor{red!50}\multicolumn{2}{@{}c@{}}{\textbf{Multi-agent graph embeddings}} \\
-	\texttt{model.multi_gnn.cnn_encoder.conv.kernel_size} & Kernel size of convolutions in the CNN encoder \\
-	\texttt{model.multi_gnn.cnn_encoder.conv.stride} & Stride of convolutions in the CNN encoder \\
-	\texttt{model.multi_gnn.cnn_encoder.conv.padding} & Padding of convolutions in the CNN encoder \\
-	\texttt{model.multi_gnn.cnn_encoder.pool.kernel_size} & Kernel size of pooling in the CNN encoder \\
-	\texttt{model.multi_gnn.cnn_encoder.pool.stride} & Stride of pooling in the CNN encoder \\
-	\texttt{model.multi_gnn.cnn_encoder.pool.padding} & Padding of pooling in the CNN encoder \\
-	\texttt{model.multi_gnn.cnn_encoder.hidden_channels} & Number and sizes of hidden channels in the CNN encoder \\
-	\texttt{model.multi_gnn.cnn_encoder.output_channels} & Number of output channels in the CNN encoder \\
-	\texttt{model.multi_gnn.mlp_compression.hidden_sizes} & Number and sizes of FC layers in the MLP compressor \\
-	\texttt{model.multi_gnn.mlp_compression.output_size} & Output size of FC layers in the MLP compressor \\
-	\texttt{model.multi_gnn.gnn_communication.hidden_sizes} & Number and sizes of GNN layers in the communicator\\
-	\texttt{model.multi_gnn.gnn_communication.embedding_size} & Final embedding size in the GNN communicator \\
-	\texttt{model.multi_gnn.gnn_communication.dropout} & Probability of dropout in the GNN layers \\
-	\texttt{model.multi_gnn.nonlinearity} & Activation function (Tanh or ReLU) \\
+	\textbf{Parameter} & \textbf{Description} & \textbf{Default value} \\ \midrule
+	\texttt{training.train_env.episodes} &   Number of training episodes & $5000$    \\
+	\texttt{env.seed} &   Random seed to generate new railways & $1$   \\
+	\texttt{env.num\_trains} &   Number of agents & -   \\
+	\texttt{env.rewards.stop\_penalty} &  Stop penalty coefficient (see \ref{sec:rewards-shaping})  & $2.0$  \\
+	\texttt{predictor.max\_depth} &  Maximum predictor depth & -  \\
+	\texttt{observator.max\_depth} & Maximum observator depth & -  \\
+	\texttt{observator.normalization\_radius} & Maximum distance to consider in feature normalization & $30$ \\
+	\texttt{learning.learning\_rate} & Adam optimizer learning rate & $0.5e-4$ \\
+	\texttt{learning.tau} & DQN soft update weight & $1e-3$ \\
+	\texttt{learning.discount} & DQN discount factor & $0.99$ \\ 
+	\texttt{learning.softmax\_bellman.enabled} & Enable or disable softmax Bellman & True \\  
+	\texttt{learning.softmax\_bellman.temperature} & $\tau$ parameter in softmax Bellman (see \ref{subsec:bellman-operators}) & $0.5$ \\ 
+	\texttt{learning.loss} & Regression loss to use (Huber or MSE) & Huber \\
+	\texttt{action_selector.type} & Action selector to use ($\epsilon$-greedy, Random, Greedy, Boltzmann or Categorical) & $\epsilon$-greedy \\
+	\texttt{parameter_decay.decaying_episodes} & Percentage of episodes in which the exploration parameter should reach its minimum & $0.7$ \\
+	\texttt{parameter_decay.start} & Initial exploration value & $1.0$\\
+	\texttt{parameter_decay.end} & Final exploration value & $0.01$ \\
+	\texttt{parameter_decay.type} & Exploration decay type (Linear or Exponential) & Linear \\
+	\texttt{replay\_buffer.size} & Replay buffer maximum size & $\num{100000}$\\ 
+	\texttt{replay\_buffer.batch\_size} & Size of a batch of experiences & $128$ \\
+	\texttt{replay\_buffer.checkpoint} & How often to learn & $4$\\ 
+	\rowcolor{red!50}\multicolumn{3}{@{}c@{}}{\textbf{DQN} (\texttt{model.dqn})} \\
+	\texttt{hidden\_sizes} & Number and size of FC layers & $[128,128]$ \\ 
+	\texttt{nonlinearity} & Activation function (Tanh or ReLU) & Tanh \\ 
+	\texttt{double} & Enable or disable double DQN & True \\ 
+	\texttt{dueling.enabled} & Enable or disable dueling DQN & True \\
+	\texttt{dueling.aggregation} & Advantage function aggregation in dueling DQN (Max or Mean) & Mean \\
+	\rowcolor{red!50}\multicolumn{3}{@{}c@{}}{\textbf{Entire graph embeddings} (\texttt{model.entire_gnn})} \\
+	\texttt{embedding_size} & Size of the output GNN embeddings & $4$ \\
+	\texttt{hidden_size} & Hidden embedding size of GNN layers & $8$ \\
+	\texttt{pos_size} & Number of graph embeddings to use as DQN input & $3$ \\
+	\texttt{dropout} & Probability of dropout & $0.2$\\
+	\texttt{nonlinearity} & Graph convolutions activation function (Tanh or ReLU) & ReLU \\
+	\rowcolor{red!50}\multicolumn{3}{@{}c@{}}{\textbf{Multi-agent graph embeddings} (\texttt{model.multi_gnn})} \\
+	\texttt{cnn_encoder.conv.kernel_size} & Kernel size of convolutions in the CNN encoder & $3$ \\
+	\texttt{cnn_encoder.conv.stride} & Stride of convolutions in the CNN encoder & $1$\\
+	\texttt{cnn_encoder.conv.padding} & Padding of convolutions in the CNN encoder & $1$\\
+	\texttt{cnn_encoder.pool.kernel_size} & Kernel size of pooling in the CNN encoder & $2$\\
+	\texttt{cnn_encoder.pool.stride} & Stride of pooling in the CNN encoder & $2$\\
+	\texttt{cnn_encoder.pool.padding} & Padding of pooling in the CNN encoder & $0$\\
+	\texttt{cnn_encoder.hidden_channels} & Number and sizes of hidden channels in the CNN encoder & $[32,32,64,64]$ \\
+	\texttt{cnn_encoder.output_channels} & Number of output channels in the CNN encoder & $128$\\
+	\texttt{mlp_compression.hidden_sizes} & Number and sizes of FC layers in the MLP compressor & $[]$ \\
+	\texttt{mlp_compression.output_size} & Output size of FC layers in the MLP compressor & $128$\\
+	\texttt{gnn_communication.hidden_sizes} & Number and sizes of GNN layers in the communicator & $[128]$\\
+	\texttt{gnn_communication.embedding_size} & Final embedding size in the GNN communicator & $128$\\
+	\texttt{gnn_communication.dropout} & Probability of dropout in the GNN layers & $0.2$\\
+	\texttt{nonlinearity} & Activation function (Tanh or ReLU) & ReLU\\
 	\bottomrule
 	\caption{Hyperparameters description}
 	\label{table:params-desc}
 \end{longtable}
 \clearpage
-
-Table \ref{table:params-desc} contains a high-level description of all the required hyperparameters, while table \ref{table:common-params} shows some hyperparameters that are common to all the experiments presented in subsequent sections.
-
 \rowcolors{1}{}{}
-\begin{table}[h]
-	\center
-	\begin{tabular}{@{}lc@{}}
-		\toprule
-		\textbf{Parameter}							& \textbf{Value} \\ \midrule
-		\texttt{learning.learning\_rate}                 &   $0.5e-4$   \\
-		\texttt{learning.tau}                  &   $1e-3$    \\
-		\texttt{learning.discount}       &  $0.99$     \\ 
-		\texttt{learning.softmax\_bellman.enabled}       &  True     \\  
-		\texttt{model.dqn.double}       &  True    \\ 
-		\texttt{model.dqn.dueling.enabled}       &  True    \\  
-		\texttt{replay\_buffer.size}       &  $\num{100000}$    \\ 
-		\texttt{replay\_buffer.batch\_size}       &  $128$    \\
-		\texttt{replay\_buffer.checkpoint}       &  $4$    \\ \bottomrule
-	\end{tabular}
-	\caption{Common hyperparameters}
-	\label{table:common-params}
-\end{table}
 
-\section*{Binary tree with DQN}\label{sec:bt-dqn-res}
+Table \ref{table:params-desc} contains a high-level description of all the required hyperparameters, along with their default values. Tables in the following sections will only specify those parameters that were set to a different value w.r.t. the default one.
+
+\section{Binary tree with DQN}\label{sec:bt-dqn-res}
 
 Tables \ref{table:bt-medium-res} and \ref{table:bt-big-res} show testing results obtained by training agents using the binary tree observator (shown in section \ref{subsec:binary-tree-obs}) with the shortest/deviation paths predictor (shown in section \ref{subsec:shortest-deviation-pred}) and a DQN model improved with all the features described in \ref{sec:dqn-improvements}, which computes legal choices instead of actions (see \ref{subsec:choices}) and aims at maximizing the expected return, where rewards are shaped as outlined in \ref{sec:rewards-shaping}. Under the hood, both the observator and the predictor leverage the COJG graph (the one introduced in \ref{sec:railway-encoding}), while the environment skips unneeded computations when an agent is not in a real decision cell (see \ref{subsec:real-decisions}).
 
@@ -1222,27 +1203,25 @@ The best results were obtained when training over the medium environment with co
 	\begin{tabular}{@{}lc@{}}
 		\toprule
 		\textbf{Parameter}							& \textbf{Value} \\ \midrule
-		\texttt{training.train_env.episodes} &   $\num{5000}$    \\
-		\texttt{env.seed} &   $1$    \\
 		\texttt{env.num\_trains} &   $7$    \\
-		\texttt{env.rewards.stop\_penalty} &   $2.0$    \\
 		\texttt{predictor.max\_depth}                 &   $6$   \\
-		\texttt{observator.max\_depth}                  &   $6$    \\
-		\texttt{observator.normalization\_radius}       &  $30$     \\ 
+		\texttt{observator.max\_depth}                  &   $6$    \\ 
 		\texttt{learning.softmax\_bellman.temperature}       &  $1.0$     \\ 
-		\texttt{learning.loss}       &  Huber     \\ 
-		\texttt{model.dqn.hidden\_sizes}       &  $[128,128]$    \\ 
-		\texttt{model.dqn.nonlinearity}       &  Tanh    \\ 
-		\texttt{action_selector.type} & $\epsilon$-greedy \\
-		\texttt{parameter_decay.decaying_episodes} & $0.7$ \\
-		\texttt{parameter_decay.start} & $1.0$ \\
-		\texttt{parameter_decay.end} & $0.01$ \\
-		\texttt{parameter_decay.type} & Linear \\
 		\bottomrule
 	\end{tabular}
 	\caption{Binary tree hyperparameters, trained on medium environment}
 	\label{table:bt-params}
 \end{table}
+
+Other experiments were made when training the DQN model using the binary tree observator: 
+\begin{enumerate}
+	\item Training over the big environment didn't work out very well: maybe, using higher depths could have helped convergence, but much more computing power was needed to perform those tests
+	\item Training with malfunctions and variable speeds (i.e. using complication \textbf{B}) didn't bring exciting results, but maybe training with just variable speeds could have been beneficial
+	\item Training without giving an increasing penalty for agents choosing to consequently take a stop moving action was detrimental: agents learned to stop in order to completely avoid deadlocks
+	\item Training with higher hidden sizes for the FC layers in the DQN model was also ineffective: actually, we observed worse results w.r.t. using the default values reported in \ref{table:params-desc}
+\end{enumerate}
+
+Test results show that agents behave well in differently-sized environments (i.e. the medium and the big ones), where the most difficult scenario is represented by the big environment with complication \textbf{B}. Surprisingly enough, even though agents were trained without malfunctions and with single equal speeds, they are able to adapt to both environmental complications. 
 
 \begin{table}[h]
 	\center
@@ -1275,7 +1254,7 @@ The best results were obtained when training over the medium environment with co
 \end{table}
 \clearpage
 
-\section*{Standard vs. softmax Bellman}\label{sec:bellman-operators-res}
+\section{Standard vs. softmax Bellman}\label{sec:bellman-operators-res}
 In order to check the correctness of our softmax Bellman operator (introduced in \ref{subsec:bellman-operators}) and see if we could actually observe higher test scores in the Flatland problem, we trained a DQN model using the binary tree observator (as described in \ref{sec:bt-dqn-res}), over a rather simple setting (the one specified in table \ref{table:bellman-operators-params}). 
 
 Training was performed on the medium environment, while models were tested on the same environment type, but using a different random seed (i.e. seed $14$).
@@ -1286,28 +1265,31 @@ Training was performed on the medium environment, while models were tested on th
 		\toprule
 		\textbf{Parameter}							& \textbf{Value} \\ \midrule
 		\texttt{training.train_env.episodes} &   $\num{3000}$    \\
-		\texttt{env.seed} &   $1$    \\
 		\texttt{env.num\_trains} &   $2$    \\
-		\texttt{env.rewards.stop\_penalty} &   $2.0$    \\
 		\texttt{predictor.max\_depth}                 &   $5$   \\
 		\texttt{observator.max\_depth}                  &   $5$    \\
-		\texttt{observator.normalization\_radius}       &  $30$     \\ 
-		\texttt{learning.softmax\_bellman.temperature}       &  $0.5$     \\ 
-		\texttt{learning.loss}       &  Huber     \\ 
-		\texttt{model.dqn.hidden\_sizes}       &  $[128,128]$    \\ 
-		\texttt{model.dqn.nonlinearity}       &  Tanh    \\ 
-		\texttt{action_selector.type} & $\epsilon$-greedy \\
-		\texttt{parameter_decay.decaying_episodes} & $0.7$ \\
-		\texttt{parameter_decay.start} & $1.0$ \\
-		\texttt{parameter_decay.end} & $0.01$ \\
-		\texttt{parameter_decay.type} & Linear \\
 		\bottomrule
 	\end{tabular}
 	\caption{Standard vs. softmax Bellman hyperparameters, trained on medium environment}
 	\label{table:bellman-operators-params}
 \end{table}
 
-The training results reported in figure \ref{fig:bellman-operators-metrics} show that both models achieve relatively good metrics, even though the one using softmax Bellman converges much faster and to better scores than the one which makes use of the standard Bellman's equation. We can also observe much lower variances in the softmax Bellman plots. 
+The training results reported in figure \ref{fig:bellman-operators-metrics} show that both models achieve relatively good metrics, even though the one using softmax Bellman converges much faster and to better scores than the one which makes use of the standard Bellman's equation. We can also observe much lower variances in the softmax Bellman plots.
+
+Training results are also reflected in the test metrics shown in table \ref{table:bellman-operators-res}, where softmax Bellman outperforms the standard Bellman operator by a good margin. 
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{|c|c|c|c|c|c|c|}
+		\hline & \textbf{Standard} & \textbf{Softmax} \\ \hline
+		\textbf{Dones}      & $87.10\%$ & $89.40\%$ \\ \hline
+		\textbf{Deadlocks}  & $0.0640$ & $0.0680$ \\ \hline
+		\textbf{Return}     & $-0.1437$ & $-0.1145$ \\ \hline
+		\textbf{Steps}      & $120$ & $93$ \\ \hline
+	\end{tabular}
+	\caption{Standard vs. softmax Bellman results, tested on medium environment}
+	\label{table:bellman-operators-res}
+\end{table}
 
 \begin{figure}[h]
 	\centering
@@ -1329,22 +1311,8 @@ The training results reported in figure \ref{fig:bellman-operators-metrics} show
 \end{figure}
 \clearpage
 
-Training results are also reflected in the test metrics shown in table \ref{table:bellman-operators-res}, where softmax Bellman outperforms the standard Bellman operator by a good margin. 
 
-\begin{table}[h]
-	\center
-	\begin{tabular}{|c|c|c|c|c|c|c|}
-		\hline & \textbf{Standard} & \textbf{Softmax} \\ \hline
-		\textbf{Dones}      & $87.10\%$ & $89.40\%$ \\ \hline
-		\textbf{Deadlocks}  & $0.0640$ & $0.0680$ \\ \hline
-		\textbf{Return}     & $-0.1437$ & $-0.1145$ \\ \hline
-		\textbf{Steps}      & $120$ & $93$ \\ \hline
-	\end{tabular}
-	\caption{Standard vs. softmax Bellman results, tested on medium environment}
-	\label{table:bellman-operators-res}
-\end{table}
-
-\section*{Boltzmann vs. $\epsilon$-greedy action selector}\label{sec:action-selectors-res}
+\section{Boltzmann vs. $\epsilon$-greedy action selector}\label{sec:action-selectors-res}
 This experiment aims to compare the performance of two action selectors, namely the standard $\epsilon$-greedy and the Boltzmann ones. 
 
 Since the DQN model using softmax Bellman in \ref{sec:bellman-operators-res} was trained with the $\epsilon$-greedy exploration strategy, we are going to train the same model with the Boltzmann strategy and finally observe which selector behaves the best in this particular setting. Because of this, we are keeping the same hyperparameters shown in \ref{table:bellman-operators-params}, with the only difference being in the exploration strategy.
@@ -1352,6 +1320,21 @@ Since the DQN model using softmax Bellman in \ref{sec:bellman-operators-res} was
 Figure \ref{fig:boltzmann-epsgreedy-metrics} shows training metrics comparing \texttt{bt-softmaxbellman} (orange in the plots), which is the DQN model using the binary tree observator, the softmax Bellman operator and an $\epsilon$-greedy selection strategy, and \texttt{bt-softmax\-bellman-boltzmann} (light orange in the plots), which is the same model as the one above, with the excpetion of leveraging the Boltzmann action selector. Both exploration parameters ($\epsilon$ and the temperature $\tau$) followed the same starting/ending values and decay, i.e. a linear one over a pre-defined percentage of training episodes.
 
 Training results show that $\epsilon$-greedy leads to faster convergence and better final scores, at least in this particular experiment.
+
+Models were tested on the same environment type as the training one (i.e. a medium environment), but using a different random seed, as done with the previous experiments. Table \ref{table:bellman-operators-res} shows that testing results mirror what we observed in figure \ref{fig:boltzmann-epsgreedy-metrics}, so that the model using $\epsilon$-greedy achieves much better scores.  
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{|c|c|c|c|c|c|c|}
+		\hline & \textbf{$\epsilon$-greedy} & \textbf{Boltzmann} \\ \hline
+		\textbf{Dones}      & $89.40\%$ & $84.90\%$  \\ \hline
+		\textbf{Deadlocks}  & $0.0680$ & $0.0860$ \\ \hline
+		\textbf{Return}     & $-0.1145$ & $-0.1388$ \\ \hline
+		\textbf{Steps}      & $93$ & $115$ \\ \hline
+	\end{tabular}
+	\caption{Boltzmann vs. $\epsilon$-greedy action selector results, tested on medium environment}
+	\label{table:bellman-operators-res}
+\end{table}
 
 \begin{figure}[h]
 	\centering
@@ -1372,21 +1355,6 @@ Training results show that $\epsilon$-greedy leads to faster convergence and bet
 	\label{fig:boltzmann-epsgreedy-metrics}
 \end{figure}
 \clearpage
-
-Models were tested on the same environment type as the training one (i.e. a medium environment), but using a different random seed, as done with the previous experiments. Table \ref{table:bellman-operators-res} shows that testing results mirror what we observed in figure \ref{fig:boltzmann-epsgreedy-metrics}, so that the model using $\epsilon$-greedy achieves much better scores.  
-
-\begin{table}[h]
-	\center
-	\begin{tabular}{|c|c|c|c|c|c|c|}
-		\hline & \textbf{$\epsilon$-greedy} & \textbf{Boltzmann} \\ \hline
-		\textbf{Dones}      & $89.40\%$ & $84.90\%$  \\ \hline
-		\textbf{Deadlocks}  & $0.0680$ & $0.0860$ \\ \hline
-		\textbf{Return}     & $-0.1145$ & $-0.1388$ \\ \hline
-		\textbf{Steps}      & $93$ & $115$ \\ \hline
-	\end{tabular}
-	\caption{Boltzmann vs. $\epsilon$-greedy action selector results, tested on medium environment}
-	\label{table:bellman-operators-res}
-\end{table}
 
 \section*{Single agent entire graph embeddings vs. random baseline}\label{sec:entire-graph-single-agent-res}
 
