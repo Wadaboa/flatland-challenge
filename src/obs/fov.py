@@ -1,4 +1,3 @@
-
 import torch
 import numpy as np
 from torch_geometric.utils import add_remaining_self_loops
@@ -18,13 +17,12 @@ class FOVObservator(ObservationBuilder):
     Features:
         0. Cell type of the rail in the agent's FOV
         1. Cell orientation of the rail in the agent's FOV
-        2. Cell of the rail in shortest path in the agent's FOV
-        3. Distance map in direction and FOV of the agent
-        4. Other agents positions in the agent's FOV (direction of each agent)
-        5. Agents targets in the agent's FOV (1 agent target, 0 other agent, -1 otherwise)
-        6. Agents malfunctioning turns
-        7. Agents fractional speeds
-        8+. Cell of the rails in deviation paths in the agent's FOV 
+        2. Distances in shortest path in the agent's FOV
+        3. Other agents positions in the agent's FOV (direction of each agent)
+        4. Agents targets in the agent's FOV (1 agent target, 0 other agent, -1 otherwise)
+        5. Agents malfunctioning turns
+        6. Agents fractional speeds
+        7+. Distances in deviation paths in the agent's FOV
     '''
 
     def __init__(self, max_depth, predictor):
@@ -35,7 +33,7 @@ class FOVObservator(ObservationBuilder):
         self.max_depth = max_depth
         self.predictor = predictor
         self.observations = dict()
-        self.observation_dim = 8 + self.predictor.max_deviations
+        self.observation_dim = 7 + self.predictor.max_deviations
         self.possible_transitions_dict = self.compute_all_possible_transitions()
         self.agent_positions = None
         self.agent_malfunctions = None
@@ -75,9 +73,9 @@ class FOVObservator(ObservationBuilder):
 
     def convert_transitions_map(self, obs_transitions_map):
         '''
-        Given an np.array of shape (env_height, env_width_, 16), 
-        convert it to (env_height,env_width, 2) where the first channel 
-        encodes cell types (empty cell 0 is encoded as -1, 
+        Given an np.array of shape (env_height, env_width_, 16),
+        convert it to (env_height,env_width, 2) where the first channel
+        encodes cell types (empty cell 0 is encoded as -1,
         while cell types 1 to 10 are encoded as-is)
         and the second channel orientations (0, 90, 180, 270 as 0, 1, 2, 3)
         '''
@@ -120,20 +118,29 @@ class FOVObservator(ObservationBuilder):
                     )
         return transitions_with_rotation_dict
 
-    def extract_path_fov(self, path, pad=0, fill_value=1):
+    def extract_path_fov(self, path, lenght, pad=0):
         '''
         Given a path returns the matrix fov marking the occupied positions assuming
         the first position as the center one of the fov
         '''
         path_fov = np.full((self.max_depth, self.max_depth), pad)
-        y, x = self.max_depth // 2, self.max_depth // 2
-        prev_pos = path[0]
-        for pos in path[1:]:
+        distance = lenght
+        if distance < np.inf:
+            y, x = self.max_depth // 2, self.max_depth // 2
+            prev_pos = path[0]
+            for pos in path[1:]:
+                if y >= 0 and y < self.max_depth and x >= 0 and x < self.max_depth:
+                    path_fov[y, x] = distance
+                    if pos[0] != prev_pos[0] or pos[1] != prev_pos[1]:
+                        distance -= 1
+                y += pos[0] - prev_pos[0]
+                x += pos[1] - prev_pos[1]
+                prev_pos = pos
+
+            # Add last element
             if y >= 0 and y < self.max_depth and x >= 0 and x < self.max_depth:
-                path_fov[y, x] = fill_value
-            y += pos[0] - prev_pos[0]
-            x += pos[1] - prev_pos[1]
-            prev_pos = pos
+                path_fov[y, x] = distance
+
         return path_fov
 
     def get_many(self, handles=None):
@@ -215,12 +222,12 @@ class FOVObservator(ObservationBuilder):
                     self.rail_obs[:, :, 1], agent_position, self.max_depth, -1
                 )
 
-                # Cell of the rail in shortest path in the agent's FOV
+                # Distances in shortest path in the agent's FOV
                 path_fov = self.extract_path_fov(
-                    shortest_pred.positions, pad=-1, fill_value=1
+                    shortest_pred.positions, shortest_pred.lenght, pad=-1
                 )
 
-                # Cell of the rails in deviation paths in the agent's FOV
+                # Distances in deviation paths in the agent's FOV
                 dev_paths_fov = np.full(
                     (num_devs, self.max_depth, self.max_depth), -1
                 )
@@ -233,23 +240,14 @@ class FOVObservator(ObservationBuilder):
                             dev_pred.positions[0]
                         )
                         if source_index != -1:
-                            dev_path = (
+                            dev_pos = (
                                 shortest_pred.positions[:source_index] +
                                 dev_pred.positions
                             )
                             dev_path_fov = self.extract_path_fov(
-                                dev_path, pad=-1, fill_value=1
+                                dev_pos, dev_pred.lenght, pad=-1
                             )
                     dev_paths_fov[i] = dev_path_fov
-
-                # Distance map in direction and FOV of the agent
-                distance_fov = utils.extract_fov(
-                    self.env.distance_map.get()[
-                        handle, :, :, agent_position[2]
-                    ],
-                    agent_position, self.max_depth, -1
-                )
-                distance_fov[distance_fov == np.inf] = -1
 
                 # Other agents positions in the agent's FOV (direction of each agent)
                 agents_fov = utils.extract_fov(
@@ -276,11 +274,10 @@ class FOVObservator(ObservationBuilder):
                 self.observations[handle][0] = cell_type
                 self.observations[handle][1] = cell_orientation
                 self.observations[handle][2] = path_fov
-                self.observations[handle][3] = distance_fov
-                self.observations[handle][4] = agents_fov
-                self.observations[handle][5] = targets_fov
-                self.observations[handle][6] = malf_fov
-                self.observations[handle][7] = speed_fov
-                self.observations[handle][8: 8 + num_devs + 1] = dev_paths_fov
+                self.observations[handle][3] = agents_fov
+                self.observations[handle][4] = targets_fov
+                self.observations[handle][5] = malf_fov
+                self.observations[handle][6] = speed_fov
+                self.observations[handle][7: 7 + num_devs + 1] = dev_paths_fov
 
         return self.observations[handle]

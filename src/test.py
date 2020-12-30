@@ -165,7 +165,7 @@ def test_agents(args):
 
                 # Wait to observe the current frame
                 if args.testing.renderer.sleep > 0:
-                    time.sleep(args.testing.sleep)
+                    time.sleep(args.testing.renderer.sleep)
 
                 # Save renderer frame
                 if args.testing.renderer.save_frames:
