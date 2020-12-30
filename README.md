@@ -1,5 +1,7 @@
 # Flatland challenge
 
+![Example](assets/env.gif)
+
 The Flatland challenge is a competition hosted by [AIcrowd](https://www.aicrowd.com/challenges/neurips-2020-flatland-challenge/), where participants should tackle a multi agent reinforcement learning problem on trains. This repository contains solutions and approaches to the challenge hosted in 2020 and sponsored by NeurIPS.
 
 Neural models have been implemented using the PyTorch framework and training results have been logged to [Weights & Biases](https://wandb.ai/) (also called `wandb`). Hyperparameters are handled via the use of a custom [parameters.yml](parameters.yml) file, that is accessed in almost every Python module of the project.
