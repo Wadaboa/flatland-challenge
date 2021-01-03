@@ -4,7 +4,7 @@
 if [ $1 == "pip" ]; then
 
     # Store root path
-    PATH=$(dirname "$(realpath $0)")
+    PATH=$(dirname $(dirname "$(realpath $0)" ) )
     ENVIRONMENT_PATH="venv"
 
     # Create the virtual environment and activate it

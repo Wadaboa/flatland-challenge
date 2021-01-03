@@ -125,7 +125,7 @@
 \chapter*{Foreword}
 The Flatland challenge is a competition organized by AIcrowd \cite{aicrowd} with the help of SBB (Swiss Federal Railways) to foster innovation with what regards the scheduling of trains trajectories in a railway environment.
 
-As reported on the official challenge website, SBB operates the densest mixed railway traffic in the world. It maintains and operates the biggest railway infrastructure in Switzerland: today, as of \the\year, there are more than $\num{10000}$ trains running each day, being routed over $\num{13000}$ switches and controlled by more than $\num{32000}$ signals.
+As reported on the official challenge website, SBB operates the densest mixed railway traffic in the world and maintains the biggest railway infrastructure in Switzerland: today, as of \the\year, there are more than $\num{10000}$ trains running each day, being routed over $\num{13000}$ switches and controlled by more than $\num{32000}$ signals.
 
 The Flatland challenge aims to address the vehicle rescheduling problem by providing a simplistic grid world environment and allowing for diverse solution approaches. In particular, the first edition of the challenge was hosted during 2019 and the submitted solutions were mainly based on OR (Operation Research) methodologies, while the second edition of the competition, i.e. the NeurIPS 2020 edition, had the goal of favoring the implementation of RL (Reinforcement Learning) based solutions.
 
@@ -265,12 +265,12 @@ The main complications of the Flatland challenge are given by speed profiles, co
 
 Speeds are assigned to agents based on a custom probability mass function, so that $P(S=s)$ represents the probability that the speed $S$ of an agent is equal to $s$. For example, we could have the following \textit{pmf} (representing a uniform distribution over values $\{\frac{1}{4}, \frac{1}{3}, \frac{1}{2}, 1\}$):
 
-\begin{equation}
+\begin{equation*}
 	\begin{cases}
 		P(S=s) = 0.25 & \text{if } s \in \{\frac{1}{4}, \frac{1}{3}, \frac{1}{2}, 1\} \\
 		P(S=s) = 0    & \text{otherwise}
 	\end{cases}
-\end{equation}
+\end{equation*}
 
 Clearly, the speed factor is a critical one to observe when trying to minimize the total number of time steps in a multi-agent scenario: for example, different agents have to understand that faster ones should go first if a decision has to be made. This is because we would like to avoid bottlenecks of any kind inside the railway network and slower agents can definitely become an issue in an environment with relatively long sequences of straight rails.
 
@@ -309,7 +309,7 @@ In this chapter we are going to explore better ways to encode the Flatland envir
 \section{Railway encoding}\label{sec:railway-encoding}
 As already described in chapter \ref{chap:background}, the default Flatland representation was not built with the goal of efficiency in mind, since it stores each and every cell of the 2D grid, while only \texttt{rail} cells are the ones that are actually used by agents. An alternative and more efficient representation could be to use some kind of sparse matrix implementation, where \texttt{empty} cells are not stored at all, but this would only be beneficial from the point of view of memory occupancy, while the usage of more specific data structures could also improve other aspects, like the computation of shortest paths from the agent's position to its target.
 
-In this work, we decided to rely on a graph structure. In particular, we were inspired by the great work described in \cite{jonas} where the author presents the so called Cell Orientation Graph (COG), in which nodes represent cells in the 2D grid as a triple $(x, y, d)$, where $(x, y)$ are the coordinates in the grid (origin in the top-left corner with x-axis looking right and y-axis looking down) and $d$ is one of the four cardinal directions (representing the direction of entrance in the cell). In this way, one \texttt{rail} cell is represented by at most $4$ nodes in the graph: this could seem like a major drawback, but in practice we can observe that the number of nodes is roughly equivalent to the number of cells in the corresponding grid, since we got rid of the \texttt{empty} ones.
+In this project, we decided to rely on a graph structure. In particular, we were inspired by the great work described in \cite{jonas} where the author presents the so called Cell Orientation Graph (COG), in which nodes represent cells in the 2D grid as a triple $(x, y, d)$, where $(x, y)$ are the coordinates in the grid (origin in the top-left corner with x-axis looking right and y-axis looking down) and $d$ is one of the four cardinal directions (representing the direction of entrance in the cell). In this way, one \texttt{rail} cell is represented by at most $4$ nodes in the graph: this could seem like a major drawback, but in practice we can observe that the number of nodes is roughly equivalent to the number of cells in the corresponding grid, since we got rid of the \texttt{empty} ones.
 
 Instead, edges in the graph are directed and represent legal transitions, so that no transition matrix or bitmap has to be stored in each node: it is simply encoded in the topology of the network. Moreover, the usage of directed edges greatly simplifies the computation of paths between nodes in the graph.
 
@@ -361,7 +361,7 @@ Figure \ref{fig:grid-cog-cojg-32x16} shows the comparison, in terms of visual re
 	\label{table:grid-cog-cojg-32x16}
 \end{table}
 
-Since a $32x16$ map is too small to observe big improvements, in figure \ref{fig:grid-cog-cojg-128x64} we also report another example of a sparse grid environment of dimension $128\times64$ and we compare it with its encodings in table \ref{table:grid-cog-cojg-128x64}.
+Since a $32\times 16$ map is too small to observe big improvements, in figure \ref{fig:grid-cog-cojg-128x64} we also report another example of a sparse grid environment of dimension $128\times64$ and we compare it with its encodings in table \ref{table:grid-cog-cojg-128x64}.
 
 \begin{figure}[!h]
 	\begin{subfigure}[b]{\linewidth}
@@ -399,16 +399,16 @@ Since a $32x16$ map is too small to observe big improvements, in figure \ref{fig
 \clearpage
 
 \section{Predictions}\label{sec:predictions}
-As reported in Flatland official FAQs, because railway traffic is limited to rails, many decisions that an agent has to take need to consider future situations and detect upcoming conflicts ahead of time. Therefore, Flatland provides the possibility of predictors that predict where agents will be in the future. The stock predictor simply assumes that each agent travels along its shortest path.
+As reported in Flatland official FAQs, because railway traffic is limited to rails, many decisions that an agent has to take need to consider future situations and detect upcoming conflicts ahead of time. Therefore, Flatland provides the possibility of predictors that estimate where agents should be in the future. The stock predictor simply assumes that each agent travels along its shortest path.
 
 \subsection{Shortest and deviation paths}\label{subsec:shortest-deviation-pred}
 One of the key advantages of COJG is that it enables us to apply standard shortest path algorithms on directed weighted graphs without any kind of overhead. In particular, we decided to use Dijkstra's algorithm since we do not have negatively weighted edges (in that case, Dijkstra's algorithm could get stuck in a cycle containing at least one edge with negative weight, since it may cycle an infinite number of times and sometimes go down with the total cost as much as it likes).
 
-To build our predictor, we took inspiration from the standard predictor given by the Flatland library as a baseline, which computes shortest paths directly on the 2D grid representation. Our predictor instead takes into account two possibilities: an agent either follows its shortest path or deviates from it. The computation of shortest paths is incremental, meaning that once it is done it only gets updated (i.e. the first node is removed). The only event that causes a re-computation of the shortest path is when the agent makes a choice that does not follow the stored path.
+To build our predictor, we took inspiration from the standard one given by the Flatland library as a baseline, which computes shortest paths directly on the 2D grid representation. Our predictor instead takes into account two possibilities: an agent either follows its shortest path or deviates from it. The computation of shortest paths is incremental, meaning that once it is done it only gets updated (i.e. the first node is removed). The only event that causes a re-computation of the shortest path is when the agent makes a choice that does not follow the stored path.
 
 Deviation paths are instead computed on the fly and they represent alternatives from each node of the shortest path. The computation of deviation path $i$, given the shortest path $n_1, \dots, n_i, n_{i+1}, \dots, n_d$, is simply another call to the Dijkstra's routine, where edge $(n_i, n_{i+1})$ is forbidden. In this example, $d$ represents the maximum depth of both shortest and deviation paths.
 
-In this way, the prediction becomes a list of paths, where the first one is the shortest path, composed by at most $d$ nodes, and the following ones are $m-1$ deviation paths, still composed by at most $d$ nodes. When an agent is relatively close to its target (i.e. less than $d$ nodes away from it), the actual path could have a dimension which is less than $d$: to avoid troubles when dealing with dynamically sized vectors, paths are padded to the full depth with special symbols.
+In this way, the prediction becomes a list of paths, where the first one is the shortest path, composed by at most $d$ nodes, and the following ones are $m$ deviation paths, still composed by at most $d$ nodes. When an agent is relatively close to its target (i.e. less than $d$ nodes away from it), the actual path could have a dimension which is less than $d$: to avoid troubles when dealing with dynamically sized vectors, paths are padded to the full depth with special symbols.
 
 In case an agent cannot reach its target anymore, the prediction only comprises a path of two nodes, i.e. the agent's position and the next node in the COJG graph. This mini-path is stored because predictions are used to compute possible deadlocks and, even if an agent cannot arrive at its target anymore, it is still present in the railway environment and it could be a possible source of conflicts.
 
@@ -524,7 +524,7 @@ Whenever a node is valid, it will be packed with the following features:
 	\item Number of agents ready to depart, but not yet active
 \end{enumerate}
 
-One key issue related to the described tree observation is related to both time and memory efficiency. In particular, we mentioned a maximum depth parameter that controls how far the observation should reach, in terms of consecutive switches, targets and deadends visited. Clearly, since each node has $4$ children and the output of the observator should be consistent, running it requires to build a complete tree, which we know to have a number of nodes equal to:
+One key issue about the described tree observation is related to both time and memory efficiency. In particular, we mentioned a maximum depth parameter that controls how far the observation should reach, in terms of consecutive switches, targets and deadends visited. Clearly, since each node has $4$ children and the output of the observator should be consistent, running it requires to build a complete tree, which we know to have a number of nodes equal to:
 $$
 n = \sum_{i=0}^{d-1}a^i,
 $$
@@ -533,7 +533,7 @@ where $d$ is the height of the tree (i.e. our maximum depth) and the arity $a$ i
 \subsection{Binary tree}\label{subsec:binary-tree-obs}
 In order to exploit what we've built so far and have an hopefully more efficient computation of each observation, a new observator was created, starting from the same notions described in section \ref{subsec:tree-obs}. 
 
-In particular, our observator builds a feature tensor of shape $(d, d, f)$, where $d$ is the maximum number of hops in the COJG graph to consider and $f$ is the total amount of features for each node. This tensor contains the features of the nodes in the shortest path as the first row and the features of the nodes in the deviation paths (which are exactly $d-1$) as the following rows.
+In particular, our observator builds a feature tensor of shape $(m + 1, d, f)$, where $m+1$ is the number of paths returned by the predictor introduced in \ref{subsec:shortest-deviation-pred}, $d$ is the maximum number of hops in the COJG graph to consider and $f$ is the total amount of features for each node. This tensor contains the features of the nodes in the shortest path as the first row and the features of the nodes in the deviation paths (which are exactly $m$) as the following rows.
 
 Each node has the following features:
 \begin{enumerate}
@@ -554,7 +554,7 @@ Each node has the following features:
  	\item How many turns the current agent has been repeatedly selecting the stop action
 \end{enumerate}
 
-Initially, we tried to use the feature tensor as our final observation. In particular, we linearized it as a $d\times d \times f$ vector and fed it into one of the neural models that will be described in the next chapters. In this way, the model was not converging to reasonable solutions, since we were ignoring consistency, meaning that in neural models each and every input neuron should always represent the same measure. Instead, since our feature tensor was built by simply considering paths in the environment, one specific node could have represented either the left or the right branch being taken from the previous node, in different runs. This was definitely confusing the agents, so that no convergence was reached.
+Initially, we tried to use the feature tensor as our final observation. In particular, we linearized it as a $m\times d \times f$ vector and fed it into one of the neural models that will be described in the next chapters. In this way, the model was not converging to reasonable solutions, since we were ignoring consistency, meaning that in neural models each and every input neuron should always represent the same measure. Instead, since our feature tensor was built by simply considering paths in the environment, one specific node could have represented either the left or the right branch being taken from the previous node, in different runs. This was definitely confusing the agents, so that no convergence was reached.
 
 Because of this, we resorted to the same idea that was presented in \ref{subsec:tree-obs}, but, thanks to the new action space introduced in \ref{subsec:choices}, we were able to shape the feature tensor like a binary tree (i.e. a tree with arity $a=2$), where branches identify choices, i.e. \texttt{CHOICE_LEFT} or \texttt{CHOICE_RIGHT}. One key difference that our custom binary tree has w.r.t. the standard tree observation is the injection of prior knowledge: this is done by filling in values of features that are only related to nodes present either in the shortest or in one of the deviation paths. In this way, the binary tree contains only information about paths that could lead to the agent's target, by completely disregarding the ones that could not. 
 
@@ -579,7 +579,7 @@ To sum up efficiency improvements, each feature is built from scratch, by levera
 \end{table}
 
 \subsection{FOV}\label{subsec:fov-obs}
-Starting from the already provided, but deprecated, local observation present in the Flatland package, the FOV observator provides a Field Of View around the position of a given agent. In particular, the FOV observator builds a feature map of size $(6 + m, d, d)$, where $m$ is the maximum number of deviation paths (the ones described in \ref{subsec:shortest-deviation-pred}) and $d$ is the side of the square view associated to each agent.
+Starting from the already provided, but deprecated, local observation present in the Flatland package, the FOV observator provides a Field Of View around the position of a given agent. In particular, the FOV observator builds a feature map of size $(7 + m, d, d)$, where $m$ is the maximum number of deviation paths (the ones described in \ref{subsec:shortest-deviation-pred}) and $d$ is the side of the square view associated to each agent.
 
 Since we want to emphasize the agent related to the observation, $d$ should be an odd number, so that the agent's position can always be represented by the central cell $(\lfloor d / 2 \rfloor, \lfloor d / 2 \rfloor)$ of the FOV.
 
@@ -620,7 +620,7 @@ Figure \ref{fig:fov-example} shows an example of two channels taken from a $3\ti
 	\label{fig:fov-example}
 \end{figure}
 
-In addition, the FOV observator returns an adjacency matrix $A$ representing the current state of the environment. In particular, $A$ would be a square matrix of dimension $n\times n$, where $n$ is the number of agents, such that $a_{ij}=w\neq 0$ if and only if agent $i$ is distant $w\leq d$ from agent $j$. This adjacency matrix is used to record some kind of local communication network, that will be exploited by the architectures described in \ref{subsec:multi-agent-gnn}.
+In addition, the FOV observator returns an adjacency matrix $A$ representing the current state of the environment. In particular, $A$ would be a square matrix of dimension $n\times n$, where $n$ is the number of agents, such that $a_{i,j}=w\neq 0$ if and only if agent $i$ is distant $w\leq d$ from agent $j$. This adjacency matrix is used to record some kind of local communication network, that will be exploited by the architectures described in \ref{subsec:multi-agent-gnn}.
 
 \subsection{Normalization}
 We already mentioned that an observation should be considered as a snapshot of a state from the point of view of an agent; then we reported that this snapshot should be consistent across different runs and that it should also be shaped as a tensor of fixed size. All of this pre-preprocessing is a required step that should be carefully considered when working with neural models (the ones that will be described in subsequent chapters). 
@@ -769,7 +769,7 @@ Then, a sample is drawn from the set of actions $A$, so that the probability of 
 By tweaking a little bit the Boltzmann selector we could also obtain the so-called Categorical action selector, where $\tau=1$ and no decaying is applied to it. In this way, the probability of choosing an action is given by a default softmax over the obtained $Q$ function values.
 
 \section{Action masking}
-One important problem that we faced while implementing our agents was related to differenting legal and illegal moves in the learning process. In particular, in the Flatland environment the set of available choices at each time-step is strictly related to the position of the agent: for example, an agent in a straight rail can only decide to follow the path over which it is placed (so only one action would be legal), while an agent that finds itself in a fork would have more than one available actions to choose from.
+One important problem that we faced while implementing our agents was related to differentiating legal and illegal moves in the learning process. In particular, in the Flatland environment the set of available choices at each time-step is strictly related to the position of the agent: for example, an agent in a straight rail can only decide to follow the path over which it is placed (so only one action would be legal), while an agent that finds itself in a fork would have more than one available actions to choose from.
 
 Computing legal and illegal actions is not a problem in the Flatland environment, since it is fully observable, but injecting this knowledge in the reinforcement learning scheme, so that the agent can learn to avoid illegal moves, is not straightforward. A simple way to do so would be to add a penalty term in the reward, but in this way you are not completely guaranteed that agents will never select an illegal action, because that step would be part of the learning process (i.e. agents would have to learn to avoid those actions).
 
@@ -799,10 +799,10 @@ $$
 L(\theta)=\mathbb{E}_{(s_t,a_t,r_{t+1},s_{t+1})}\left[\left(r_{t+1}+\gamma\max_{a_{t+1}}Q_{\theta^{-}}(s_{t+1}, a_{t+1}) - Q_{\theta}(s_t, a_t)\right)^2\right]
 $$
 
-There are two main ways two copy the weights from the current to the target network:
+There are two main ways to copy the weights from the current to the target network:
 \begin{enumerate}
 	\item Hard update: every $T$ steps, the current network is cloned into the target network
-	\item Soft update (or Polyak average): at every time-step a portion of the current weights are shifted onto the target ones, so that at step $i$ we have $\theta_i^{-}=\tau \cdot \theta_i + (1-\tau)\cdot \theta_i^{-}$, where $\tau$ is an hyperparameter that controls the weight transfer amount 
+	\item Soft update (or Polyak average): at every time-step a portion of the current weights is shifted onto the target ones, so that at step $i$ we have $\theta_i^{-}=\tau \cdot \theta_i + (1-\tau)\cdot \theta_i^{-}$, where $\tau$ is an hyperparameter that controls the weight transfer amount 
 \end{enumerate}
 
 \begin{figure}[h]
@@ -873,7 +873,7 @@ So far, we sticked to training the presented models with the reported losses, by
 
 In \cite{softmax-bellman}, \citeauthor{softmax-bellman} explore the possibility of directly modifying Bellman's equation to understand if a change in the $\max$ operator therein could be beneficial to the $Q$ function estimates and how this could impact their overoptimistic behavior.
 
-In particular, other Bellman operators had already been presented, but the main two on which authors decided to focus are $\softmax$ and $\mellowmax$. The latter was first conceived in \cite{mellowmax-bellman} to be used as either an alternative action selector (see section \ref{sec:action-selection}) or directly inside Bellman equation. Formally, the $\mellowmax$ operator can be written as
+In particular, other Bellman operators had already been presented, but the main two on which authors decided to focus are $\softmax$ and $\mellowmax$. The latter was first conceived in \cite{mellowmax-bellman} to be used as either an alternative action selector (see section \ref{sec:action-selection}) or directly inside Bellman's equation. Formally, the $\mellowmax$ operator can be written as
 $$
 mm_\omega(s) = \frac{1}{\omega}log\left(\frac{1}{|A|} \sum_{a'\in A} exp(\omega \cdot Q(s,a'))\right),
 $$ 
@@ -1018,8 +1018,8 @@ $$
 where $\sigma$ is a non-linearity, $W_k$ and $B_k$ are trainable weight matrices for layer $k$, $h_k$ is the embedding at layer $k$, $[\cdot]$ is the concatenation operator and the function $f$ could be any differentiable function that maps the set of vectors in $N(u)$ to a single vector. Some examples of such functions are:
 \begin{itemize}
 	\item Mean: $\sum_{v\in N(u)}\frac{h_{k-1}(v)}{|N(u)|}$
-	\item Pool: $\gamma(\{Q\cdot h_{k-1}(v), \forall v \in N(u)\})$, where $\gamma$ could be element-wise mean or max
-	\item LSTM: $LSTM(\{h_{k-1}(v), \forall v \in \pi(N(u))\})$
+	\item Pool: $\gamma(\{Q\cdot h_{k-1}(v), \forall v \in N(u)\})$, where $\gamma$ could be element-wise mean or max and $Q$ is a trainable weight matrix
+	\item LSTM: $LSTM(\{h_{k-1}(v), \forall v \in \pi(N(u))\})$, where $\pi$ indicates a permutation function 
 \end{itemize}
 
 GraphSAGE could also be viewed as a generalization of the previously presented GCN \cite{gcn} (Graph Convolutional Network), where an embedding at layer $k$ is computed as a simpler neighborhood average:
@@ -1043,7 +1043,7 @@ Recalling the railway encoding described in \ref{sec:railway-encoding}, where th
 
 In particular, our very first GNN attempt follows the subsequent workflow:
 \begin{enumerate}
-	\item Build an observation that encodes the COJG graph and assigns the following features to each node, from the point of view of one agent:
+	\item Build an observation that encodes the COJG graph and assign the following features to each node, from the point of view of one agent:
 	\begin{enumerate}
 		\item Boolean value to indicate if the cell is free or occupied
 		\item Distance from the agent's target
@@ -1076,7 +1076,7 @@ Figure \ref{fig:dqn-gnn-robot} shows the entire architecture, which in our case 
 
 Thanks to the FOV observator, each agent has a local Field Of View of dimension $d\times d$, where the observator's maximum depth $d$ should be an odd number (for the reasons described in \ref{subsec:fov-obs}). First of all, the observation is fed into a CNN, built by blocks of convolution, batch normalization, activation function and (optionally) max pooling layers. The intuition behind using a CNN is that we want to enforce a local paradigm, by processing the input observation into a higher-level feature tensor.
 
-The feature tensor produced by the CNN is then passed into a sequence of fully connected layers, so that it gets mapped to a fixed-size. Then, the encoded and down-scaled observation is assigned as the feature node representing each agent in the communication graph (which encodes agent distances by edges' weights). Finally, graph convolutions are performed to obtain an aggregated observation from all the neighboring agents w.r.t. a single agent (the number of executed hops is limited by a parameter).
+The feature tensor produced by the CNN is then passed into a sequence of fully connected layers, so that it gets mapped to a fixed size. Then, the encoded and down-scaled observation is assigned as the feature node representing each agent in the communication graph, which encodes agent distances by edges' weights (an edge is present if and only if agents are closer than $d$ cells). Finally, graph convolutions are performed to obtain an aggregated observation from all the neighboring agents w.r.t. a single agent (the number of executed hops is limited by a parameter).
 
 The final aggregated information is then used as an input to the DQN, to compute the estimated $Q$ values. Training is done by following the usual DQN pipeline, where a regression loss between the current $Q$ function and the optimal one (according to Bellman's equation) is used to backpropagate the errors that were made during that epoch, all the way up to the initial CNN encoder.
 
