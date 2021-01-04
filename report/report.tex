@@ -1254,7 +1254,7 @@ Test results show that agents behave well in differently-sized environments (i.e
 							   & \multicolumn{2}{c|}{\textbf{3 agents}} & \multicolumn{2}{c|}{\textbf{5 agents}} & \multicolumn{2}{c|}{\textbf{7 agents}} \\ \hline
 							   & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} \\ \hline
 		\textbf{Dones}      & $93.07\%$ & $83.80\%$ & $89.40\%$ & $76.64\%$ & $82.51\%$ & $67.66\%$ \\ \hline
-		\textbf{Deadlocks}  & $03.07\%$ & $05.80\%$ & $05.96\%$ & $13.40\%$ & $10.23\%$ & $12.54\%$ \\ \hline
+		\textbf{Deadlocks}  & $3.07\%$ & $5.80\%$ & $5.96\%$ & $13.40\%$ & $10.23\%$ & $12.54\%$ \\ \hline
 		\textbf{Return} & $-0.1404$ & $-0.1459$ & $-0.1581$ & $-0.1688$ & $-0.2057$ & $-0.1940$ \\ \hline
 		\textbf{Steps}   & $142$ & $339$ & $187$ & $415$ & $250$ & $445$ \\ \hline
 	\end{tabular}
@@ -1269,7 +1269,7 @@ Test results show that agents behave well in differently-sized environments (i.e
 							   & \multicolumn{2}{c|}{\textbf{5 agents}} & \multicolumn{2}{c|}{\textbf{7 agents}} & \multicolumn{2}{c|}{\textbf{10 agents}} \\ \hline
 							   & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} \\ \hline
 		\textbf{Dones}      & $86.28\%$ & $68.76\%$ & $84.17\%$ & $61.43\%$ & $76.90\%$ & $50.28\%$ \\ \hline
-		\textbf{Deadlocks}  & $03.24\%$ & $12.88\%$ & $05.89\%$ & $20.97\%$ & $12.54\%$ & $31.82\%$ \\ \hline
+		\textbf{Deadlocks}  & $3.24\%$ & $12.88\%$ & $5.89\%$ & $20.97\%$ & $12.54\%$ & $31.82\%$ \\ \hline
 		\textbf{Return} & $-0.2331$ & $-0.2081$ & $-0.2449$ & $-0.2260$ & $-0.2790$ & $-0.2615$ \\ \hline
 		\textbf{Steps}   & $400$ & $637$ & $447$ & $650$ & $497$ & $675$ \\ \hline
 	\end{tabular}
@@ -1285,6 +1285,7 @@ To conclude this section, we report other experiments that were made when traini
 	\item Training with higher hidden sizes for the FC layers in the DQN model was also ineffective: actually, we observed worse results w.r.t. using the default values reported in \ref{table:params-desc}
 \end{enumerate}
 
+\newpage
 \section{Standard vs. softmax Bellman}\label{sec:bellman-operators-res}
 In order to check the correctness of our softmax Bellman operator (introduced in \ref{subsec:bellman-operators}) and see if we could actually observe higher test scores in the Flatland problem, we trained a DQN model using the binary tree observator (as described in \ref{sec:bt-dqn-res}), over a rather simple setting (the one specified in table \ref{table:bellman-operators-params}). 
 
@@ -1314,7 +1315,7 @@ Training results are also reflected in the test metrics shown in table \ref{tabl
 	\begin{tabular}{|c|c|c|}
 		\hline & \textbf{Standard} & \textbf{Softmax} \\ \hline
 		\textbf{Dones}      & $87.10\%$ & $89.40\%$ \\ \hline
-		\textbf{Deadlocks}  & $06.40\%$ & $06.80\%$ \\ \hline
+		\textbf{Deadlocks}  & $6.40\%$ & $6.80\%$ \\ \hline
 		\textbf{Return}     & $-0.1437$ & $-0.1145$ \\ \hline
 		\textbf{Steps}      & $120$ & $93$ \\ \hline
 	\end{tabular}
@@ -1358,8 +1359,8 @@ Models were tested on the same environment type as the training one (i.e. a medi
 	\center
 	\begin{tabular}{|c|c|c|c|c|}
 		\hline & \textbf{Random} & \textbf{Greedy} & \textbf{$\epsilon$-greedy} & \textbf{Boltzmann} \\ \hline
-		\textbf{Dones}    & $07.40\%$ & $86.10\%$ & $89.40\%$ & $84.90\%$  \\ \hline
-		\textbf{Deadlocks} & $28.40\%$ & $07.80\%$ & $06.80\%$ & $08.60\%$ \\ \hline
+		\textbf{Dones}    & $7.40\%$ & $86.10\%$ & $89.40\%$ & $84.90\%$  \\ \hline
+		\textbf{Deadlocks} & $28.40\%$ & $7.80\%$ & $6.80\%$ & $8.60\%$ \\ \hline
 		\textbf{Return}    & $-0.6995$ & $-0.1361$ & $-0.1145$ & $-0.1388$ \\ \hline
 		\textbf{Steps}     & $447$ & $118$ & $93$ & $115$ \\ \hline
 	\end{tabular}
@@ -1387,7 +1388,7 @@ Models were tested on the same environment type as the training one (i.e. a medi
 \end{figure}
 \clearpage
 
-\section{Single agent entire graph embeddings vs. random baseline}\label{sec:entire-graph-single-agent-res}
+\section{Single-agent entire graph embeddings vs. random baseline}\label{sec:entire-graph-single-agent-res}
 
 In this section we are reporting experiments with the model described in \ref{subsec:entire-gnn}, where the COJG graph is used as the input data to a GNN model that computes node embeddings and aggregates them in a local fashion. These embeddings are then merged together and used as the state representation input in a DQN model.
 
@@ -1408,7 +1409,7 @@ Nevertheless, we tested the best obtained models using the same training setting
 		\texttt{model.entire\_gnn.hidden\_size}                  &   $2^{(1)}, 8^{(2)}$    \\
 		\bottomrule
 	\end{tabular}
-	\caption{Single agent entire graph embeddings vs. random baseline hyperparameters, trained on medium environment}
+	\caption{Single-agent entire graph embeddings hyperparameters, trained on medium environment}
 	\label{table:entire-gnn-params}
 \end{table}
 
@@ -1420,15 +1421,83 @@ Nevertheless, we tested the best obtained models using the same training setting
 		\textbf{Return}& $-0.7947$ & $-0.7169$   & $-0.5160$ \\ \hline
 		\textbf{Steps}& $477$ & $433$  & $310$ \\ \hline
 	\end{tabular}
-	\caption{Single agent entire graph embeddings vs. random baseline, tested on medium environment}
+	\caption{Single-agent entire graph embeddings vs. random baseline results, tested on medium environment}
 	\label{table:entire-gnn-res}
 \end{table}
 
 One thing that should be noticed by looking at test results is that at least the GNN model outperforms the random one by a good margin. Moreover, there seems to be a positive correlation between the size of node embeddings and final scores, which means that increasing the embedding size even further could lead to much better results.
 
+
 \section*{FOV with multi-agent graph embeddings}\label{sec:fov-dqn-gnn-robot-res}
 
+In this final section we are reporting the achievements related to the use of the FOV observator described in \ref{subsec:fov-obs}, along with the neural architecture introduced in \ref{subsec:multi-agent-gnn}, which is a combination of the CNN, GNN and DQN models.
+
+Following what we discovered in \ref{sec:bt-dqn-res} we decided to perform very similar training runs. In particular, training was done in the medium environment with complication \textbf{A} and all the hyperparameter values listed in \ref{table:multi-gnn-params} (if a setting is not specified for a specific run, then it means that the default value was used). 
+
+About executions, number $(1)$ was using the simple GCN neighborhood aggregator as the GNN filter, while the other runs were configured to use the more advanced GAT filter, described in \ref{subsec:multi-agent-gnn}, with $2$ attention heads.
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{@{}lc@{}}
+		\toprule
+		\textbf{Parameter} & \textbf{Value} \\ \midrule
+		\texttt{training.train_env.episodes} & $\num{7500}$ \\
+		\texttt{env.num\_trains} & $3$ \\
+		\texttt{predictor.max\_depth} & $7^{(1)}, 3^{(2)}, 6^{(3)}$   \\
+		\texttt{observator.max\_depth} & $15^{(1,2)}, 27^{(3)}$    \\
+		\texttt{model.multi\_gnn.cnn\_encoder.conv.padding} & $0^{(1)}$ \\
+		\texttt{model.multi\_gnn.cnn\_encoder.pool.kernel\_size} & $3^{(1)}$ \\
+		\texttt{model.multi\_gnn.cnn\_encoder.pool.stride} & $1^{(1)}$ \\
+		\texttt{model.multi\_gnn.cnn\_encoder.hidden\_channels} & $[16, 32]^{(1)}$ \\
+		\texttt{model.multi\_gnn.cnn\_encoder.output\_channels} & $32^{(1)}$ \\
+		\texttt{model.multi\_gnn.gnn\_communication.hidden\_sizes} & $[]^{(1)}$    \\
+		\texttt{model.multi\_gnn.gnn\_communication.dropout} & $0.0^{(1)}$ \\
+		\bottomrule
+	\end{tabular}
+	\caption{Multi-agent graph embeddings hyperparameters, trained on medium environment}
+	\label{table:multi-gnn-params}
+\end{table}
+
+Models were tested on the same environment type (medium with complication \textbf{A}), with exactly $3$ agents. Results in \ref{table:multi-gnn-params} show that increasing the model capacity, either with the use of more sophisticated layers (like the GAT one) or by increasing the size of the network, seems to reflect in higher test scores, even though final outcomes were much lower than initial expectations. 
+
+\begin{table}[h]
+	\center
+	\begin{tabular}{|c|c|c|c|}
+		\hline & \textbf{Multi GNN (1)} & \textbf{Multi GNN (2)} & \textbf{Multi GNN (3)} \\ \hline
+		\textbf{Dones} & $18.00\%$ & $24.42\%$ & $26.13\%$ \\ \hline
+		\textbf{Deadlocks} & $23.33\%$ & $29.04\%$ & $37.60\%$ \\ \hline
+		\textbf{Return}& $-0.6631$ & $-0.5822$ & $-0.5194$ \\ \hline
+		\textbf{Steps}& $482$ & $433$  & $408$ \\ \hline
+	\end{tabular}
+	\caption{Multi-agent graph embeddings results, tested on medium environment}
+	\label{table:multi-gnn-res}
+\end{table}
+
+Other training trials were launched, both in a different environment type (the big one) and with an higher number of agents (i.e., $5$ and $7$). Again, training metrics and test results are on par with the already reported ones, so that no convergence could be reached.
+
+From our point of view, the model that was used should be more than sufficiently capable to obtain acceptable solutions. In practice, what we observe is that training metrics remain more or less constant throughout the entire learning phase. By looking closer, it almost seems that agents are not able to understand how to reach their targets, even though the FOV observator has specific channels which encode just that information. One possible explanation to this behavior is given by the sparse setting of the Flatland environment, which does not allow to efficiently exploit local observations made out of patches extracted from the neighborhood of an agent: because of this, in our experiments we tried to enlarge the field of view each agent, reaching a quasi-global observation, but this operation didn't provide big improvements on the final scores.
+
+Future experiments could be related to leveraging the same model described in \ref{subsec:multi-agent-gnn}, but using a different observation. For example, it could be interesting to try out what would happen in the following scenario:
+\begin{enumerate}
+	\item Get rid of the CNN encoder and make the MLP compressor a little bit deeper
+	\item For each agent, use the binary tree observation (which already gives good results with a simple DQN) as the input to the MLP compressor
+	\item Inject the output of each call of the MLP compressor into the features of the GNN communicator's nodes (which represent agents) and perform graph convolutions, as before
+\end{enumerate}
+
+In this way, agents would still exchange information locally thanks to the GNN architecture, and that information should be rich enough to converge to admissible solutions, thanks to the binary tree observation. Ideally, this architecture should outperform the standard one which uses a simple DQN and achieve better test results than the ones reported in \ref{sec:bt-dqn-res}.
+
 \chapter{Conclusions}
+In this work, we tested different solutions to the Flatland challenge, organized by AIcrowd \cite{aicrowd}, using both well-estabilished techniques and cutting-edge ones. 
+
+To have a clear view of the problem, we decided to encode the environment using an efficient graph structure (i.e. the COJG graph, inspired by the COG one reported in \cite{jonas} and further enhanced). This encoding was used as the basic building block for both the shortest/deviation path predictor and our custom binary tree observator, which is based on the default tree observator, but improved to have a smaller computational footprint and augmented with various findings, like real decisions and choices. Moreover, features in the binary tree are all custom-made from the ground up.
+
+About the actual problem solution, we decided to go for a full RL setting and we adopted different models, starting from a simple DQN. First of all, we introduced various improvements in the DQN itself, like the double, dueling and softmax Bellman operators. Then, we tried to bring in further complexities, by integrating GNNs in the architecture. Our first trial with GNNs was related to encoding the entire COJG graph, performing graph convolutions directly on it and extracting pre-defined embeddings to be given as input to the DQN. The second experiment was instead related to using a different observator (the FOV one), along with a custom model comprising a CNN as the encoder of the observation, a GNN as the mean to exchange information between agents and a final DQN to compute the best actions.
+
+Training metrics and test results show that only the improved DQN model with the binary tree observator was able to converge to acceptable solutions, while the other models containing a GNN didn't provide the outcomes we were hoping for.
+
+Further improvements could be made to all the models and the tools we introduced, starting from the COJG graph itself. One thing that should really be tested is how to make the multi-agent graph embeddings model reach higher test scores, since the architecture itself seems a good way to go for this problem, at least from our point of view. As already reported in \ref{sec:fov-dqn-gnn-robot-res}, the bottleneck seems to be the FOV observator, so that trying different ones could definitely boost final scores.
+
+Flatland, and more generally MARL, is a very though problem, so that strong solutions are needed to generalize well over a wide range of environments, but we believe that research is heading in the right direction and that the integration of GNNs with standard RL models could be very beneficial.
 
 \printbibliography
 
