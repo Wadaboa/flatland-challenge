@@ -1,0 +1,428 @@
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Settings %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\documentclass{beamer}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage[T1]{fontenc}
+\usepackage{appendixnumberbeamer}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{booktabs}
+\graphicspath{ {../assets/img/} }
+
+\usepackage{minted}
+\setminted{linenos, numberblanklines=false, mathescape, texcomments, autogobble, breakanywhere, breakautoindent, breaklines, frame=lines, framesep=5\fboxsep}
+\setminted[python]{python3}
+
+\usefonttheme{professionalfonts}
+\usepackage{mathspec}
+\setsansfont[BoldFont={Fira Sans},
+Numbers={OldStyle}]{Fira Sans Light}
+\setmathsfont(Digits)[Numbers={Lining, Proportional}]{Fira Sans Light}
+
+\def\mytitle{Flatland Challenge}
+\def\mysubtitle{Deep learning course final project}
+\def\myshortfullname{A. Falai - L. Calbi}
+\def\myfullname{Alessio Falai, Leonardo Calbi}
+\def\myemail{alessio.falai@studio.unibo.it, leonardo.calbi@studio.unibo.it}
+\def\myshortinstitute{UNIBO}
+\def\myinstitute{Alma Mater Studiorum - University of Bologna}
+\title{\mytitle}
+\subtitle{\mysubtitle}
+\author[\myshortfullname]{\myfullname}
+\date{\today}
+\institute[\myshortinstitute]{\myinstitute}
+\titlegraphic{\hfill\includegraphics[height=1.5cm]{unibo-logo.eps}}
+
+\usetheme[progressbar=frametitle, numbering=none, background=light, titleformat=smallcaps, block=fill]{metropolis}
+\useoutertheme{metropolis}
+\useinnertheme{metropolis}
+\usefonttheme{metropolis}
+\usecolortheme{metropolis}
+\setbeamercovered{dynamic}
+
+% Edit progressbar width
+\makeatletter
+\setlength{\metropolis@progressinheadfoot@linewidth}{1.5pt}
+\setlength{\metropolis@progressonsectionpage@linewidth}{1.5pt}
+\makeatother
+
+% Show 'page' before page numbers in toc
+\addtocontents{toc}{~\hfill page\par}
+
+% Show page numbers and dots in toc
+\makeatletter
+\long\def\beamer@section[#1]#2{%
+  \beamer@savemode%
+  \mode<all>%
+  \ifbeamer@inlecture
+    \refstepcounter{section}%
+    \beamer@ifempty{#2}%
+    {\long\def\secname{#1}\long\def\lastsection{#1}}%
+    {\global\advance\beamer@tocsectionnumber by 1\relax%
+      \long\def\secname{#2}%
+      \long\def\lastsection{#1}%
+      \addtocontents{toc}{\protect\beamer@sectionintoc{\the\c@section}{#2\dotfill\the\c@page}{\the\c@page}{\the\c@part}%
+        {\the\beamer@tocsectionnumber}}}%
+    {\let\\=\relax\xdef\sectionlink{{Navigation\the\c@page}{\noexpand\secname}}}%
+    \beamer@tempcount=\c@page\advance\beamer@tempcount by -1%
+    \beamer@ifempty{#1}{}{%
+      \addtocontents{nav}{\protect\headcommand{\protect\sectionentry{\the\c@section}{#1}{\the\c@page}{\secname}{\the\c@part}}}%
+      \addtocontents{nav}{\protect\headcommand{\protect\beamer@sectionpages{\the\beamer@sectionstartpage}{\the\beamer@tempcount}}}%
+      \addtocontents{nav}{\protect\headcommand{\protect\beamer@subsectionpages{\the\beamer@subsectionstartpage}{\the\beamer@tempcount}}}%
+    }%
+    \beamer@sectionstartpage=\c@page%
+    \beamer@subsectionstartpage=\c@page%
+    \def\insertsection{\expandafter\hyperlink\sectionlink}%
+    \def\insertsubsection{}%
+    \def\insertsubsubsection{}%
+    \def\insertsectionhead{\hyperlink{Navigation\the\c@page}{#1}}%
+    \def\insertsubsectionhead{}%
+    \def\insertsubsubsectionhead{}%
+    \def\lastsubsection{}%
+    \Hy@writebookmark{\the\c@section}{\secname}{Outline\the\c@part.\the\c@section}{2}{toc}%
+    \hyper@anchorstart{Outline\the\c@part.\the\c@section}\hyper@anchorend%
+    \beamer@ifempty{#2}{\beamer@atbeginsections}{\beamer@atbeginsection}%
+  \fi%
+  \beamer@resumemode}%
+\makeatother
+
+% Change shape size for itemize
+\setbeamertemplate{itemize item}[circle]
+\setbeamertemplate{itemize subitem}[square]
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Document %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+\begin{document}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Title & TOC %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+\renewcommand*{\insertpagenumber}{%
+	\Roman{framenumber}%
+}%
+\makeatother
+\setbeamertemplate{footline}
+{
+  \leavevmode%
+  \hbox{%
+  \begin{beamercolorbox}[wd=.3\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+    \usebeamerfont{author in head/foot}\insertshortauthor ~ (\myshortinstitute)
+  \end{beamercolorbox}%
+  \begin{beamercolorbox}[wd=.6\paperwidth,ht=2.25ex,dp=1ex,center]{block title}%
+    \usebeamerfont{title in head/foot}\insertshorttitle
+  \end{beamercolorbox}%
+  \begin{beamercolorbox}[wd=.1\paperwidth,ht=2.25ex,dp=1ex,center]{block body}%
+    \insertpagenumber{} \hspace*{1ex}
+  \end{beamercolorbox}}%
+  \vskip0pt%
+}
+\makeatletter
+\setbeamertemplate{navigation symbols}{}
+
+\begin{frame}
+	\maketitle
+\end{frame}
+
+\begin{frame}[allowframebreaks]
+	\frametitle{Table of contents}
+	\setbeamertemplate{section in toc}[ball]
+	\tableofcontents[hideallsubsections]
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Main content %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+\setcounter{framenumber}{0}
+\makeatother
+\setbeamertemplate{footline}
+{
+  \leavevmode%
+  \hbox{%
+  \begin{beamercolorbox}[wd=.3\paperwidth,ht=2.25ex,dp=1ex,center]{author in head/foot}%
+    \usebeamerfont{author in head/foot}\insertshortauthor ~ (\myshortinstitute)
+  \end{beamercolorbox}%
+  \begin{beamercolorbox}[wd=.6\paperwidth,ht=2.25ex,dp=1ex,center]{block title}%
+    \usebeamerfont{title in head/foot}\insertshorttitle
+  \end{beamercolorbox}%
+  \begin{beamercolorbox}[wd=.1\paperwidth,ht=2.25ex,dp=1ex,center]{block body}%
+    \insertframenumber{} / \inserttotalframenumber\hspace*{1ex}
+  \end{beamercolorbox}}%
+  \vskip0pt%
+}
+\makeatletter
+\setbeamertemplate{navigation symbols}{}
+
+\section{Environment}
+\begin{frame}
+	\frametitle{Railway encoding}
+	\begin{itemize}
+		\item Standard encoding: dense, matrix-based
+		\item Custom encoding: sparse, graph-based
+		\begin{itemize}
+			\item Only stores meaningful positions: junctions and targets
+			\item Memory efficient
+		\end{itemize}
+	\end{itemize}
+	\begin{figure}[!h]
+		\begin{subfigure}[b]{0.45\linewidth}
+			\includegraphics[width=\textwidth]{grid-env-128x64.png}
+			\caption{Grid}
+		\end{subfigure}%
+		~
+		\begin{subfigure}[b]{0.45\linewidth}
+			\includegraphics[width=\textwidth]{cojg-env-128x64.png}
+			\caption{COJG}
+		\end{subfigure}%
+	\end{figure}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Predictions}
+	\begin{itemize}
+		\item Standard predictions: shortest path only, computed on the matrix encoding
+		\item Custom predictions: shortest and deviation paths, computed on the custom graph encoding
+		\begin{itemize}
+			\item Scalable solution
+			\item Incremental computation		
+			\item Time efficient
+		\end{itemize}
+	\end{itemize}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Improvements}
+	\begin{itemize}
+		\item Choices: reduced action space
+		\begin{itemize}
+			\item Follow the track to the left, to the right or stop
+		\end{itemize}
+		\item Real decisions: only relevant calls to the policy estimator
+		\begin{itemize}
+			\item On before join, at fork or in a combination of the two
+		\end{itemize}
+		\item Action masking: only consider legal moves
+		\begin{itemize}
+			\item Stop is legal only when there is more than one agent
+		\end{itemize}
+		\item Rewards shaping
+		\begin{itemize}
+			\item Incremental rewards (related to real decisions)
+			\item Deadlock penalty
+			\item Target arrival bonus
+			\item Consecutive stop action penalty
+		\end{itemize}
+	\end{itemize}
+\end{frame}
+
+
+\section{Architectures}
+\begin{frame}
+	\frametitle{DQN (Deep Q-Network)}
+	\begin{itemize}
+		\item From state representation to $Q$-values
+		\item Standard experience replay
+		\item Regression framework: TD error minimization
+		\begin{itemize}
+			\item MSE or Huber loss
+		\end{itemize}
+		\item Double, dueling version with custom Bellman operators
+	\end{itemize}
+\end{frame}
+
+\begin{frame}
+	\frametitle{GNN (Graph Neural Network)}
+	\begin{itemize}
+		\item From graph nodes to an embedding space
+		\item Two main uses: the input graph could be $\dots$
+		\begin{itemize}
+			\item $\dots$ railway encoding
+			\item $\dots$ agent communication network
+		\end{itemize}
+		\item Different graph convolutional layer
+		\begin{itemize}
+			\item GCN as a simple sum/mean neighborhood aggregator 
+			\item GAT as a learnable information gatherer, with attention over features of nearby agents
+		\end{itemize}
+	\end{itemize}
+\end{frame}
+
+
+\section{Model flows}
+\begin{frame}
+	\frametitle{Binary tree}
+	\begin{itemize}
+		\item Binary tree observation
+		\begin{itemize}
+			\item Shaped like the standard tree observation, with two branches (left and right choice)
+			\item Based on the graph railway encoding (nodes in the tree are linked to nodes in the graph)
+			\item Prior knowledge injection: only nodes corresponding to predictions (shortest/deviation) are filled with features
+			\item Carefully designed features (based on direction, speed and malfunction of agents)
+		\end{itemize}
+		\item Per-agent flow
+		\begin{enumerate}
+			\item Compute, linearize and normalize the binary tree
+			\item The observation is fed to the DQN, which returns $Q$-values
+			\item The action selector chooses an action
+		\end{enumerate}
+	\end{itemize}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Entire graph embeddings}
+	\begin{itemize}
+		\item Graph observation
+		\begin{itemize}
+			\item Exploit the railway encoding graph and assign simple features to each node (cell status, target distance)
+			\item Does not make use of predictions
+		\end{itemize}
+		\item Per-agent flow
+		\begin{enumerate}
+			\item The GNN computes convolutions over the input graph and extracts embeddings from pre-specified positions
+			\item Such embeddings are given as input to the DQN, which returns $Q$-values
+			\item The action selector chooses an action
+		\end{enumerate}
+	\end{itemize}
+\end{frame}
+
+\begin{frame}[allowframebreaks]
+	\frametitle{Multi-agent graph embeddings}
+	\begin{itemize}
+		\item FOV observation
+		\begin{itemize}
+			\item Square Field Of View centered around each agent, of dimension $(c, d, d)$
+			\item Channel dimension $c$ used to represent different features
+			\item Makes use of the shortest/deviation paths prediction
+		\end{itemize}
+	\end{itemize}
+	\begin{figure}[h]
+		\centering
+		\includegraphics[width=0.75\textwidth]{dqn-gnn-robot.png}
+	\end{figure}
+	\framebreak
+	\begin{itemize}
+		\item All agents flow
+		\begin{enumerate}
+			\item The FOV observation is computed for all agents at once
+			\item A CNN (built by blocks of Conv + BN + ReLU + MaxPool) is used to extract higher-level features from FOVs 
+			\item The CNN output is compressed into a fixed size by an MLP
+			\item A GNN takes as input a graph where nodes are agents (features are MLP outputs) and edges encode their proximities in the environment 
+			\item The output embeddings of the GNN are used as input to the DQN, which returns $Q$-values
+			\item The action selector chooses an action for each agent 
+		\end{enumerate}
+	\end{itemize}
+\end{frame}
+
+
+\section{Experiments}
+\begin{frame}
+	\frametitle{Action selectors}
+	\begin{itemize}
+		\item $\epsilon$-greedy vs. Boltzmann
+		\item Random and greedy baselines
+	\end{itemize}
+	\begin{figure}[h]
+		\centering
+		\includegraphics[width=\textwidth]{action-selectors-returns}
+	\end{figure}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Bellman operators}
+	\begin{itemize}
+		\item Standard vs. softmax Bellman
+	\end{itemize}
+	\begin{figure}[h]
+		\centering
+		\includegraphics[width=\textwidth]{bellman-operators-returns.png}
+	\end{figure}
+\end{frame}
+
+
+\section{Results}
+\begin{frame}
+	\frametitle{Environment settings}
+	\begin{center}
+	\resizebox{0.7\textwidth}{!}{%
+		\begin{tabular}{@{}lcc@{}}
+			\multicolumn{3}{c}{\textbf{Environment}}\\
+			\toprule
+			\textbf{Parameter}							& \textbf{Medium} & \textbf{Big} \\ \midrule
+			\texttt{width}                       &   48     &  64   \\
+			\texttt{height}                      &   27     &  36   \\
+			\texttt{max\_cities}                 &   5     &   9  \\
+			\texttt{max\_rails\_between\_cities} &   2     &   5  \\
+			\texttt{max\_rails\_in\_cities}      &   3     &   5  \\ \bottomrule
+		\end{tabular}
+	}
+	\resizebox{0.7\textwidth}{!}{%
+		\begin{tabular}{@{}lcc@{}}
+			\multicolumn{3}{c}{\textbf{Complications}}\\
+			\toprule
+			\textbf{Parameter}							& \textbf{A} & \textbf{B} \\ \midrule
+			\texttt{speeds}                       &   1     &  $\{1,\frac{1}{2},\frac{1}{3},\frac{1}{4}\}$  \\
+			\texttt{malfunctions.rate}               &   0     &  $\frac{1}{200}$   \\
+			\texttt{malfunctions.min\_duration}                 &   -     &   15  \\
+			\texttt{malfunctions.max\_duration} &   -     &   50  \\ \bottomrule
+		\end{tabular}
+	}
+	\end{center}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Medium environment}
+	\begin{itemize}
+		\item Model flow
+		\begin{itemize}
+			\item Binary tree observator with DQN model
+			\item $\epsilon$-greedy action selector and softmax Bellman operator
+		\end{itemize}
+	\end{itemize}
+	\resizebox{\textwidth}{!}{%
+		\begin{tabular}{|c|c|c|c|c|c|c|}
+			\hline
+								   & \multicolumn{2}{c|}{\textbf{3 agents}} & \multicolumn{2}{c|}{\textbf{5 agents}} & \multicolumn{2}{c|}{\textbf{7 agents}} \\ \hline
+								   & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} \\ \hline
+			\textbf{Dones}      & $93.07\%$ & $83.80\%$ & $89.40\%$ & $76.64\%$ & $82.51\%$ & $67.66\%$ \\ \hline
+			\textbf{Deadlocks}  & $3.07\%$ & $5.80\%$ & $5.96\%$ & $13.40\%$ & $10.23\%$ & $12.54\%$ \\ \hline
+			\textbf{Return} & $-0.1404$ & $-0.1459$ & $-0.1581$ & $-0.1688$ & $-0.2057$ & $-0.1940$ \\ \hline
+			\textbf{Steps}   & $142$ & $339$ & $187$ & $415$ & $250$ & $445$ \\ \hline
+		\end{tabular}
+	}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Big environment}
+	\begin{itemize}
+		\item Model flow: the same one used in the medium setting
+	\end{itemize}
+	\resizebox{\textwidth}{!}{%
+		\begin{tabular}{|c|c|c|c|c|c|c|}
+			\hline
+								   & \multicolumn{2}{c|}{\textbf{5 agents}} & \multicolumn{2}{c|}{\textbf{7 agents}} & \multicolumn{2}{c|}{\textbf{10 agents}} \\ \hline
+								   & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} & \textbf{A} & \textbf{B} \\ \hline
+			\textbf{Dones}      & $86.28\%$ & $68.76\%$ & $84.17\%$ & $61.43\%$ & $76.90\%$ & $50.28\%$ \\ \hline
+			\textbf{Deadlocks}  & $3.24\%$ & $12.88\%$ & $5.89\%$ & $20.97\%$ & $12.54\%$ & $31.82\%$ \\ \hline
+			\textbf{Return} & $-0.2331$ & $-0.2081$ & $-0.2449$ & $-0.2260$ & $-0.2790$ & $-0.2615$ \\ \hline
+			\textbf{Steps}   & $400$ & $637$ & $447$ & $650$ & $497$ & $675$ \\ \hline
+		\end{tabular}
+	}
+\end{frame}
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Appendix %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% 
+
+\appendix
+
+\begin{frame}[standout]
+	Thank you for your attention
+\end{frame}
+
+\end{document}
